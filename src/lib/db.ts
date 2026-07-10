@@ -1,14 +1,12 @@
 import { PrismaClient } from "@/generated/prisma/client";
 import { PrismaLibSql } from "@prisma/adapter-libsql";
-import { createClient } from "@libsql/client";
 
 function createAdapter() {
   if (process.env.TURSO_DATABASE_URL) {
-    const client = createClient({
+    return new PrismaLibSql({
       url: process.env.TURSO_DATABASE_URL,
       authToken: process.env.TURSO_AUTH_TOKEN,
     });
-    return new PrismaLibSql(client);
   }
   // fallback to local SQLite for development without Turso
   const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
