@@ -45,7 +45,13 @@ const NAV = [
       { href: "/collab", icon: "🤝", label: "유관부서 이슈" },
     ],
   },
-  { group: "기록",        items: [{ href: "/wiki",       icon: "📝", label: "업무 일지" }] },
+  {
+    group: "기록",
+    items: [
+      { href: "/wiki",    icon: "📝", label: "업무 일지" },
+      { href: "/devlog",  icon: "🗂️", label: "개발 이력" },
+    ],
+  },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
