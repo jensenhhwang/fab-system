@@ -9,8 +9,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko" className="h-full antialiased">
-      <body className="h-full bg-[#F4F4F4] text-[#111]">
+    <html lang="ko" className="h-full antialiased" style={{ colorScheme: "light", backgroundColor: "#F4F4F4" }}>
+      <body className="h-full text-[#111111]" style={{ backgroundColor: "#F4F4F4" }}>
         <SessionProvider>{children}</SessionProvider>
       </body>
     </html>

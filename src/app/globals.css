@@ -1,26 +1,35 @@
 @import "tailwindcss";
 
+/* SK하이닉스 CI 기반 — 라이트 모드 고정 */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --sk-red:     #EA002C;
+  --sk-orange:  #F47725;
+  --bg-page:    #F4F4F4;
+  --bg-card:    #FFFFFF;
+  --text-1:     #111111;
+  --text-2:     #555555;
+  --text-3:     #999999;
+  --border:     #E8E8E8;
+  --green:      #00B96B;
+  --yellow:     #F7A600;
+  --blue:       #0078D4;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* 다크모드 완전 비활성화 — OS 설정 무시하고 라이트 강제 */
+html {
+  color-scheme: light;
+  background-color: #F4F4F4 !important;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #F4F4F4 !important;
+  color: #111111 !important;
+  font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', -apple-system, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  html, body {
+    background-color: #F4F4F4 !important;
+    color: #111111 !important;
+  }
 }

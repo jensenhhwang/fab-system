@@ -103,12 +103,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* 푸터 */}
         <div className="px-4 py-3 border-t border-[#F0F0F0]">
-          <div className="text-[11px] text-[#999] leading-relaxed">이천 M14 / M16</div>
+          <div className="text-[11px] text-[#999] mb-2">이천 M14 / M16</div>
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className="mt-2 text-[11px] text-[#999] hover:text-[#EA002C] transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-[#EA002C] bg-[#FFF0F2] hover:bg-[#FFD6DA] transition-colors"
           >
-            로그아웃
+            <span>→</span> 로그아웃
           </button>
         </div>
       </aside>
