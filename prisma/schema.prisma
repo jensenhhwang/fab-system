@@ -1,0 +1,180 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum Role {
+  ADMIN
+  MATERIALS
+  PRODUCTION
+  LOGISTICS
+}
+
+enum Category {
+  GAS
+  CHM
+  CSM
+  UTL
+  PKG
+}
+
+enum TxType {
+  IN
+  OUT
+}
+
+enum RiskLevel {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum Product {
+  HBM
+  DRAM
+  NAND
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String
+  password     String
+  role         Role          @default(MATERIALS)
+  department   String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  transactions Transaction[]
+  wikiEntries  WikiEntry[]
+}
+
+model Material {
+  id            String             @id @default(cuid())
+  code          String             @unique
+  name          String
+  nameEn        String?
+  category      Category
+  unit          String
+  safetyStock   Float              @default(0)
+  ropDays       Float              @default(7)
+  notes         String?
+  createdAt     DateTime           @default(now())
+  inventory     Inventory[]
+  transactions  Transaction[]
+  suppliers     MaterialSupplier[]
+  processUsages ProcessUsage[]
+}
+
+model Warehouse {
+  id            String      @id @default(cuid())
+  code          String      @unique
+  name          String
+  type          String
+  totalCapacity Int
+  unit          String      @default("pallet")
+  temperature   String?
+  notes         String?
+  inventory     Inventory[]
+}
+
+model Inventory {
+  id            String    @id @default(cuid())
+  materialId    String
+  warehouseId   String
+  quantity      Float
+  avgDailyUsage Float     @default(0)
+  updatedAt     DateTime  @updatedAt
+  material      Material  @relation(fields: [materialId], references: [id])
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [id])
+
+  @@unique([materialId, warehouseId])
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  materialId  String
+  type        TxType
+  quantity    Float
+  date        DateTime
+  userId      String
+  note        String?
+  processCode String?
+  supplierId  String?
+  createdAt   DateTime @default(now())
+  material    Material @relation(fields: [materialId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model ProcessUsage {
+  id          String   @id @default(cuid())
+  materialId  String
+  processCode String
+  product     Product
+  monthlyQty  Float
+  material    Material @relation(fields: [materialId], references: [id])
+
+  @@unique([materialId, processCode, product])
+}
+
+model Supplier {
+  id        String             @id @default(cuid())
+  name      String
+  country   String?
+  contact   String?
+  notes     String?
+  materials MaterialSupplier[]
+}
+
+model MaterialSupplier {
+  id           String   @id @default(cuid())
+  materialId   String
+  supplierId   String
+  leadTimeDays Int
+  isPrimary    Boolean  @default(false)
+  material     Material @relation(fields: [materialId], references: [id])
+  supplier     Supplier @relation(fields: [supplierId], references: [id])
+
+  @@unique([materialId, supplierId])
+}
+
+model InfraEquipment {
+  id                  String    @id @default(cuid())
+  name                String
+  processCode         String
+  unit                String
+  replacementCriteria Float
+  currentUsage        Float     @default(0)
+  lastReplacedAt      DateTime?
+  notes               String?
+  updatedAt           DateTime  @updatedAt
+}
+
+model Risk {
+  id          String    @id @default(cuid())
+  title       String
+  level       RiskLevel
+  category    String
+  owner       String
+  status      String    @default("Active")
+  description String?
+  mitigation  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model WikiEntry {
+  id         String   @id @default(cuid())
+  date       DateTime
+  title      String
+  category   String
+  content    String
+  result     String?
+  nextAction String?
+  userId     String
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+}
