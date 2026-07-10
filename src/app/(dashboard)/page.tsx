@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import AIBriefing from "@/components/AIBriefing";
 
 async function getDashboardData() {
   // 전체 재고 목록 (DOH 계산용)
@@ -88,7 +89,10 @@ export default async function DashboardPage() {
   return (
     <>
       <div className="mb-1 text-2xl font-extrabold tracking-tight">종합 현황</div>
-      <div className="text-sm text-[#999] mb-6">이천 M14/M16 · 자재관리팀 / 기준: {new Date().toLocaleDateString("ko-KR")}</div>
+      <div className="text-sm text-[#999] mb-4">이천 M14/M16 · 자재관리팀 / 기준: {new Date().toLocaleDateString("ko-KR")}</div>
+
+      {/* AI 담당자 브리핑 */}
+      <AIBriefing />
 
       {/* KPI 카드 */}
       <div className="grid grid-cols-4 gap-4 mb-6">
