@@ -101,7 +101,7 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
       return sortDir === "asc" ? cmp : -cmp;
     });
 
-  const TABS: { key: FilterKey; label: string; sublabel: string; color: string; bg: string }[] = [
+  const TABS: { key: Exclude<FilterKey, "ALL">; label: string; sublabel: string; color: string; bg: string }[] = [
     { key: "critical", label: "위급",  sublabel: "5일 미만",    color: "#EA002C", bg: "#FFF0F2" },
     { key: "warning",  label: "경보",  sublabel: "ROP 이하",    color: "#F7A600", bg: "#FFF8E6" },
     { key: "ok",       label: "적정",  sublabel: "ROP~2×ROP",  color: "#00B96B", bg: "#E6FAF1" },
