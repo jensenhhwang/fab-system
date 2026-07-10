@@ -32,10 +32,18 @@ export default function LoginPage() {
     }
   }
 
-  function fillAccount(acc: typeof DEMO_ACCOUNTS[0]) {
-    setEmail(acc.email);
-    setPassword("fab1234!");
+  async function fillAccount(acc: typeof DEMO_ACCOUNTS[0]) {
+    setLoading(true);
     setError("");
+    const res = await signIn("credentials", { email: acc.email, password: "fab1234!", redirect: false });
+    setLoading(false);
+    if (res?.error) {
+      setEmail(acc.email);
+      setPassword("fab1234!");
+      setError("로그인에 실패했습니다. 잠시 후 다시 시도해주세요.");
+    } else {
+      router.push("/");
+    }
   }
 
   return (
