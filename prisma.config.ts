@@ -2,19 +2,6 @@
 // npm install --save-dev prisma dotenv
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
-import { PrismaLibSql } from "@prisma/adapter-libsql";
-
-function getAdapter() {
-  if (process.env.TURSO_DATABASE_URL) {
-    return new PrismaLibSql({
-      url: process.env.TURSO_DATABASE_URL,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-    });
-  }
-  const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
-  const path = require("path");
-  return new PrismaBetterSqlite3({ url: `file:${path.resolve(process.cwd(), "dev.db")}` });
-}
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -22,6 +9,6 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    adapter: getAdapter(),
+    url: process.env.DATABASE_URL,
   },
 });
