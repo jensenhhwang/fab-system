@@ -35,7 +35,7 @@ async function main() {
   const warehousesData = [
     { _id: "WH-A", code: "WH-A", name: "A동 — 자동화 창고 (AS/RS)", type: "AS_RS", totalCapacity: 7000, unit: "pallet", temperature: "20~25°C / 습도 45~55%", notes: "고층 자동화 창고, WMS 연동, CVD·증착용 케미컬 주 보관" },
     { _id: "WH-B", code: "WH-B", name: "B동 — 평치 창고 (일반)", type: "FLAT", totalCapacity: 2600, unit: "pallet", temperature: "실온 (10~30°C)", notes: "일반 자재, CMP 패드·슬러리 등 소모성 인프라 자재 보관" },
-    { _id: "WH-C", code: "WH-C", name: "C동 — 위험물 전용 창고", type: "HAZMAT", totalCapacity: 800, unit: "pallet", temperature: "15~20°C / 방폭 설비", notes: "HF·NH₃·H₂O₂ 등 위험물 보관, 입고 수량 법적 제한" },
+    { _id: "WH-C", code: "WH-C", name: "C동 — 위험물 전용 창고", type: "HAZMAT", totalCapacity: 800, unit: "pallet", temperature: "15~20°C / 방폭 설비", notes: "HF·NH₃·H₂O₂ 등 위험물 보관, 입고 수량 법적 제한", legalLimit: 620 },
     { _id: "WH-D", code: "WH-D", name: "D동 — 공구·MRO 창고", type: "MRO", totalCapacity: 2200, unit: "slot", temperature: "실온", notes: "Probe Card·소모성 공구·교체 부품 보관" },
   ];
   await col("warehouses").insertMany(warehousesData);
@@ -122,6 +122,22 @@ async function main() {
 
     // ── PKG 계열 (패키징) ──────────────────────────────
     { code: "PKG-001", name: "EMC (에폭시 몰딩 컴파운드)", nameEn: "Epoxy Molding Compound", category: "PKG", unit: "kg", safetyStock: 500, ropDays: 14, notes: "HBM MR-MUF 공정용 몰딩재. 리드타임 길고 수급 주의" },
+
+    // ── 이온주입 도판트 가스 (P05) ──────────────────────
+    { code: "GAS-021", name: "삼불화붕소 (BF₃)", nameEn: "Boron Trifluoride", category: "GAS", unit: "봄베", safetyStock: 25, ropDays: 21, notes: "붕소(B) 도판트 소스. P형 이온주입. 독성·부식성 고위험" },
+    { code: "GAS-022", name: "포스핀 (PH₃)", nameEn: "Phosphine", category: "GAS", unit: "봄베", safetyStock: 20, ropDays: 21, notes: "인(P) 도판트 소스. N형 주입. 맹독성, 위험물 보관 필수" },
+    { code: "GAS-023", name: "아르신 (AsH₃)", nameEn: "Arsine", category: "GAS", unit: "봄베", safetyStock: 15, ropDays: 30, notes: "비소(As) 도판트 소스. N형 주입. 초고독성, 취급 규제 최상위" },
+    { code: "GAS-024", name: "디보란 (B₂H₆)", nameEn: "Diborane", category: "GAS", unit: "봄베", safetyStock: 12, ropDays: 30, notes: "붕소 도핑·PECVD 도핑막. 자연발화성, 희석 공급" },
+    // ── 식각 특수가스 (P04) ─────────────────────────────
+    { code: "GAS-025", name: "브롬화수소 (HBr)", nameEn: "Hydrogen Bromide", category: "GAS", unit: "봄베", safetyStock: 30, ropDays: 14, notes: "게이트·고종횡비 실리콘 식각. 높은 선택비" },
+    { code: "GAS-026", name: "옥타플루오로시클로부탄 (C₄F₈)", nameEn: "Octafluorocyclobutane", category: "GAS", unit: "봄베", safetyStock: 28, ropDays: 14, notes: "산화막 이방성 식각·측벽 보호막. Contact/Via 식각" },
+    // ── 케미컬 보강 ─────────────────────────────────────
+    { code: "CHM-012", name: "EBR 신너 (에지비드 제거)", nameEn: "Edge Bead Remover", category: "CHM", unit: "드럼", safetyStock: 70, ropDays: 10, notes: "웨이퍼 가장자리 PR 제거. 포토 도포 공정 소모" },
+    { code: "CHM-013", name: "Post-CMP 세정액", nameEn: "Post-CMP Cleaning Solution", category: "CHM", unit: "드럼", safetyStock: 90, ropDays: 10, notes: "CMP 후 슬러리 잔류·금속 오염 제거" },
+    // ── CSM / PKG 보강 ──────────────────────────────────
+    { code: "CSM-014", name: "HBM 언더필 (TC-NCF)", nameEn: "Non-Conductive Film (TC-NCF)", category: "CSM", unit: "롤", safetyStock: 30, ropDays: 30, notes: "HBM 스택 열압착 본딩용 비전도성 필름. HBM 전용" },
+    { code: "CSM-015", name: "챔버 석영 파츠 (Quartz Kit)", nameEn: "Quartz Chamber Parts", category: "CSM", unit: "세트", safetyStock: 12, ropDays: 45, notes: "식각·증착 챔버 소모성 석영/세라믹 파츠. PM 시 교체" },
+    { code: "PKG-002", name: "다이접착필름 (DAF)", nameEn: "Die Attach Film", category: "PKG", unit: "롤", safetyStock: 120, ropDays: 21, notes: "다이 적층 접착 필름. HBM 다단 스택 본딩" },
   ];
 
   await col("materials").insertMany(
@@ -188,6 +204,20 @@ async function main() {
     { code: "UTL-001", whCode: "WH-A", qty: 0,    daily: 5000 },
     { code: "UTL-002", whCode: "WH-A", qty: 95,   daily: 6.5  },
     { code: "PKG-001", whCode: "WH-B", qty: 820,  daily: 52   },
+    // 도판트·식각 특수가스 → 위험물창고(C동)
+    { code: "GAS-021", whCode: "WH-C", qty: 48,   daily: 3.2 },
+    { code: "GAS-022", whCode: "WH-C", qty: 36,   daily: 2.5 },
+    { code: "GAS-023", whCode: "WH-C", qty: 22,   daily: 1.4 },
+    { code: "GAS-024", whCode: "WH-C", qty: 18,   daily: 1.1 },
+    { code: "GAS-025", whCode: "WH-C", qty: 52,   daily: 4.0 },
+    { code: "GAS-026", whCode: "WH-C", qty: 46,   daily: 3.6 },
+    // 케미컬 → A동
+    { code: "CHM-012", whCode: "WH-A", qty: 62,   daily: 5.0 },
+    { code: "CHM-013", whCode: "WH-A", qty: 84,   daily: 6.5 },
+    // CSM → B동, 석영파츠 → D동, PKG → B동
+    { code: "CSM-014", whCode: "WH-B", qty: 40,   daily: 1.6 },
+    { code: "CSM-015", whCode: "WH-D", qty: 15,   daily: 0.4 },
+    { code: "PKG-002", whCode: "WH-B", qty: 210,  daily: 9.0 },
   ];
 
   const validMat = (code: string) => Boolean(materials[code]);
@@ -274,6 +304,124 @@ async function main() {
     { code: "GAS-016", proc: "P02", product: "NAND", qty: 32 },
     // EMC — HBM 패키징
     { code: "PKG-001", proc: "P10", product: "HBM",  qty: 420 },
+    // 이온주입 도판트 (P05) — 공정-자재 공백 해소
+    { code: "GAS-021", proc: "P05", product: "DRAM", qty: 42 },
+    { code: "GAS-021", proc: "P05", product: "NAND", qty: 55 },
+    { code: "GAS-022", proc: "P05", product: "DRAM", qty: 38 },
+    { code: "GAS-023", proc: "P05", product: "NAND", qty: 28 },
+    { code: "GAS-024", proc: "P05", product: "HBM",  qty: 18 },
+    // 식각 특수가스 (P04)
+    { code: "GAS-025", proc: "P04", product: "NAND", qty: 68 },
+    { code: "GAS-026", proc: "P04", product: "DRAM", qty: 52 },
+    // 세정·EBR
+    { code: "CHM-013", proc: "P07", product: "HBM",  qty: 62 },
+    { code: "CHM-012", proc: "P03", product: "DRAM", qty: 48 },
+    // HBM 패키징 보강
+    { code: "CSM-014", proc: "P10", product: "HBM",  qty: 35 },
+    { code: "PKG-002", proc: "P10", product: "HBM",  qty: 180 },
+
+    // ── 데이터 정합 보완: 공정 귀속 가능한 27종 ProcessUsage 추가 ──────────────
+    // GAS-002 H₂ — P07 금속 어닐 (H₂/N₂ 분위기)
+    { code: "GAS-002", proc: "P07", product: "HBM",  qty: 230 },
+    { code: "GAS-002", proc: "P07", product: "DRAM", qty: 297 },
+    { code: "GAS-002", proc: "P07", product: "NAND", qty: 133 },
+    // GAS-003 Ar — P06 PVD 스퍼터링 캐리어 가스
+    { code: "GAS-003", proc: "P06", product: "HBM",  qty: 578 },
+    { code: "GAS-003", proc: "P06", product: "DRAM", qty: 742 },
+    { code: "GAS-003", proc: "P06", product: "NAND", qty: 330 },
+    // GAS-004 SiH₄ — P02 LPCVD/PECVD 폴리실리콘
+    { code: "GAS-004", proc: "P02", product: "HBM",  qty: 90  },
+    { code: "GAS-004", proc: "P02", product: "DRAM", qty: 162 },
+    { code: "GAS-004", proc: "P02", product: "NAND", qty: 108 },
+    // GAS-005 NH₃ — P02 Si₃N₄ CVD (NAND ONO 스택 중심)
+    { code: "GAS-005", proc: "P02", product: "DRAM", qty: 82  },
+    { code: "GAS-005", proc: "P02", product: "NAND", qty: 122 },
+    // GAS-006 NF₃ — P02 CVD 챔버 in-situ 세정
+    { code: "GAS-006", proc: "P02", product: "HBM",  qty: 37  },
+    { code: "GAS-006", proc: "P02", product: "DRAM", qty: 47  },
+    { code: "GAS-006", proc: "P02", product: "NAND", qty: 21  },
+    // GAS-008 O₂ — P01 열산화 (게이트 SiO₂·LOCOS)
+    { code: "GAS-008", proc: "P01", product: "HBM",  qty: 400 },
+    { code: "GAS-008", proc: "P01", product: "DRAM", qty: 512 },
+    { code: "GAS-008", proc: "P01", product: "NAND", qty: 228 },
+    // GAS-009 CO₂ — P03 초임계 CO₂ 드라이 세정
+    { code: "GAS-009", proc: "P03", product: "HBM",  qty: 216 },
+    { code: "GAS-009", proc: "P03", product: "DRAM", qty: 216 },
+    { code: "GAS-009", proc: "P03", product: "NAND", qty: 108 },
+    // GAS-010 He — P05 이온주입 웨이퍼 척 냉각
+    { code: "GAS-010", proc: "P05", product: "HBM",  qty: 47  },
+    { code: "GAS-010", proc: "P05", product: "DRAM", qty: 61  },
+    { code: "GAS-010", proc: "P05", product: "NAND", qty: 27  },
+    // GAS-011 CF₄ — P04 SiO₂/Si₃N₄ 드라이 식각
+    { code: "GAS-011", proc: "P04", product: "HBM",  qty: 44  },
+    { code: "GAS-011", proc: "P04", product: "DRAM", qty: 57  },
+    { code: "GAS-011", proc: "P04", product: "NAND", qty: 25  },
+    // GAS-012 SF₆ — P04 Si 등방성 식각 (NAND 트렌치 중심)
+    { code: "GAS-012", proc: "P04", product: "DRAM", qty: 36  },
+    { code: "GAS-012", proc: "P04", product: "NAND", qty: 54  },
+    // GAS-013 Cl₂ — P04 Al·W 이방성 식각
+    { code: "GAS-013", proc: "P04", product: "HBM",  qty: 29  },
+    { code: "GAS-013", proc: "P04", product: "DRAM", qty: 38  },
+    { code: "GAS-013", proc: "P04", product: "NAND", qty: 17  },
+    // GAS-014 TEOS — P02 PECVD SiO₂ (ILD·STI 갭필)
+    { code: "GAS-014", proc: "P02", product: "HBM",  qty: 95  },
+    { code: "GAS-014", proc: "P02", product: "DRAM", qty: 121 },
+    { code: "GAS-014", proc: "P02", product: "NAND", qty: 54  },
+    // GAS-015 DCS — P02 LPCVD Si₃N₄ 질화막
+    { code: "GAS-015", proc: "P02", product: "DRAM", qty: 74  },
+    { code: "GAS-015", proc: "P02", product: "NAND", qty: 91  },
+    // GAS-017 TiCl₄ — P06 ALD TiN 배리어 금속
+    { code: "GAS-017", proc: "P06", product: "HBM",  qty: 34  },
+    { code: "GAS-017", proc: "P06", product: "DRAM", qty: 43  },
+    { code: "GAS-017", proc: "P06", product: "NAND", qty: 19  },
+    // GAS-018 TDMAT — P07 ALD TiN (HBM TSV 라이너)
+    { code: "GAS-018", proc: "P07", product: "HBM",  qty: 29  },
+    { code: "GAS-018", proc: "P07", product: "DRAM", qty: 16  },
+    // GAS-019 TEMAHf — P01 ALD HfO₂ High-k 게이트 절연막
+    { code: "GAS-019", proc: "P01", product: "DRAM", qty: 16  },
+    { code: "GAS-019", proc: "P01", product: "HBM",  qty: 8   },
+    // GAS-020 DIPAS — P04 ALD SiO₂ 스페이서 (EUV 더블패터닝)
+    { code: "GAS-020", proc: "P04", product: "HBM",  qty: 13  },
+    { code: "GAS-020", proc: "P04", product: "DRAM", qty: 20  },
+    // CHM-003 H₂SO₄ — P03 SPM 피라냐 세정 (PR 애싱 전후)
+    { code: "CHM-003", proc: "P03", product: "HBM",  qty: 189 },
+    { code: "CHM-003", proc: "P03", product: "DRAM", qty: 243 },
+    { code: "CHM-003", proc: "P03", product: "NAND", qty: 108 },
+    // CHM-004 NH₄OH — P03 SC1(APM) 세정 (파티클 제거)
+    { code: "CHM-004", proc: "P03", product: "HBM",  qty: 126 },
+    { code: "CHM-004", proc: "P03", product: "DRAM", qty: 162 },
+    { code: "CHM-004", proc: "P03", product: "NAND", qty: 72  },
+    // CHM-005 HCl — P03 SC2(HPM) 세정 (금속 오염 제거)
+    { code: "CHM-005", proc: "P03", product: "HBM",  qty: 105 },
+    { code: "CHM-005", proc: "P03", product: "DRAM", qty: 135 },
+    { code: "CHM-005", proc: "P03", product: "NAND", qty: 60  },
+    // CHM-010 TMAH — P03 포토레지스트 현상
+    { code: "CHM-010", proc: "P03", product: "HBM",  qty: 61  },
+    { code: "CHM-010", proc: "P03", product: "DRAM", qty: 78  },
+    { code: "CHM-010", proc: "P03", product: "NAND", qty: 35  },
+    // CSM-005 CMP 컨디셔너 디스크 — P07 CMP
+    { code: "CSM-005", proc: "P07", product: "HBM",  qty: 15  },
+    { code: "CSM-005", proc: "P07", product: "DRAM", qty: 19  },
+    { code: "CSM-005", proc: "P07", product: "NAND", qty: 8   },
+    // CSM-007 PVD W 타겟 — P06 W 글루레이어 스퍼터
+    { code: "CSM-007", proc: "P06", product: "HBM",  qty: 4.2 },
+    { code: "CSM-007", proc: "P06", product: "DRAM", qty: 5.4 },
+    { code: "CSM-007", proc: "P06", product: "NAND", qty: 2.4 },
+    // CSM-008 PVD TiN 타겟 — P06 반응성 스퍼터
+    { code: "CSM-008", proc: "P06", product: "HBM",  qty: 3.5 },
+    { code: "CSM-008", proc: "P06", product: "DRAM", qty: 4.5 },
+    { code: "CSM-008", proc: "P06", product: "NAND", qty: 2.0 },
+    // CSM-011 PR 스트리퍼 — P03 애싱 후 잔류 PR 제거
+    { code: "CSM-011", proc: "P03", product: "HBM",  qty: 100 },
+    { code: "CSM-011", proc: "P03", product: "DRAM", qty: 128 },
+    { code: "CSM-011", proc: "P03", product: "NAND", qty: 57  },
+    // CSM-013 백그라인딩 테이프 — P08 웨이퍼 박화 보호
+    { code: "CSM-013", proc: "P08", product: "HBM",  qty: 73  },
+    { code: "CSM-013", proc: "P08", product: "DRAM", qty: 32  },
+    // CSM-015 석영 파츠 — P04 식각 챔버 PM 소모품
+    { code: "CSM-015", proc: "P04", product: "HBM",  qty: 4.2 },
+    { code: "CSM-015", proc: "P04", product: "DRAM", qty: 5.4 },
+    { code: "CSM-015", proc: "P04", product: "NAND", qty: 2.4 },
   ];
 
   await col("processUsage").insertMany(

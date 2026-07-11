@@ -22,6 +22,8 @@ type InventoryItem = {
   id: string;
   quantity: number;
   avgDailyUsage: number;
+  monthlyQty: number;
+  usageSource?: "process" | "fallback";
   doh: number | null;
   status: string;
   material: {
@@ -36,23 +38,31 @@ type InventoryItem = {
 };
 
 function DOHBar({ doh, ropDays }: { doh: number; ropDays: number }) {
-  const max = ropDays * 3;
-  const pct = Math.min((doh / max) * 100, 100);
+  const max = ropDays > 0 ? ropDays * 3 : 1;
+  const pct = ropDays > 0 ? Math.min((doh / max) * 100, 100) : 0;
   const color = doh < 5 ? "#EA002C" : doh < ropDays ? "#F7A600" : "#00B96B";
   return (
     <div className="flex items-center gap-2">
-      <div className="w-20 h-1.5 bg-[#F0F0F0] rounded-full flex-shrink-0">
+      <div className="w-20 h-1.5 bg-[#F0F0F0] rounded-full flex-shrink-0 relative">
         <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+        {/* ROP 위치 마커 (1/3 지점) */}
+        <div className="absolute top-0 bottom-0 w-px bg-[#999] opacity-40" style={{ left: "33.3%" }} />
       </div>
-      <span className="text-xs font-bold tabular-nums" style={{ color }}>
-        {doh.toFixed(1)}일
-      </span>
+      <div className="flex flex-col leading-none">
+        <span className="text-xs font-bold tabular-nums" style={{ color }}>{doh.toFixed(1)}일</span>
+        <span className="text-[9px] text-[#bbb] tabular-nums">/ {max}일</span>
+      </div>
     </div>
   );
 }
 
 type FilterKey = "ALL" | "critical" | "warning" | "ok" | "safe";
-type SortKey = "code" | "name" | "category" | "quantity" | "dailyUsage" | "doh" | "warehouse" | "status";
+type CatKey = "ALL" | "GAS" | "CHM" | "CSM" | "UTL" | "PKG";
+const CAT_LIST: { key: CatKey; label: string }[] = [
+  { key: "ALL", label: "전체" }, { key: "GAS", label: "GAS 가스" }, { key: "CHM", label: "CHM 케미컬" },
+  { key: "CSM", label: "CSM 소모성" }, { key: "UTL", label: "UTL 유틸리티" }, { key: "PKG", label: "PKG 패키징" },
+];
+type SortKey = "code" | "name" | "category" | "quantity" | "dailyUsage" | "monthlyQty" | "doh" | "warehouse" | "status";
 type SortDir = "asc" | "desc";
 
 const STATUS_ORDER: Record<string, number> = { critical: 0, warning: 1, ok: 2, safe: 3, nodata: 4 };
@@ -69,6 +79,7 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 
 export default function InventoryClient({ items }: { items: InventoryItem[] }) {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("ALL");
+  const [catFilter, setCatFilter] = useState<CatKey>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -77,14 +88,18 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
     else { setSortKey(col); setSortDir("asc"); }
   }
 
+  // 카테고리 필터 먼저 적용 → 상태 카운트/필터는 그 안에서
+  const base = catFilter === "ALL" ? items : items.filter((i) => i.material.category === catFilter);
+  const catCount = (k: CatKey) => k === "ALL" ? items.length : items.filter((i) => i.material.category === k).length;
+
   const counts = {
-    critical: items.filter((i) => i.status === "critical").length,
-    warning:  items.filter((i) => i.status === "warning").length,
-    ok:       items.filter((i) => i.status === "ok").length,
-    safe:     items.filter((i) => i.status === "safe").length,
+    critical: base.filter((i) => i.status === "critical").length,
+    warning:  base.filter((i) => i.status === "warning").length,
+    ok:       base.filter((i) => i.status === "ok").length,
+    safe:     base.filter((i) => i.status === "safe").length,
   };
 
-  const filtered = (activeFilter === "ALL" ? items : items.filter((i) => i.status === activeFilter))
+  const filtered = (activeFilter === "ALL" ? base : base.filter((i) => i.status === activeFilter))
     .slice()
     .sort((a, b) => {
       let cmp = 0;
@@ -94,6 +109,7 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
         case "category":  cmp = a.material.category.localeCompare(b.material.category); break;
         case "quantity":  cmp = a.quantity - b.quantity; break;
         case "dailyUsage": cmp = a.avgDailyUsage - b.avgDailyUsage; break;
+        case "monthlyQty": cmp = a.monthlyQty - b.monthlyQty; break;
         case "doh":       cmp = (a.doh ?? -1) - (b.doh ?? -1); break;
         case "warehouse": cmp = a.warehouse.name.localeCompare(b.warehouse.name); break;
         case "status":    cmp = (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9); break;
@@ -163,6 +179,29 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
         })}
       </div>
 
+      {/* 자재 유형(카테고리) 필터 */}
+      <div className="flex items-center gap-2 flex-wrap mb-4">
+        <span className="text-[11px] font-semibold text-[#999] mr-1">자재 유형</span>
+        {CAT_LIST.map((c) => {
+          const isActive = catFilter === c.key;
+          const s = c.key !== "ALL" ? CATEGORY_STYLES[c.key] : null;
+          return (
+            <button
+              key={c.key}
+              onClick={() => setCatFilter(c.key)}
+              className="text-[11px] font-bold px-3 py-1.5 rounded-full border transition-all"
+              style={
+                isActive
+                  ? { background: s?.text ?? "#111", color: "#fff", borderColor: "transparent" }
+                  : { background: s?.bg ?? "#fff", color: s?.text ?? "#555", borderColor: s?.bg ?? "#E8E8E8" }
+              }
+            >
+              {c.label} <span className="opacity-70">{catCount(c.key)}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* 재고 테이블 */}
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-[#F0F0F0] flex items-center justify-between">
@@ -197,8 +236,9 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
                     { col: "name"      as SortKey, label: "자재명",   align: "left",   px: "px-4" },
                     { col: "category"  as SortKey, label: "구분",     align: "left",   px: "px-4" },
                     { col: "quantity"  as SortKey, label: "현재고",   align: "right",  px: "px-4" },
-                    { col: "dailyUsage"as SortKey, label: "일사용량", align: "right",  px: "px-4" },
-                    { col: "doh"       as SortKey, label: "보관일수", align: "left",   px: "px-4" },
+                    { col: "dailyUsage"  as SortKey, label: "일사용량",  align: "right",  px: "px-4" },
+                    { col: "monthlyQty" as SortKey, label: "월소요량",  align: "right",  px: "px-4" },
+                    { col: "doh"        as SortKey, label: "보관일수",  align: "left",   px: "px-4" },
                     { col: "warehouse" as SortKey, label: "창고",     align: "left",   px: "px-4" },
                     { col: "status"    as SortKey, label: "상태",     align: "center", px: "px-4" },
                   ] as const
@@ -219,7 +259,7 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center text-[#999] text-sm">
+                  <td colSpan={9} className="px-5 py-12 text-center text-[#999] text-sm">
                     해당 상태의 품목이 없습니다.
                   </td>
                 </tr>
@@ -248,13 +288,23 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right font-semibold tabular-nums">
-                        {inv.quantity.toLocaleString()}{" "}
-                        <span className="text-[#999] font-normal">{inv.material.unit}</span>
+                        {inv.material.ropDays === 0 ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#D1FAE5] text-[#065F46]">현장생산</span>
+                        ) : (
+                          <>{inv.quantity.toLocaleString()}{" "}<span className="text-[#999] font-normal">{inv.material.unit}</span></>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right text-[#999] tabular-nums">
-                        {inv.avgDailyUsage > 0
-                          ? `${inv.avgDailyUsage}/${inv.material.unit}`
-                          : "—"}
+                        {inv.material.ropDays === 0 ? (
+                          <span className="text-[10px] text-[#999]">연속공급</span>
+                        ) : inv.avgDailyUsage > 0 ? (
+                          `${inv.avgDailyUsage}/${inv.material.unit}`
+                        ) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#111]">
+                        {inv.monthlyQty > 0
+                          ? <>{inv.monthlyQty.toLocaleString()} <span className="text-[#999] font-normal text-[10px]">{inv.material.unit}</span></>
+                          : <span className="text-[#999]">—</span>}
                       </td>
                       <td className="px-4 py-3">
                         {inv.doh !== null ? (

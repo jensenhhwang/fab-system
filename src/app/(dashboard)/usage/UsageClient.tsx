@@ -24,6 +24,7 @@ type Material = {
   id: string; code: string; name: string; category: string;
   processes: string[]; products: string[];
   usages: { proc: string; product: string; qty: number }[];
+  inventory: { quantity: number; dailyUsage: number; doh: number | null; unit: string } | null;
 };
 
 type WarehouseInfo = {
@@ -36,6 +37,19 @@ const CAT_COLOR: Record<string, string> = {
   GAS: "#B91C1C", CHM: "#1D4ED8", CSM: "#7C3AED", UTL: "#059669", PKG: "#64748B",
 };
 
+type SortKey = "code" | "name" | "category" | "quantity" | "dailyUsage" | "doh" | "totalQty";
+type SortDir = "asc" | "desc";
+
+function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
+  const active = col === sortKey;
+  return (
+    <span className="inline-flex flex-col ml-1 -translate-y-px">
+      <span style={{ opacity: active && sortDir === "asc" ? 1 : 0.25, fontSize: 8, lineHeight: 1 }}>▲</span>
+      <span style={{ opacity: active && sortDir === "desc" ? 1 : 0.25, fontSize: 8, lineHeight: 1 }}>▼</span>
+    </span>
+  );
+}
+
 export default function UsageClient({
   materials, warehouseLinks = [], warehouses = [],
 }: {
@@ -47,6 +61,13 @@ export default function UsageClient({
   const [selectedProc, setSelectedProc] = useState<string | null>(null);
   const [filterProduct, setFilterProduct] = useState<"ALL" | "HBM" | "DRAM" | "NAND">("ALL");
   const [filterCat, setFilterCat] = useState<string>("ALL");
+  const [sortKey, setSortKey] = useState<SortKey>("code");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function handleSort(col: SortKey) {
+    if (sortKey === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(col); setSortDir("asc"); }
+  }
 
   const highlightedProcesses = hoveredMat
     ? hoveredMat.processes
@@ -60,12 +81,29 @@ export default function UsageClient({
     PROCESSES.map((p) => [p.code, materials.filter((m) => m.processes.includes(p.code)).length])
   );
 
-  const filteredMaterials = materials.filter((m) => {
-    if (filterProduct !== "ALL" && !m.products.includes(filterProduct)) return false;
-    if (filterCat !== "ALL" && m.category !== filterCat) return false;
-    if (selectedProc && !m.processes.includes(selectedProc)) return false;
-    return true;
-  });
+  const filteredMaterials = materials
+    .filter((m) => {
+      if (filterProduct !== "ALL" && !m.products.includes(filterProduct)) return false;
+      if (filterCat !== "ALL" && m.category !== filterCat) return false;
+      if (selectedProc && !m.processes.includes(selectedProc)) return false;
+      return true;
+    })
+    .slice()
+    .sort((a, b) => {
+      const getTotal = (m: Material) =>
+        m.usages.filter((u) => filterProduct === "ALL" || u.product === filterProduct).reduce((s, u) => s + u.qty, 0);
+      let cmp = 0;
+      switch (sortKey) {
+        case "code":      cmp = a.code.localeCompare(b.code); break;
+        case "name":      cmp = a.name.localeCompare(b.name); break;
+        case "category":  cmp = a.category.localeCompare(b.category); break;
+        case "quantity":  cmp = (a.inventory?.quantity ?? -1) - (b.inventory?.quantity ?? -1); break;
+        case "dailyUsage": cmp = (a.inventory?.dailyUsage ?? -1) - (b.inventory?.dailyUsage ?? -1); break;
+        case "doh":       cmp = (a.inventory?.doh ?? -1) - (b.inventory?.doh ?? -1); break;
+        case "totalQty":  cmp = getTotal(a) - getTotal(b); break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
 
   return (
     <>
@@ -206,12 +244,34 @@ export default function UsageClient({
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-[#FAFAFA] border-b border-[#F0F0F0]">
-              <th className="text-left px-5 py-3 text-[11px] text-[#999] font-semibold">품번</th>
-              <th className="text-left px-4 py-3 text-[11px] text-[#999] font-semibold">자재명</th>
-              <th className="text-left px-4 py-3 text-[11px] text-[#999] font-semibold">구분</th>
-              <th className="text-left px-4 py-3 text-[11px] text-[#999] font-semibold">적용 공정</th>
-              <th className="text-left px-4 py-3 text-[11px] text-[#999] font-semibold">제품</th>
-              <th className="text-right px-4 py-3 text-[11px] text-[#999] font-semibold">월 사용량 합계</th>
+              {(
+                [
+                  { col: "code"      as SortKey, label: "품번",    align: "left",  px: "px-5" },
+                  { col: "name"      as SortKey, label: "자재명",  align: "left",  px: "px-4" },
+                  { col: "category"  as SortKey, label: "구분",    align: "left",  px: "px-4" },
+                  { col: "quantity"  as SortKey, label: "현재고",  align: "right", px: "px-4" },
+                  { col: "dailyUsage" as SortKey, label: "일소요량", align: "right", px: "px-4" },
+                  { col: "doh"       as SortKey, label: "보관일수", align: "left",  px: "px-4" },
+                  { col: null,                   label: "적용 공정", align: "left",  px: "px-4" },
+                  { col: null,                   label: "제품",     align: "left",  px: "px-4" },
+                  { col: "totalQty"  as SortKey, label: "월 소요량", align: "right", px: "px-4" },
+                ] as const
+              ).map(({ col, label, align, px }) => (
+                <th key={label} className={`${px} py-3`}>
+                  {col ? (
+                    <button
+                      onClick={() => handleSort(col)}
+                      className={`text-[11px] font-semibold select-none hover:text-[#111] transition-colors flex items-center gap-0.5 ${align === "right" ? "ml-auto" : ""}`}
+                      style={{ color: sortKey === col ? "#111" : "#999" }}
+                    >
+                      {label}
+                      <SortIcon col={col} sortKey={sortKey} sortDir={sortDir} />
+                    </button>
+                  ) : (
+                    <span className={`text-[11px] font-semibold text-[#999] flex ${align === "right" ? "justify-end" : ""}`}>{label}</span>
+                  )}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -240,25 +300,56 @@ export default function UsageClient({
                       {mat.category}
                     </span>
                   </td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-[#111]">
+                    {mat.inventory
+                      ? mat.inventory.doh === null && mat.inventory.quantity === 0
+                        ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#D1FAE5] text-[#065F46]">현장생산</span>
+                        : <>{mat.inventory.quantity.toLocaleString()} <span className="text-[#999] font-normal text-[10px]">{mat.inventory.unit}</span></>
+                      : <span className="text-[#999]">—</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-right text-[#999] tabular-nums">
+                    {mat.inventory && mat.inventory.dailyUsage > 0
+                      ? `${mat.inventory.dailyUsage}/${mat.inventory.unit}`
+                      : "—"}
+                  </td>
                   <td className="px-4 py-2.5">
-                    <div className="flex flex-wrap gap-1">
-                      {mat.processes.sort().map((p) => {
-                        const proc = PROCESSES.find((pr) => pr.code === p);
+                    {mat.inventory?.doh != null ? (
+                      (() => {
+                        const doh = mat.inventory.doh;
+                        const color = doh < 5 ? "#EA002C" : doh < 14 ? "#F7A600" : "#00B96B";
                         return (
-                          <span
-                            key={p}
-                            className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white"
-                            style={{ background: isHovered ? proc?.color ?? "#999" : "#cbd5e1" }}
-                          >
-                            {p}
+                          <span className="text-xs font-bold tabular-nums" style={{ color }}>
+                            {doh.toFixed(1)}일
                           </span>
                         );
-                      })}
-                    </div>
+                      })()
+                    ) : <span className="text-[#999] text-xs">현장생산</span>}
+                  </td>
+                  <td className="px-4 py-2.5">
+                    {mat.processes.length === 0 ? (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#D1FAE5] text-[#065F46]">시설 전체</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {mat.processes.sort().map((p) => {
+                          const proc = PROCESSES.find((pr) => pr.code === p);
+                          return (
+                            <span
+                              key={p}
+                              className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white"
+                              style={{ background: isHovered ? proc?.color ?? "#999" : "#cbd5e1" }}
+                            >
+                              {p}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex gap-1 flex-wrap">
-                      {mat.products.map((pr) => (
+                      {mat.products.length === 0 ? (
+                        <span className="text-[9px] text-[#999]">전 제품</span>
+                      ) : mat.products.map((pr) => (
                         <span
                           key={pr}
                           className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white"
@@ -271,6 +362,7 @@ export default function UsageClient({
                   </td>
                   <td className="px-4 py-2.5 text-right font-bold tabular-nums">
                     {totalQty.toLocaleString()}
+                    {mat.inventory?.unit && <span className="text-[#999] font-normal text-[10px] ml-0.5">{mat.inventory.unit}</span>}
                   </td>
                 </tr>
               );

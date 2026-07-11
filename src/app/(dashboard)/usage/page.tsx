@@ -1,16 +1,31 @@
 export const dynamic = "force-dynamic";
 
-import { getProcessUsagesWithMaterial, getInventoriesWithRefs, getWarehouses } from "@/lib/queries";
+import { getProcessUsagesWithMaterial, getInventoryRows, getWarehouses } from "@/lib/queries";
 import UsageClient from "./UsageClient";
 
 async function getUsageData() {
-  const usages = await getProcessUsagesWithMaterial();
+  const [usages, invRows] = await Promise.all([
+    getProcessUsagesWithMaterial(),
+    getInventoryRows(),
+  ]);
 
-  // 자재별로 그룹핑: { materialId → { name, code, category, processes: Set<code> } }
+  // 재고 맵: materialId → { quantity, dailyUsage, doh, unit }
+  const invMap = new Map<string, { quantity: number; dailyUsage: number; doh: number | null; unit: string }>();
+  for (const inv of invRows) {
+    if (!invMap.has(inv.materialId))
+      invMap.set(inv.materialId, {
+        quantity: inv.quantity,
+        dailyUsage: Math.round(inv.dailyUsage * 10) / 10,
+        doh: inv.material.ropDays === 0 ? null : inv.doh,
+        unit: inv.material.unit,
+      });
+  }
+
   const materialMap = new Map<string, {
     id: string; code: string; name: string; category: string;
     processes: string[]; products: string[];
     usages: { proc: string; product: string; qty: number }[];
+    inventory: { quantity: number; dailyUsage: number; doh: number | null; unit: string } | null;
   }>();
 
   for (const u of usages) {
@@ -24,12 +39,30 @@ async function getUsageData() {
         processes: [],
         products: [],
         usages: [],
+        inventory: invMap.get(u.materialId) ?? null,
       });
     }
     const entry = materialMap.get(key)!;
     if (!entry.processes.includes(u.processCode)) entry.processes.push(u.processCode);
     if (!entry.products.includes(u.product)) entry.products.push(u.product);
     entry.usages.push({ proc: u.processCode, product: u.product, qty: u.monthlyQty });
+  }
+
+  // ProcessUsage 없는 자재(시설 인프라 등)도 재고 데이터로 포함
+  for (const inv of invRows) {
+    if (!materialMap.has(inv.materialId)) {
+      const monthlyQty = Math.round(inv.dailyUsage * 30);
+      materialMap.set(inv.materialId, {
+        id: inv.materialId,
+        code: inv.material.code,
+        name: inv.material.name,
+        category: inv.material.category,
+        processes: [],
+        products: [],
+        usages: monthlyQty > 0 ? [{ proc: "UTIL", product: "ALL", qty: monthlyQty }] : [],
+        inventory: invMap.get(inv.materialId) ?? null,
+      });
+    }
   }
 
   return Array.from(materialMap.values()).sort((a, b) => a.code.localeCompare(b.code));
@@ -40,7 +73,7 @@ async function getUsageData() {
 async function getWarehouseGraph() {
   const [usages, inventories, warehouses] = await Promise.all([
     getProcessUsagesWithMaterial(),
-    getInventoriesWithRefs(),
+    getInventoryRows(),
     getWarehouses(),
   ]);
 

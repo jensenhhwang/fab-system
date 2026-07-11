@@ -3,6 +3,7 @@ import {
   type MaterialDoc, type WarehouseDoc, type InventoryDoc, type ProcessUsageDoc,
   type TransactionDoc, type RiskLevel, type UserDoc, type WikiDoc, type InfraDoc,
 } from "@/lib/db";
+import { materialFactor, WORKING_DAYS } from "@/lib/capacity";
 
 // Prisma의 include 결과와 동일한 형태(중첩 객체 + id)로 반환해서
 // 기존 페이지 JSX를 그대로 유지한다.
@@ -117,6 +118,73 @@ export async function getWikiEntries(): Promise<WikiShaped[]> {
 export async function createWikiEntry(data: Omit<WikiDoc, "_id">): Promise<void> {
   const { wikiEntries } = await collections();
   await wikiEntries.insertOne({ _id: crypto.randomUUID(), ...data });
+}
+
+// ─────────────────────────────────────────────
+// 단일 진실원: 소비량·DOH·Capacity 유도 (모든 탭 공용)
+// ─────────────────────────────────────────────
+
+// 자재별 일평균사용량 = ProcessUsage 합÷가동일 (마스터). 없으면 avgDailyUsage fallback.
+export type DailyUsage = { daily: number; monthlyQty: number; source: "process" | "fallback" };
+export async function getMaterialDailyUsage(): Promise<Map<string, DailyUsage>> {
+  const { processUsage, inventory } = await collections();
+  const proc = await processUsage.aggregate<{ _id: string; sum: number }>([
+    { $group: { _id: "$materialId", sum: { $sum: "$monthlyQty" } } },
+  ]).toArray();
+  const map = new Map<string, DailyUsage>();
+  for (const p of proc) map.set(p._id, { daily: p.sum / WORKING_DAYS, monthlyQty: p.sum, source: "process" });
+  // 비공정 자재(UPW·유틸·MRO) → 재고 avgDailyUsage 로 보조
+  const invs = await inventory.find({}).toArray();
+  const fb = new Map<string, number>();
+  for (const inv of invs) fb.set(inv.materialId, (fb.get(inv.materialId) ?? 0) + (inv.avgDailyUsage ?? 0));
+  for (const [mid, d] of fb) if (!map.has(mid)) map.set(mid, { daily: d, monthlyQty: d * WORKING_DAYS, source: "fallback" });
+  return map;
+}
+
+// 재고 행 + 유도 일사용량·DOH·월소요량 (재고 페이지·대시보드·공정 페이지 공용)
+export type InventoryRow = InventoryWithRefs & {
+  dailyUsage: number; usageSource: "process" | "fallback"; doh: number | null; monthlyQty: number;
+};
+export async function getInventoryRows(sortByCode = false): Promise<InventoryRow[]> {
+  const [rows, usage] = await Promise.all([getInventoriesWithRefs(sortByCode), getMaterialDailyUsage()]);
+  return rows.map((r) => {
+    const u = usage.get(r.materialId);
+    const daily = u?.daily ?? 0;
+    return { ...r, dailyUsage: daily, usageSource: u?.source ?? "fallback", doh: daily > 0 ? r.quantity / daily : null, monthlyQty: u?.monthlyQty ?? 0 };
+  });
+}
+
+// 창고 Capacity — 점유율·카테고리분해·법적한도·유형
+export type WarehouseCapacity = {
+  id: string; code: string; name: string; type: string; totalCapacity: number; unit: string;
+  legalLimit: number | null;
+  occupancy: number; utilization: number; legalUtilization: number | null;
+  byCategory: { category: string; occupancy: number }[];
+  materialCount: number; temperature?: string | null;
+};
+export async function getWarehouseCapacity(): Promise<WarehouseCapacity[]> {
+  const [whs, rows] = await Promise.all([getWarehouses(), getInventoriesWithRefs()]);
+  return whs.map((wh) => {
+    const items = rows.filter((r) => r.warehouseId === wh._id);
+    const catMap = new Map<string, number>();
+    let occ = 0;
+    for (const it of items) {
+      const o = it.quantity * materialFactor(it.material);
+      occ += o;
+      catMap.set(it.material.category, (catMap.get(it.material.category) ?? 0) + o);
+    }
+    const legal = wh.legalLimit ?? null;
+    return {
+      id: wh.id, code: wh.code, name: wh.name, type: wh.type,
+      totalCapacity: wh.totalCapacity, unit: wh.unit, temperature: wh.temperature,
+      legalLimit: legal, occupancy: Math.round(occ),
+      utilization: wh.totalCapacity > 0 ? Math.round((occ / wh.totalCapacity) * 100) : 0,
+      legalUtilization: legal ? Math.round((occ / legal) * 100) : null,
+      byCategory: [...catMap.entries()].map(([category, o]) => ({ category, occupancy: Math.round(o) }))
+        .sort((a, b) => b.occupancy - a.occupancy),
+      materialCount: items.length,
+    };
+  }).sort((a, b) => a.code.localeCompare(b.code));
 }
 
 // 인증
