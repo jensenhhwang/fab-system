@@ -3,6 +3,7 @@ import type { NextAuthConfig } from "next-auth";
 // Edge 런타임에서도 동작하는 최소 설정 (Node.js 모듈 사용 불가)
 export const authConfig: NextAuthConfig = {
   secret: process.env.AUTH_SECRET,
+  trustHost: true,
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
