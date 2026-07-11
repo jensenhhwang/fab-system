@@ -38,6 +38,9 @@ const LOGS = [
       "Prisma 완전 제거 — DB 의존성 7종→1종, prisma generate 빌드단계 삭제. src/lib/db.ts + queries.ts($lookup 조인)로 재구성",
       "proxy.ts secureCookie 수정 — 프로덕션 HTTPS 쿠키(__Secure-) 못 읽어 로그인 후 /login 되돌던 버그",
       "공정별 사용량 3D에 자재창고(WH-A~D) + 배관 시각화 추가 — ProcessUsage⋈Inventory로 공정↔창고 연결 도출",
+      "🏭 3D 팹 사실화 — 창고 종류별(AS/RS 고층랙·위험물 방폭·평치·MRO) + 가스야드·CUB·스크러버·케미컬 VMB",
+      "장비 공정별 실루엣(리소/클러스터/CMP/퍼니스/박스) + EFEM·로드포트, 베이앤체이스 배치(통로+서비스체이스)",
+      "카메라 포커스 — 창고·공정 클릭 시 부드럽게 줌인(CameraControls) + 전체 뷰 리셋 (실제 fab 유사도 ~80%)",
     ],
   },
 ];
