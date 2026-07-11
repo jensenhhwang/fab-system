@@ -1,21 +1,18 @@
 export const dynamic = "force-dynamic";
 
-import { db } from "@/lib/db";
+import { getWikiEntries } from "@/lib/queries";
 import WikiClient from "./WikiClient";
 
 async function getEntries() {
-  const entries = await db.wikiEntry.findMany({
-    include: { user: { select: { name: true } } },
-    orderBy: { date: "desc" },
-  });
+  const entries = await getWikiEntries();
   return entries.map((e) => ({
     id: e.id,
-    date: e.date.toISOString(),
+    date: new Date(e.date).toISOString(),
     title: e.title,
     category: e.category,
     content: e.content,
-    result: e.result,
-    nextAction: e.nextAction,
+    result: e.result ?? null,
+    nextAction: e.nextAction ?? null,
     user: e.user,
   }));
 }

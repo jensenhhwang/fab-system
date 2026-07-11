@@ -1,5 +1,8 @@
 import Groq from "groq-sdk";
-import { db } from "@/lib/db";
+import {
+  getInventoriesWithRefs, getWarehousesWithInventory,
+  getActiveRisks, getInfra, getRecentTransactions,
+} from "@/lib/queries";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
@@ -27,9 +30,7 @@ export type AIBriefing = {
 
 async function getContextData(role: string) {
   // 재고 경보 (DOH 기준)
-  const inventories = await db.inventory.findMany({
-    include: { material: true, warehouse: true },
-  });
+  const inventories = await getInventoriesWithRefs();
   const dohAlerts = inventories
     .filter((inv) => inv.avgDailyUsage > 0)
     .map((inv) => ({ ...inv, doh: inv.quantity / inv.avgDailyUsage }))
@@ -46,17 +47,17 @@ async function getContextData(role: string) {
     }));
 
   // 창고 현황
-  const warehouses = await db.warehouse.findMany({ include: { inventory: true } });
+  const warehouses = await getWarehousesWithInventory();
   const warehouseStatus = warehouses.map((wh) => {
     const load = wh.inventory.reduce((s, i) => s + Math.ceil(i.quantity * 0.5), 0);
     return { name: wh.name, pct: Math.min(Math.round((load / wh.totalCapacity) * 100), 100) };
   });
 
   // 활성 리스크
-  const risks = await db.risk.findMany({ where: { status: "Active" }, orderBy: { level: "asc" } });
+  const risks = await getActiveRisks();
 
   // 인프라 교체 임박
-  const infraAlerts = (await db.infraEquipment.findMany())
+  const infraAlerts = (await getInfra())
     .filter((i) => i.currentUsage / i.replacementCriteria >= 0.75)
     .map((i) => ({
       name: i.name,
@@ -66,11 +67,7 @@ async function getContextData(role: string) {
     }));
 
   // 최근 트랜잭션 (없으면 빈 배열)
-  const recentTx = await db.transaction.findMany({
-    take: 5,
-    orderBy: { createdAt: "desc" },
-    include: { material: true },
-  });
+  const recentTx = await getRecentTransactions(5, false);
 
   return { dohAlerts, warehouseStatus, risks, infraAlerts, recentTx };
 }

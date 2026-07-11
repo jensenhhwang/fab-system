@@ -1,122 +1,65 @@
-import { PrismaClient } from "../src/generated/prisma/client";
+import "dotenv/config"; // tsx로 직접 실행 시 .env 로드
 import bcrypt from "bcryptjs";
-import path from "path";
-import { fileURLToPath } from "url";
+import { MongoClient } from "mongodb";
+import { randomUUID } from "crypto";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function createAdapter(): any {
-  if (process.env.TURSO_DATABASE_URL) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { PrismaLibSql } = require("@prisma/adapter-libsql/web");
-    return new PrismaLibSql({
-      url: process.env.TURSO_DATABASE_URL,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-    });
-  }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
-  const dbPath = path.resolve(__dirname, "../dev.db");
-  return new PrismaBetterSqlite3({ url: `file:${dbPath}` });
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const prisma = new PrismaClient({ adapter: createAdapter() } as any);
+// MongoDB(Atlas) 네이티브 드라이버로 시드. _id는 자연키(코드) 사용.
+const client = new MongoClient(process.env.DATABASE_URL as string);
 
 async function main() {
-  console.log("🌱 Seeding FAB Materials System...");
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL 미설정 (MongoDB 연결 문자열 필요)");
+  console.log("🌱 Seeding FAB Materials System (MongoDB)...");
+  await client.connect();
+  const db = client.db();
+  // string _id 를 허용하는 컬렉션 헬퍼
+  const col = (name: string) => db.collection<{ _id: string } & Record<string, unknown>>(name);
+
+  // 깨끗한 시드: 기존 컬렉션 비우기
+  const cols = ["users", "warehouses", "suppliers", "materials", "inventory",
+    "processUsage", "materialSuppliers", "infraEquipment", "risks", "wikiEntries"];
+  for (const c of cols) await db.collection(c).deleteMany({});
 
   // ─── 1. 사용자 계정 ───────────────────────────────────────
   const pw = await bcrypt.hash("fab1234!", 10);
 
-  const users = await Promise.all([
-    prisma.user.upsert({
-      where: { email: "admin@fab.skh" },
-      update: {},
-      create: { email: "admin@fab.skh", name: "황지훈", password: pw, role: "ADMIN", department: "구매본부 자재관리팀" },
-    }),
-    prisma.user.upsert({
-      where: { email: "materials@fab.skh" },
-      update: {},
-      create: { email: "materials@fab.skh", name: "김재현", password: pw, role: "MATERIALS", department: "구매본부 자재관리팀" },
-    }),
-    prisma.user.upsert({
-      where: { email: "production@fab.skh" },
-      update: {},
-      create: { email: "production@fab.skh", name: "이수진", password: pw, role: "PRODUCTION", department: "생산관리팀" },
-    }),
-    prisma.user.upsert({
-      where: { email: "logistics@fab.skh" },
-      update: {},
-      create: { email: "logistics@fab.skh", name: "박민준", password: pw, role: "LOGISTICS", department: "물류/인프라팀" },
-    }),
-  ]);
-  console.log(`✅ Users: ${users.length}명`);
+  const usersData = [
+    { _id: "admin@fab.skh",      email: "admin@fab.skh",      name: "황지훈", password: pw, role: "ADMIN",      department: "구매본부 자재관리팀", createdAt: new Date() },
+    { _id: "materials@fab.skh",  email: "materials@fab.skh",  name: "김재현", password: pw, role: "MATERIALS",  department: "구매본부 자재관리팀", createdAt: new Date() },
+    { _id: "production@fab.skh", email: "production@fab.skh", name: "이수진", password: pw, role: "PRODUCTION", department: "생산관리팀",       createdAt: new Date() },
+    { _id: "logistics@fab.skh",  email: "logistics@fab.skh",  name: "박민준", password: pw, role: "LOGISTICS",  department: "물류/인프라팀",     createdAt: new Date() },
+  ];
+  await col("users").insertMany(usersData);
+  console.log(`✅ Users: ${usersData.length}명`);
 
   // ─── 2. 창고 ───────────────────────────────────────────────
-  const warehouses = await Promise.all([
-    prisma.warehouse.upsert({
-      where: { code: "WH-A" },
-      update: {},
-      create: {
-        code: "WH-A", name: "A동 — 자동화 창고 (AS/RS)", type: "AS_RS",
-        totalCapacity: 7000, unit: "pallet",
-        temperature: "20~25°C / 습도 45~55%",
-        notes: "고층 자동화 창고, WMS 연동, CVD·증착용 케미컬 주 보관",
-      },
-    }),
-    prisma.warehouse.upsert({
-      where: { code: "WH-B" },
-      update: {},
-      create: {
-        code: "WH-B", name: "B동 — 평치 창고 (일반)", type: "FLAT",
-        totalCapacity: 2600, unit: "pallet",
-        temperature: "실온 (10~30°C)",
-        notes: "일반 자재, CMP 패드·슬러리 등 소모성 인프라 자재 보관",
-      },
-    }),
-    prisma.warehouse.upsert({
-      where: { code: "WH-C" },
-      update: {},
-      create: {
-        code: "WH-C", name: "C동 — 위험물 전용 창고", type: "HAZMAT",
-        totalCapacity: 800, unit: "pallet",
-        temperature: "15~20°C / 방폭 설비",
-        notes: "HF·NH₃·H₂O₂ 등 위험물 보관, 입고 수량 법적 제한",
-      },
-    }),
-    prisma.warehouse.upsert({
-      where: { code: "WH-D" },
-      update: {},
-      create: {
-        code: "WH-D", name: "D동 — 공구·MRO 창고", type: "MRO",
-        totalCapacity: 2200, unit: "slot",
-        temperature: "실온",
-        notes: "Probe Card·소모성 공구·교체 부품 보관",
-      },
-    }),
-  ]);
-  console.log(`✅ Warehouses: ${warehouses.length}개`);
+  const warehousesData = [
+    { _id: "WH-A", code: "WH-A", name: "A동 — 자동화 창고 (AS/RS)", type: "AS_RS", totalCapacity: 7000, unit: "pallet", temperature: "20~25°C / 습도 45~55%", notes: "고층 자동화 창고, WMS 연동, CVD·증착용 케미컬 주 보관" },
+    { _id: "WH-B", code: "WH-B", name: "B동 — 평치 창고 (일반)", type: "FLAT", totalCapacity: 2600, unit: "pallet", temperature: "실온 (10~30°C)", notes: "일반 자재, CMP 패드·슬러리 등 소모성 인프라 자재 보관" },
+    { _id: "WH-C", code: "WH-C", name: "C동 — 위험물 전용 창고", type: "HAZMAT", totalCapacity: 800, unit: "pallet", temperature: "15~20°C / 방폭 설비", notes: "HF·NH₃·H₂O₂ 등 위험물 보관, 입고 수량 법적 제한" },
+    { _id: "WH-D", code: "WH-D", name: "D동 — 공구·MRO 창고", type: "MRO", totalCapacity: 2200, unit: "slot", temperature: "실온", notes: "Probe Card·소모성 공구·교체 부품 보관" },
+  ];
+  await col("warehouses").insertMany(warehousesData);
+  console.log(`✅ Warehouses: ${warehousesData.length}개`);
 
   // ─── 3. 공급업체 ───────────────────────────────────────────
-  const suppliers = await Promise.all([
-    prisma.supplier.upsert({ where: { id: "sup-airproducts" }, update: {}, create: { id: "sup-airproducts", name: "Air Products Korea", country: "KR", notes: "N₂·Ar·He 벌크 가스 주 공급사" } }),
-    prisma.supplier.upsert({ where: { id: "sup-skg" }, update: {}, create: { id: "sup-skg", name: "SK가스", country: "KR", notes: "H₂·O₂·SiH₄ 공급" } }),
-    prisma.supplier.upsert({ where: { id: "sup-lindekorea" }, update: {}, create: { id: "sup-lindekorea", name: "린데코리아", country: "KR", notes: "특수가스 (NF₃·WF₆·NH₃) 공급" } }),
-    prisma.supplier.upsert({ where: { id: "sup-soulbrain" }, update: {}, create: { id: "sup-soulbrain", name: "솔브레인", country: "KR", notes: "HF·H₂O₂·BOE 식각액 공급" } }),
-    prisma.supplier.upsert({ where: { id: "sup-duksan" }, update: {}, create: { id: "sup-duksan", name: "덕산네오룩스", country: "KR", notes: "포토레지스트 PR 공급" } }),
-    prisma.supplier.upsert({ where: { id: "sup-jsr" }, update: {}, create: { id: "sup-jsr", name: "JSR Corporation", country: "JP", notes: "ArF·KrF·EUV 포토레지스트 (일본 의존도 高)" } }),
-    prisma.supplier.upsert({ where: { id: "sup-cmi" }, update: {}, create: { id: "sup-cmi", name: "CMC Materials (Entegris)", country: "US", notes: "CMP 슬러리 (Ceria·Silica) 공급" } }),
-    prisma.supplier.upsert({ where: { id: "sup-cabot" }, update: {}, create: { id: "sup-cabot", name: "Cabot Microelectronics", country: "US", notes: "CMP 슬러리·패드 공급" } }),
-    prisma.supplier.upsert({ where: { id: "sup-tokai" }, update: {}, create: { id: "sup-tokai", name: "Tokai Carbon", country: "JP", notes: "PVD 타겟 (Ti·TiN·W) 공급" } }),
-    prisma.supplier.upsert({ where: { id: "sup-mks" }, update: {}, create: { id: "sup-mks", name: "MKS Korea", country: "KR", notes: "TEOS·HMDSO CVD 전구체 공급" } }),
-    prisma.supplier.upsert({ where: { id: "sup-sumitomo" }, update: {}, create: { id: "sup-sumitomo", name: "Sumitomo Chemical", country: "JP", notes: "Si₃N₄ 전구체 (BDEAS) 공급" } }),
-    prisma.supplier.upsert({ where: { id: "sup-formfactor" }, update: {}, create: { id: "sup-formfactor", name: "FormFactor Korea", country: "KR", notes: "Probe Card 공급 (웨이퍼 테스트용)" } }),
-    prisma.supplier.upsert({ where: { id: "sup-atotech" }, update: {}, create: { id: "sup-atotech", name: "Atotech (MKS)", country: "DE", notes: "Cu ECD 도금액 (TSV Fill) 공급" } }),
-    prisma.supplier.upsert({ where: { id: "sup-alpha" }, update: {}, create: { id: "sup-alpha", name: "Alpha Assembly Solutions", country: "US", notes: "SnAg μBump 솔더 공급 (HBM 전용)" } }),
-  ]);
-  console.log(`✅ Suppliers: ${suppliers.length}개`);
+  const suppliersData = [
+    { _id: "sup-airproducts", name: "Air Products Korea", country: "KR", notes: "N₂·Ar·He 벌크 가스 주 공급사" },
+    { _id: "sup-skg", name: "SK가스", country: "KR", notes: "H₂·O₂·SiH₄ 공급" },
+    { _id: "sup-lindekorea", name: "린데코리아", country: "KR", notes: "특수가스 (NF₃·WF₆·NH₃) 공급" },
+    { _id: "sup-soulbrain", name: "솔브레인", country: "KR", notes: "HF·H₂O₂·BOE 식각액 공급" },
+    { _id: "sup-duksan", name: "덕산네오룩스", country: "KR", notes: "포토레지스트 PR 공급" },
+    { _id: "sup-jsr", name: "JSR Corporation", country: "JP", notes: "ArF·KrF·EUV 포토레지스트 (일본 의존도 高)" },
+    { _id: "sup-cmi", name: "CMC Materials (Entegris)", country: "US", notes: "CMP 슬러리 (Ceria·Silica) 공급" },
+    { _id: "sup-cabot", name: "Cabot Microelectronics", country: "US", notes: "CMP 슬러리·패드 공급" },
+    { _id: "sup-tokai", name: "Tokai Carbon", country: "JP", notes: "PVD 타겟 (Ti·TiN·W) 공급" },
+    { _id: "sup-mks", name: "MKS Korea", country: "KR", notes: "TEOS·HMDSO CVD 전구체 공급" },
+    { _id: "sup-sumitomo", name: "Sumitomo Chemical", country: "JP", notes: "Si₃N₄ 전구체 (BDEAS) 공급" },
+    { _id: "sup-formfactor", name: "FormFactor Korea", country: "KR", notes: "Probe Card 공급 (웨이퍼 테스트용)" },
+    { _id: "sup-atotech", name: "Atotech (MKS)", country: "DE", notes: "Cu ECD 도금액 (TSV Fill) 공급" },
+    { _id: "sup-alpha", name: "Alpha Assembly Solutions", country: "US", notes: "SnAg μBump 솔더 공급 (HBM 전용)" },
+  ];
+  await col("suppliers").insertMany(suppliersData);
+  console.log(`✅ Suppliers: ${suppliersData.length}개`);
 
   // ─── 4. 자재 마스터 ────────────────────────────────────────
   // 공정 코드: P01=산화막, P02=CVD, P03=포토, P04=식각, P05=이온주입
@@ -181,15 +124,12 @@ async function main() {
     { code: "PKG-001", name: "EMC (에폭시 몰딩 컴파운드)", nameEn: "Epoxy Molding Compound", category: "PKG", unit: "kg", safetyStock: 500, ropDays: 14, notes: "HBM MR-MUF 공정용 몰딩재. 리드타임 길고 수급 주의" },
   ];
 
+  await col("materials").insertMany(
+    materialDefs.map((def) => ({ _id: def.code, ...def, createdAt: new Date() }))
+  );
+  // 자재 코드가 곧 _id (관계 참조용)
   const materials: Record<string, { id: string }> = {};
-  for (const def of materialDefs) {
-    const mat = await prisma.material.upsert({
-      where: { code: def.code },
-      update: {},
-      create: def as Parameters<typeof prisma.material.create>[0]["data"],
-    });
-    materials[def.code] = mat;
-  }
+  for (const def of materialDefs) materials[def.code] = { id: def.code };
   console.log(`✅ Materials: ${materialDefs.length}종`);
 
   // ─── 5. 재고 (현재고 + 일평균사용량) ──────────────────────
@@ -250,21 +190,16 @@ async function main() {
     { code: "PKG-001", whCode: "WH-B", qty: 820,  daily: 52   },
   ];
 
-  const warehouseMap: Record<string, string> = {};
-  for (const wh of warehouses) {
-    warehouseMap[(wh as { code: string; id: string }).code] = (wh as { code: string; id: string }).id;
-  }
-
-  for (const inv of inventoryData) {
-    const matId = materials[inv.code]?.id;
-    const whId  = warehouseMap[inv.whCode];
-    if (!matId || !whId) continue;
-    await prisma.inventory.upsert({
-      where: { materialId_warehouseId: { materialId: matId, warehouseId: whId } },
-      update: { quantity: inv.qty, avgDailyUsage: inv.daily },
-      create: { materialId: matId, warehouseId: whId, quantity: inv.qty, avgDailyUsage: inv.daily },
-    });
-  }
+  const validMat = (code: string) => Boolean(materials[code]);
+  await col("inventory").insertMany(
+    inventoryData
+      .filter((inv) => validMat(inv.code))
+      .map((inv) => ({
+        _id: `${inv.code}__${inv.whCode}`,
+        materialId: inv.code, warehouseId: inv.whCode,
+        quantity: inv.qty, avgDailyUsage: inv.daily, updatedAt: new Date(),
+      }))
+  );
   console.log(`✅ Inventory: ${inventoryData.length}건`);
 
   // ─── 6. 공정별 사용량 (Product × Process × Material) ──────
@@ -341,15 +276,14 @@ async function main() {
     { code: "PKG-001", proc: "P10", product: "HBM",  qty: 420 },
   ];
 
-  for (const pu of processUsageData) {
-    const matId = materials[pu.code]?.id;
-    if (!matId) continue;
-    await prisma.processUsage.upsert({
-      where: { materialId_processCode_product: { materialId: matId, processCode: pu.proc, product: pu.product as "HBM" | "DRAM" | "NAND" } },
-      update: { monthlyQty: pu.qty },
-      create: { materialId: matId, processCode: pu.proc, product: pu.product as "HBM" | "DRAM" | "NAND", monthlyQty: pu.qty },
-    });
-  }
+  await col("processUsage").insertMany(
+    processUsageData
+      .filter((pu) => materials[pu.code])
+      .map((pu) => ({
+        _id: `${pu.code}__${pu.proc}__${pu.product}`,
+        materialId: pu.code, processCode: pu.proc, product: pu.product, monthlyQty: pu.qty,
+      }))
+  );
   console.log(`✅ ProcessUsage: ${processUsageData.length}건`);
 
   // ─── 7. 공급업체 매핑 ───────────────────────────────────────
@@ -389,15 +323,14 @@ async function main() {
     { matCode: "CSM-012", supId: "sup-alpha",       days: 30, primary: true  },
   ];
 
-  for (const sl of supplyLinks) {
-    const matId = materials[sl.matCode]?.id;
-    if (!matId) continue;
-    await prisma.materialSupplier.upsert({
-      where: { materialId_supplierId: { materialId: matId, supplierId: sl.supId } },
-      update: {},
-      create: { materialId: matId, supplierId: sl.supId, leadTimeDays: sl.days, isPrimary: sl.primary },
-    });
-  }
+  await col("materialSuppliers").insertMany(
+    supplyLinks
+      .filter((sl) => materials[sl.matCode])
+      .map((sl) => ({
+        _id: `${sl.matCode}__${sl.supId}`,
+        materialId: sl.matCode, supplierId: sl.supId, leadTimeDays: sl.days, isPrimary: sl.primary,
+      }))
+  );
   console.log(`✅ SupplyLinks: ${supplyLinks.length}건`);
 
   // ─── 8. 인프라 교체주기 ─────────────────────────────────────
@@ -411,13 +344,12 @@ async function main() {
     { name: "Probe Card DRAM — P09 테스터 2", processCode: "P09", unit: "K touches", replacementCriteria: 250, currentUsage: 88,  lastReplacedAt: new Date("2026-06-01"), notes: "정상" },
   ];
 
-  for (const item of infraItems) {
-    await prisma.infraEquipment.upsert({
-      where: { id: `infra-${item.name.replace(/\s/g, "-").toLowerCase().slice(0, 30)}` },
-      update: { currentUsage: item.currentUsage },
-      create: { id: `infra-${item.name.replace(/\s/g, "-").toLowerCase().slice(0, 30)}`, ...item },
-    });
-  }
+  await col("infraEquipment").insertMany(
+    infraItems.map((item) => ({
+      _id: `infra-${item.name.replace(/\s/g, "-").toLowerCase().slice(0, 30)}`,
+      ...item, updatedAt: new Date(),
+    }))
+  );
   console.log(`✅ InfraEquipment: ${infraItems.length}건`);
 
   // ─── 9. 리스크 ──────────────────────────────────────────────
@@ -428,24 +360,23 @@ async function main() {
     { title: "CMP Probe Card HBM 교체 임박 (P09 테스터 1)", level: "MEDIUM" as const, category: "인프라", owner: "박민준", status: "Active", description: "KGD 스크리닝용 Probe Card 잔여 사용량 32K. 약 7일 후 교체 필요. 교체 카드 재고 6장뿐", mitigation: "FormFactor 긴급 발주 진행 (납기 확인 중), 테스터 2 우선 배정 검토" },
   ];
 
-  for (const risk of risks) {
-    await prisma.risk.create({ data: risk }).catch(() => {});
-  }
+  await col("risks").insertMany(
+    risks.map((r) => ({ _id: randomUUID(), ...r }))
+  );
   console.log(`✅ Risks: ${risks.length}건`);
 
   // ─── 10. 업무 일지 ──────────────────────────────────────────
-  const admin = users[0];
-  await prisma.wikiEntry.create({
-    data: {
-      date: new Date("2026-07-08"),
-      title: "공정별 사용량 통합 자재 리스트 개편 + VISION.md 작성",
-      category: "자동화계획",
-      content: "기존 공정별 카드 10개에서 통합 자재 리스트 47종으로 개편.\n품번 체계: GAS-001 형식 (카테고리 + 일련번호, 공정번호 제거).\nGAS/CHM/CSM/UTL/PKG 카테고리 필터 추가.\n제품별 사용량(HBM) 탭 신설 — KGD 스크리닝 강조.\nVISION.md: 5대 개발 원칙 정의.",
-      result: "HBM은 CMP 스텝 +1 (TSV Reveal), 금속배선에 Cu Fill ECD + μBump 추가 확인",
-      nextAction: "자재 입고 시뮬레이션 UI 착수, 재고·DOH 페이지 실데이터 전환",
-      userId: admin.id,
-    },
-  }).catch(() => {});
+  await col("wikiEntries").insertOne({
+    _id: randomUUID(),
+    date: new Date("2026-07-08"),
+    title: "공정별 사용량 통합 자재 리스트 개편 + VISION.md 작성",
+    category: "자동화계획",
+    content: "기존 공정별 카드 10개에서 통합 자재 리스트 47종으로 개편.\n품번 체계: GAS-001 형식 (카테고리 + 일련번호, 공정번호 제거).\nGAS/CHM/CSM/UTL/PKG 카테고리 필터 추가.\n제품별 사용량(HBM) 탭 신설 — KGD 스크리닝 강조.\nVISION.md: 5대 개발 원칙 정의.",
+    result: "HBM은 CMP 스텝 +1 (TSV Reveal), 금속배선에 Cu Fill ECD + μBump 추가 확인",
+    nextAction: "자재 입고 시뮬레이션 UI 착수, 재고·DOH 페이지 실데이터 전환",
+    userId: "admin@fab.skh",
+    createdAt: new Date(),
+  });
   console.log("✅ WikiEntry: 1건");
 
   console.log("\n🎉 Seed 완료!");
@@ -460,4 +391,4 @@ async function main() {
 
 main()
   .catch(console.error)
-  .finally(() => prisma.$disconnect());
+  .finally(() => client.close());

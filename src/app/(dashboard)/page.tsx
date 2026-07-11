@@ -1,13 +1,14 @@
 export const dynamic = "force-dynamic";
 
-import { db } from "@/lib/db";
+import {
+  getInventoriesWithRefs, getWarehousesWithInventory,
+  getActiveRisks, getInfra, getRecentTransactions,
+} from "@/lib/queries";
 import AIBriefing from "@/components/AIBriefing";
 
 async function getDashboardData() {
   // 전체 재고 목록 (DOH 계산용)
-  const inventories = await db.inventory.findMany({
-    include: { material: true, warehouse: true },
-  });
+  const inventories = await getInventoriesWithRefs();
 
   // DOH 계산: 현재고 ÷ 일평균사용량
   const dohList = inventories
@@ -21,9 +22,7 @@ async function getDashboardData() {
   const criticalItems = dohList.filter((i) => i.doh < 5);
 
   // 창고 현황
-  const warehouses = await db.warehouse.findMany({
-    include: { inventory: true },
-  });
+  const warehouses = await getWarehousesWithInventory();
 
   const warehouseStats = warehouses.map((wh) => {
     const totalPallets = wh.inventory.reduce((sum, inv) => {
@@ -36,25 +35,16 @@ async function getDashboardData() {
   });
 
   // 활성 리스크
-  const risks = await db.risk.findMany({
-    where: { status: "Active" },
-    orderBy: { level: "asc" },
-  });
+  const risks = await getActiveRisks();
 
   // 인프라 교체 임박 항목 (80% 이상 사용)
-  const infraAlerts = await db.infraEquipment.findMany({
-    where: { currentUsage: { gt: 0 } },
-  });
+  const infraAlerts = await getInfra(true);
   const infraUrgent = infraAlerts.filter(
     (i) => i.currentUsage / i.replacementCriteria >= 0.8
   );
 
   // 최근 트랜잭션
-  const recentTx = await db.transaction.findMany({
-    take: 5,
-    orderBy: { createdAt: "desc" },
-    include: { material: true, user: true },
-  });
+  const recentTx = await getRecentTransactions(5);
 
   return { dohList, alertItems, criticalItems, warehouseStats, risks, infraUrgent, recentTx };
 }

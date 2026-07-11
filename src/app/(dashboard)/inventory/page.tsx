@@ -1,13 +1,10 @@
 export const dynamic = "force-dynamic";
 
-import { db } from "@/lib/db";
+import { getInventoriesWithRefs } from "@/lib/queries";
 import InventoryClient from "./InventoryClient";
 
 async function getInventoryData() {
-  const inventories = await db.inventory.findMany({
-    include: { material: true, warehouse: true },
-    orderBy: { material: { code: "asc" } },
-  });
+  const inventories = await getInventoriesWithRefs(true);
 
   return inventories.map((inv) => {
     const doh = inv.avgDailyUsage > 0 ? inv.quantity / inv.avgDailyUsage : null;
@@ -26,7 +23,7 @@ async function getInventoryData() {
       material: {
         code: inv.material.code,
         name: inv.material.name,
-        nameEn: inv.material.nameEn,
+        nameEn: inv.material.nameEn ?? null,
         category: inv.material.category,
         unit: inv.material.unit,
         ropDays: inv.material.ropDays,

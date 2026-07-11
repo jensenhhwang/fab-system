@@ -1,50 +1,98 @@
-import { PrismaClient } from "@/generated/prisma/client";
-// Vercel serverless: WebSocket 대신 fetch 기반 HTTP 사용
-import { PrismaLibSql } from "@prisma/adapter-libsql/web";
+import { MongoClient, Db, Collection } from "mongodb";
 
-// libsql은 `fetch(Request객체)`로 호출하는데, Next.js가 패치한 globalThis.fetch가
-// Request 객체를 new Request(url,{body})로 재조립하며 바디를 손상시켜 Turso가 400을 낸다.
-// 성공하는 수동 curl(문자열 url + 평범한 헤더 객체 + 문자열 바디)과 100% 동일하게
-// 풀어서 넘겨 패치 로직의 손상 분기를 회피한다.
-const libsqlFetch: typeof globalThis.fetch = async (input, init) => {
-  if (
-    input &&
-    typeof input === "object" &&
-    "text" in input &&
-    typeof (input as Request).text === "function" &&
-    "url" in input
-  ) {
-    const req = input as Request;
-    const bodyText = await req.text(); // 문자열 바디 (curl과 동일)
-    const headers: Record<string, string> = {};
-    req.headers.forEach((v, k) => { headers[k] = v; });
-    return globalThis.fetch(req.url, {
-      method: req.method,
-      headers,
-      body: bodyText.length ? bodyText : undefined,
-    });
-  }
-  return globalThis.fetch(input, init);
-};
+// MongoDB(Atlas) 네이티브 드라이버. TCP 기반이라 Next.js fetch 패치 영향 없음.
+// 서버리스 콜드스타트에서 커넥션을 재사용하도록 클라이언트를 글로벌 캐시.
+const uri = process.env.DATABASE_URL;
 
-function createAdapter() {
-  if (process.env.TURSO_DATABASE_URL) {
-    return new PrismaLibSql({
-      url: process.env.TURSO_DATABASE_URL,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-      fetch: libsqlFetch,
-    });
+const g = globalThis as unknown as { _mongoClientPromise?: Promise<MongoClient> };
+
+function clientPromise(): Promise<MongoClient> {
+  if (!uri) throw new Error("DATABASE_URL 환경변수가 설정되지 않았습니다 (MongoDB 연결 문자열).");
+  if (!g._mongoClientPromise) {
+    g._mongoClientPromise = new MongoClient(uri).connect();
   }
-  // fallback to local SQLite for development without Turso
-  const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
-  const path = require("path");
-  const dbPath = path.resolve(process.cwd(), "dev.db");
-  return new PrismaBetterSqlite3({ url: `file:${dbPath}` });
+  return g._mongoClientPromise;
 }
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+export async function getDb(): Promise<Db> {
+  const client = await clientPromise();
+  return client.db(); // DB 이름은 연결 문자열의 /fab 에서 결정
+}
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const db = globalForPrisma.prisma ?? new PrismaClient({ adapter: createAdapter() } as any);
+// ─── 도메인 타입 (문서 스키마) ─────────────────────────────
+export type Role = "ADMIN" | "MATERIALS" | "PRODUCTION" | "LOGISTICS";
+export type Category = "GAS" | "CHM" | "CSM" | "UTL" | "PKG";
+export type Product = "HBM" | "DRAM" | "NAND";
+export type RiskLevel = "HIGH" | "MEDIUM" | "LOW";
+export type TxType = "IN" | "OUT";
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+export interface UserDoc {
+  _id: string; email: string; name: string; password: string;
+  role: Role; department: string; createdAt?: Date;
+}
+export interface MaterialDoc {
+  _id: string; code: string; name: string; nameEn?: string | null;
+  category: Category; unit: string; safetyStock: number; ropDays: number; notes?: string | null;
+}
+export interface WarehouseDoc {
+  _id: string; code: string; name: string; type: string;
+  totalCapacity: number; unit: string; temperature?: string | null; notes?: string | null;
+}
+export interface InventoryDoc {
+  _id: string; materialId: string; warehouseId: string; quantity: number; avgDailyUsage: number;
+}
+export interface ProcessUsageDoc {
+  _id: string; materialId: string; processCode: string; product: Product; monthlyQty: number;
+}
+export interface TransactionDoc {
+  _id: string; materialId: string; type: TxType; quantity: number; date: Date;
+  userId: string; note?: string | null; processCode?: string | null; supplierId?: string | null; createdAt: Date;
+}
+export interface SupplierDoc {
+  _id: string; name: string; country?: string | null; contact?: string | null; notes?: string | null;
+}
+export interface MaterialSupplierDoc {
+  _id: string; materialId: string; supplierId: string; leadTimeDays: number; isPrimary: boolean;
+}
+export interface InfraDoc {
+  _id: string; name: string; processCode: string; unit: string;
+  replacementCriteria: number; currentUsage: number; lastReplacedAt?: Date | null; notes?: string | null;
+}
+export interface RiskDoc {
+  _id: string; title: string; level: RiskLevel; category: string; owner: string;
+  status: string; description?: string | null; mitigation?: string | null; createdAt?: Date;
+}
+export interface WikiDoc {
+  _id: string; date: Date; title: string; category: string; content: string;
+  result?: string | null; nextAction?: string | null; userId: string; createdAt: Date;
+}
+
+// ─── 컬렉션 접근자 ─────────────────────────────────────────
+export async function collections(): Promise<{
+  users: Collection<UserDoc>;
+  materials: Collection<MaterialDoc>;
+  warehouses: Collection<WarehouseDoc>;
+  inventory: Collection<InventoryDoc>;
+  processUsage: Collection<ProcessUsageDoc>;
+  transactions: Collection<TransactionDoc>;
+  suppliers: Collection<SupplierDoc>;
+  materialSuppliers: Collection<MaterialSupplierDoc>;
+  infraEquipment: Collection<InfraDoc>;
+  risks: Collection<RiskDoc>;
+  wikiEntries: Collection<WikiDoc>;
+}> {
+  const db = await getDb();
+  return {
+    users: db.collection<UserDoc>("users"),
+    materials: db.collection<MaterialDoc>("materials"),
+    warehouses: db.collection<WarehouseDoc>("warehouses"),
+    inventory: db.collection<InventoryDoc>("inventory"),
+    processUsage: db.collection<ProcessUsageDoc>("processUsage"),
+    transactions: db.collection<TransactionDoc>("transactions"),
+    suppliers: db.collection<SupplierDoc>("suppliers"),
+    materialSuppliers: db.collection<MaterialSupplierDoc>("materialSuppliers"),
+    infraEquipment: db.collection<InfraDoc>("infraEquipment"),
+    risks: db.collection<RiskDoc>("risks"),
+    wikiEntries: db.collection<WikiDoc>("wikiEntries"),
+  };
+}

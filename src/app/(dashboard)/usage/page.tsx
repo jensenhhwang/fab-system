@@ -1,13 +1,10 @@
 export const dynamic = "force-dynamic";
 
-import { db } from "@/lib/db";
+import { getProcessUsagesWithMaterial, getInventoriesWithRefs, getWarehouses } from "@/lib/queries";
 import UsageClient from "./UsageClient";
 
 async function getUsageData() {
-  const usages = await db.processUsage.findMany({
-    include: { material: true },
-    orderBy: [{ processCode: "asc" }, { product: "asc" }],
-  });
+  const usages = await getProcessUsagesWithMaterial();
 
   // 자재별로 그룹핑: { materialId → { name, code, category, processes: Set<code> } }
   const materialMap = new Map<string, {
@@ -42,9 +39,9 @@ async function getUsageData() {
 //   ProcessUsage(공정→자재) ⋈ Inventory(자재→창고) → (창고,공정) 엣지
 async function getWarehouseGraph() {
   const [usages, inventories, warehouses] = await Promise.all([
-    db.processUsage.findMany({ include: { material: true } }),
-    db.inventory.findMany({ include: { warehouse: true } }),
-    db.warehouse.findMany(),
+    getProcessUsagesWithMaterial(),
+    getInventoriesWithRefs(),
+    getWarehouses(),
   ]);
 
   // materialId → 창고코드 (seed 상 자재는 대체로 단일 창고에 보관, 첫 매칭 사용)

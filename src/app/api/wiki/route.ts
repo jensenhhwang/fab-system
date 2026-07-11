@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { createWikiEntry } from "@/lib/queries";
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -14,17 +14,16 @@ export async function POST(req: NextRequest) {
   const userId = (session.user as { id?: string }).id;
   if (!userId) return NextResponse.json({ error: "User ID not found" }, { status: 400 });
 
-  const entry = await db.wikiEntry.create({
-    data: {
-      date: new Date(),
-      title,
-      category,
-      content,
-      result: result || null,
-      nextAction: nextAction || null,
-      userId,
-    },
+  await createWikiEntry({
+    date: new Date(),
+    title,
+    category,
+    content,
+    result: result || null,
+    nextAction: nextAction || null,
+    userId,
+    createdAt: new Date(),
   });
 
-  return NextResponse.json(entry);
+  return NextResponse.json({ ok: true });
 }
