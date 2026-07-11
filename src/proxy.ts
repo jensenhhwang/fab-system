@@ -3,7 +3,15 @@ import { getToken } from "next-auth/jwt";
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const token = await getToken({ req: request, secret: process.env.AUTH_SECRET });
+  // 프로덕션(HTTPS)에선 세션 쿠키가 `__Secure-authjs.session-token` 이름을 쓰고
+  // 이 이름이 JWT 복호화 salt가 된다. secureCookie를 명시하지 않으면 getToken이
+  // 개발용 쿠키명으로 찾아 복호화에 실패 → 로그인해도 /login으로 되돌아간다.
+  const secureCookie = request.nextUrl.protocol === "https:";
+  const token = await getToken({
+    req: request,
+    secret: process.env.AUTH_SECRET,
+    secureCookie,
+  });
   const isLoggedIn = !!token;
 
   if (pathname.startsWith("/login")) {
