@@ -26,6 +26,20 @@ const LOGS = [
       "개발 이력 탭 추가 (지금 이 페이지)",
     ],
   },
+  {
+    day: 2,
+    date: "2026-07-11",
+    label: "로그인 정상화 + DB 이전 (Turso→MongoDB)",
+    color: "#00B96B",
+    items: [
+      "🔥 Vercel 로그인 실패 근본원인 = 환경변수 TURSO_AUTH_TOKEN에 토큰 대신 DB URL이 들어감(뒤바뀜) → Turso JWT 400",
+      "⚠️ 교훈: 로그로 원인 확정 전 이론 세우지 말 것 — 'fetch 패칭' 오진으로 시간 낭비. 진단 라우트로 배포 env 직접 검증하니 즉시 판명",
+      "DB 이전: Turso/Prisma → MongoDB Atlas 네이티브 드라이버 (Prisma 7 새 클라이언트는 Mongo 직접연결 불가)",
+      "Prisma 완전 제거 — DB 의존성 7종→1종, prisma generate 빌드단계 삭제. src/lib/db.ts + queries.ts($lookup 조인)로 재구성",
+      "proxy.ts secureCookie 수정 — 프로덕션 HTTPS 쿠키(__Secure-) 못 읽어 로그인 후 /login 되돌던 버그",
+      "공정별 사용량 3D에 자재창고(WH-A~D) + 배관 시각화 추가 — ProcessUsage⋈Inventory로 공정↔창고 연결 도출",
+    ],
+  },
 ];
 
 export default function DevlogPage() {
@@ -79,7 +93,7 @@ export default function DevlogPage() {
           <div className="flex gap-6">
             <div className="flex-shrink-0 w-[52px] flex flex-col items-center pt-1">
               <div className="w-9 h-9 rounded-full flex items-center justify-center text-[#999] text-xs font-black border-2 border-dashed border-[#CCC] bg-white z-10">
-                D2
+                D3
               </div>
             </div>
             <div className="flex-1 bg-[#FAFAFA] rounded-2xl border border-dashed border-[#E0E0E0] px-5 py-4 mb-1">
@@ -89,6 +103,7 @@ export default function DevlogPage() {
                   "입고 시뮬레이션 (/simulation) — VISION 원칙 1번",
                   "창고 Capacity (/warehouse) — 실 DB 데이터 연동",
                   "공정 3D 흐름도 완성도 개선 (화살표 방향 표시)",
+                  "Playwright E2E 회귀 스위트 정비 (MongoDB 기준)",
                 ].map((item, i) => (
                   <li key={i} className="flex items-start gap-2 text-[13px] text-[#999]">
                     <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#CCC] flex-shrink-0" />
