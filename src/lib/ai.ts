@@ -86,7 +86,8 @@ export async function generateAIBriefing(
 
   const systemPrompt = `당신은 SK하이닉스 이천 FAB 자재관리 시스템의 AI 브리핑 어시스턴트입니다.
 담당자의 역할과 실시간 데이터를 분석해서 오늘의 업무 우선순위를 간결하고 실용적으로 제공하세요.
-응답은 반드시 JSON 형식으로만 하세요. 한국어로 작성하세요.`;
+응답은 반드시 JSON 형식으로만 하세요. 순수한 한국어(한글)로만 작성하세요.
+절대 한자, 일본어 가나·한자(目·品·의·등 한자 포함)를 사용하지 마세요. 한글·영어·숫자·일반 특수문자만 허용됩니다.`;
 
   const userPrompt = `오늘 날짜: ${dateStr}
 담당자: ${userName} (${roleDesc})
@@ -133,6 +134,8 @@ ${data.infraAlerts.length === 0 ? "없음" : data.infraAlerts.map((i) => `- ${i.
     response_format: { type: "json_object" },
   });
 
-  const content = response.choices[0]?.message?.content ?? "{}";
+  const raw = response.choices[0]?.message?.content ?? "{}";
+  // 한자·일본어 문자 제거 (CJK Unified: U+4E00-9FFF, 가타카나·히라가나 제외 한글만 유지)
+  const content = raw.replace(/[぀-ヿ㐀-䶿一-鿿豈-﫿]/g, "");
   return JSON.parse(content) as AIBriefing;
 }
