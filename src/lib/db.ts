@@ -1,5 +1,6 @@
 import { PrismaClient } from "@/generated/prisma/client";
-import { PrismaLibSql } from "@prisma/adapter-libsql";
+// Vercel serverless: WebSocket 대신 fetch 기반 HTTP 사용
+import { PrismaLibSql } from "@prisma/adapter-libsql/web";
 
 function createAdapter() {
   if (process.env.TURSO_DATABASE_URL) {
