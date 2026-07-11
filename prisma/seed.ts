@@ -1,14 +1,28 @@
 import { PrismaClient } from "../src/generated/prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import bcrypt from "bcryptjs";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.resolve(__dirname, "../dev.db");
-const adapter = new PrismaBetterSqlite3({ url: `file:${dbPath}` });
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const prisma = new PrismaClient({ adapter } as any);
+function createAdapter(): any {
+  if (process.env.TURSO_DATABASE_URL) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { PrismaLibSql } = require("@prisma/adapter-libsql/web");
+    return new PrismaLibSql({
+      url: process.env.TURSO_DATABASE_URL,
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    });
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { PrismaBetterSqlite3 } = require("@prisma/adapter-better-sqlite3");
+  const dbPath = path.resolve(__dirname, "../dev.db");
+  return new PrismaBetterSqlite3({ url: `file:${dbPath}` });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const prisma = new PrismaClient({ adapter: createAdapter() } as any);
 
 async function main() {
   console.log("🌱 Seeding FAB Materials System...");
