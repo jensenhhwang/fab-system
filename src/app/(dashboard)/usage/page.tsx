@@ -38,7 +38,61 @@ async function getUsageData() {
   return Array.from(materialMap.values()).sort((a, b) => a.code.localeCompare(b.code));
 }
 
+// 공정 ↔ 자재창고 연결 그래프 도출
+//   ProcessUsage(공정→자재) ⋈ Inventory(자재→창고) → (창고,공정) 엣지
+async function getWarehouseGraph() {
+  const [usages, inventories, warehouses] = await Promise.all([
+    db.processUsage.findMany({ include: { material: true } }),
+    db.inventory.findMany({ include: { warehouse: true } }),
+    db.warehouse.findMany(),
+  ]);
+
+  // materialId → 창고코드 (seed 상 자재는 대체로 단일 창고에 보관, 첫 매칭 사용)
+  const matToWh = new Map<string, string>();
+  for (const inv of inventories) {
+    if (!matToWh.has(inv.materialId)) matToWh.set(inv.materialId, inv.warehouse.code);
+  }
+
+  // (창고,공정) 엣지 집계: 총 월사용량 + 카테고리별 사용량
+  type Edge = { whCode: string; procCode: string; qty: number; catQty: Record<string, number> };
+  const edgeMap = new Map<string, Edge>();
+  for (const u of usages) {
+    const whCode = matToWh.get(u.materialId);
+    if (!whCode) continue;
+    const key = `${whCode}|${u.processCode}`;
+    if (!edgeMap.has(key)) edgeMap.set(key, { whCode, procCode: u.processCode, qty: 0, catQty: {} });
+    const e = edgeMap.get(key)!;
+    e.qty += u.monthlyQty;
+    const cat = u.material.category;
+    e.catQty[cat] = (e.catQty[cat] ?? 0) + u.monthlyQty;
+  }
+
+  const links = Array.from(edgeMap.values()).map((e) => {
+    // 엣지 대표 카테고리 = 사용량 최대 카테고리
+    const category = Object.entries(e.catQty).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "GAS";
+    return { whCode: e.whCode, procCode: e.procCode, qty: Math.round(e.qty), category };
+  });
+
+  // 창고 요약: 총 공급량 + 취급 카테고리 + 연결 공정 수
+  const whSummary = warehouses.map((w) => {
+    const wlinks = links.filter((l) => l.whCode === w.code);
+    const catQty: Record<string, number> = {};
+    for (const l of wlinks) catQty[l.category] = (catQty[l.category] ?? 0) + l.qty;
+    const categories = Object.entries(catQty).sort((a, b) => b[1] - a[1]).map(([c]) => c);
+    return {
+      code: w.code,
+      name: w.name,
+      type: w.type,
+      categories,
+      processCount: new Set(wlinks.map((l) => l.procCode)).size,
+      totalQty: wlinks.reduce((s, l) => s + l.qty, 0),
+    };
+  }).filter((w) => w.totalQty > 0); // 공정과 연결된 창고만
+
+  return { links, warehouses: whSummary };
+}
+
 export default async function UsagePage() {
-  const materials = await getUsageData();
-  return <UsageClient materials={materials} />;
+  const [materials, graph] = await Promise.all([getUsageData(), getWarehouseGraph()]);
+  return <UsageClient materials={materials} warehouseLinks={graph.links} warehouses={graph.warehouses} />;
 }

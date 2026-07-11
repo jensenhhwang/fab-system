@@ -26,7 +26,23 @@ type Material = {
   usages: { proc: string; product: string; qty: number }[];
 };
 
-export default function UsageClient({ materials }: { materials: Material[] }) {
+type WarehouseInfo = {
+  code: string; name: string; type: string;
+  categories: string[]; processCount: number; totalQty: number;
+};
+type WarehouseLink = { whCode: string; procCode: string; qty: number; category: string };
+
+const CAT_COLOR: Record<string, string> = {
+  GAS: "#B91C1C", CHM: "#1D4ED8", CSM: "#7C3AED", UTL: "#059669", PKG: "#64748B",
+};
+
+export default function UsageClient({
+  materials, warehouseLinks = [], warehouses = [],
+}: {
+  materials: Material[];
+  warehouseLinks?: WarehouseLink[];
+  warehouses?: WarehouseInfo[];
+}) {
   const [hoveredMat, setHoveredMat] = useState<Material | null>(null);
   const [selectedProc, setSelectedProc] = useState<string | null>(null);
   const [filterProduct, setFilterProduct] = useState<"ALL" | "HBM" | "DRAM" | "NAND">("ALL");
@@ -64,12 +80,29 @@ export default function UsageClient({ materials }: { materials: Material[] }) {
       <div className="bg-white rounded-2xl shadow-sm p-5 mb-5">
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm font-bold text-[#111]">
-            반도체 공정 흐름도 (Fab Process Flow)
+            반도체 공정 흐름도 + 자재 공급망 (Fab Process &amp; Material Flow)
           </div>
           <div className="text-[10px] text-[#999]">
-            자재 hover → 공정 하이라이트 · 공정 클릭 → 자재 필터
+            자재 hover → 공정 하이라이트 · 공정 클릭 → 자재 필터 · 창고 hover → 공급 배관 강조
           </div>
         </div>
+
+        {/* 자재창고 + 배관 범례 */}
+        {warehouses.length > 0 && (
+          <div className="flex items-center gap-4 flex-wrap mb-3 px-1">
+            <span className="text-[10px] font-semibold text-[#999]">자재창고</span>
+            {warehouses.map((wh) => (
+              <div key={wh.code} className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm"
+                  style={{ background: CAT_COLOR[wh.categories[0] ?? "GAS"] }} />
+                <span className="text-[10px] font-bold text-[#333]">{wh.code}</span>
+                <span className="text-[9px] text-[#aaa]">{wh.processCount}공정</span>
+              </div>
+            ))}
+            <div className="w-px h-3 bg-[#E8E8E8]" />
+            <span className="text-[9px] text-[#bbb]">배관 굵기 = 월 사용량 · 색 = 자재 카테고리</span>
+          </div>
+        )}
 
         {/* 3D 캔버스 + hoveredMat 패널을 relative 컨테이너 안에 묶어서 레이아웃 시프트 완전 차단 */}
         <div className="relative" style={{ height: 480 }}>
@@ -81,6 +114,8 @@ export default function UsageClient({ materials }: { materials: Material[] }) {
                 setSelectedProc((prev) => (prev === code ? null : code))
               }
               materialCounts={materialCounts}
+              warehouses={warehouses}
+              warehouseLinks={warehouseLinks}
             />
           </Suspense>
 

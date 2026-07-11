@@ -25,6 +25,26 @@ const MACHINE_D = 0.65;
 const BAY_HALF  = 1.4;
 const CORR_HALF = 1.55;
 
+// ─── 자재 카테고리 색 (usage 테이블과 통일) ───
+export const CATEGORY_COLOR: Record<string, string> = {
+  GAS: "#B91C1C", // 가스 — 빨강
+  CHM: "#1D4ED8", // 케미컬 — 파랑
+  CSM: "#7C3AED", // 소모성 — 보라
+  UTL: "#059669", // 유틸리티 — 초록
+  PKG: "#64748B", // 패키징 — 슬레이트
+};
+
+// ─── 자재창고 배치 (fab 서측 자재 야드) ───
+// x는 공통(좌측 벽 바깥), z만 코드별로 지정 → 파이프가 해당 클러스터로 향함
+const WH_X = -8.4;
+const WH_META: Record<string, { z: number; short: string; lane: number }> = {
+  "WH-A": { z: -9.0, short: "A동 자동화", lane: 0 }, // GAS/CHM/UTL → FEOL
+  "WH-C": { z: -3.4, short: "C동 위험물", lane: 1 }, // 위험물 → 식각/세정
+  "WH-B": { z:  5.2, short: "B동 평치",   lane: 2 }, // CSM/PKG → CMP/PVD/패키징
+  "WH-D": { z: 11.0, short: "D동 MRO",    lane: 3 }, // 공구·MRO → 테스트
+};
+const WH_HEADER_X = -6.0; // 벽면 서플라이 헤더 X
+
 const FEOL_ORDER = ["P01", "P02", "P03", "P04", "P05"] as const;
 const BEOL_ORDER = ["P06", "P07", "P08", "P09", "P10"] as const;
 
@@ -329,18 +349,166 @@ function AnimatedFoup({ config, stateRef }: {
 }
 
 // ─────────────────────────────────────────────
+// 자재창고 건물 (fab 서측 야드)
+// ─────────────────────────────────────────────
+export type WarehouseInfo = {
+  code: string; name: string; type: string;
+  categories: string[]; processCount: number; totalQty: number;
+};
+export type WarehouseLink = {
+  whCode: string; procCode: string; qty: number; category: string;
+};
+
+function WarehouseBuilding({ wh, isHL, isDimmed, onHover, onLeave }: {
+  wh: WarehouseInfo; isHL: boolean; isDimmed: boolean;
+  onHover: () => void; onLeave: () => void;
+}) {
+  const meta = WH_META[wh.code];
+  if (!meta) return null;
+  const z = meta.z;
+  const roofColor = CATEGORY_COLOR[wh.categories[0] ?? "GAS"] ?? "#64748B";
+  const H = 2.2, W = 2.0, D = 2.6;
+  const opacity = isDimmed ? 0.4 : 1;
+
+  return (
+    <group position={[WH_X, 0, z]}
+      onPointerEnter={(e) => { e.stopPropagation(); onHover(); document.body.style.cursor = "pointer"; }}
+      onPointerLeave={() => { onLeave(); document.body.style.cursor = ""; }}>
+      {/* 본체 */}
+      <mesh position={[0, H / 2, 0]} castShadow>
+        <boxGeometry args={[W, H, D]} />
+        <meshStandardMaterial color={isHL ? "#f8fafc" : "#e2e8f0"} roughness={0.5} metalness={0.05}
+          emissive={isHL ? roofColor : "#000"} emissiveIntensity={isHL ? 0.18 : 0}
+          transparent opacity={opacity} />
+      </mesh>
+      {/* 지붕 (카테고리 색) */}
+      <mesh position={[0, H + 0.08, 0]}>
+        <boxGeometry args={[W + 0.12, 0.16, D + 0.12]} />
+        <meshStandardMaterial color={roofColor} emissive={roofColor}
+          emissiveIntensity={isHL ? 1.4 : 0.5} transparent opacity={opacity} />
+      </mesh>
+      {/* 셔터 도어 */}
+      <mesh position={[W / 2 + 0.005, 0.55, 0]}>
+        <boxGeometry args={[0.02, 1.0, 1.4]} />
+        <meshStandardMaterial color="#334155" transparent opacity={opacity} />
+      </mesh>
+      {/* 라벨 */}
+      <Text position={[0, H + 0.42, 0]} fontSize={0.26}
+        color={isHL ? roofColor : "#475569"} anchorX="center" anchorY="bottom">
+        {wh.code}
+      </Text>
+      <Text position={[0, H + 0.24, 0]} fontSize={0.14} color="#94a3b8" anchorX="center" anchorY="bottom">
+        {meta.short}
+      </Text>
+      {!isDimmed && (
+        <Text position={[0, 0.9, D / 2 + 0.02]} fontSize={0.12} color="#64748b"
+          anchorX="center" anchorY="middle">
+          {`${wh.processCount}개 공정 · ${wh.totalQty.toLocaleString()}/월`}
+        </Text>
+      )}
+    </group>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 배관 (창고 → 공정 베이) : 튜브 + 흐름 입자
+// ─────────────────────────────────────────────
+function makePipeCurve(whCode: string, bayZ: number): THREE.CatmullRomCurve3 {
+  const meta = WH_META[whCode];
+  const lane = meta?.lane ?? 0;
+  const y = 0.55 + lane * 0.32;       // 창고별 헤더 높이 분리
+  const wz = meta?.z ?? 0;
+  const hx = WH_HEADER_X - lane * 0.18; // 헤더 X도 살짝 분리
+  return new THREE.CatmullRomCurve3([
+    new THREE.Vector3(WH_X + 1.05, y, wz),   // 창고 출구
+    new THREE.Vector3(hx, y, wz),            // 벽면 헤더 진입
+    new THREE.Vector3(hx, y, bayZ),          // 헤더 따라 Z 이동
+    new THREE.Vector3(-2.6, 0.42, bayZ),     // 베이로 드롭
+  ]);
+}
+
+function SupplyPipe({ link, active }: { link: WarehouseLink; active: boolean }) {
+  const bayZ = BAY_Z[link.procCode];
+  const curve = useMemo(() => makePipeCurve(link.whCode, bayZ), [link.whCode, bayZ]);
+  const color = CATEGORY_COLOR[link.category] ?? "#64748B";
+  const radius = 0.03 + Math.min(link.qty, 3000) / 3000 * 0.06; // 굵기 = 월 사용량
+  const geom = useMemo(() => new THREE.TubeGeometry(curve, 40, radius, 8, false), [curve, radius]);
+
+  // 흐름 입자
+  const N = 3;
+  const partRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const offsets = useMemo(() => Array.from({ length: N }, (_, i) => i / N), []);
+  useFrame(() => {
+    if (!active) return;
+    const t = (Date.now() * 0.00018) % 1;
+    for (let i = 0; i < N; i++) {
+      const m = partRefs.current[i];
+      if (!m) continue;
+      const u = (offsets[i] + t) % 1;
+      const p = curve.getPoint(u);
+      m.position.copy(p);
+    }
+  });
+
+  if (typeof bayZ !== "number") return null;
+
+  return (
+    <group>
+      <mesh geometry={geom}>
+        <meshStandardMaterial color={color} metalness={0.3} roughness={0.4}
+          emissive={color} emissiveIntensity={active ? 0.5 : 0.05}
+          transparent opacity={active ? 0.92 : 0.1} />
+      </mesh>
+      {active && offsets.map((_, i) => (
+        <mesh key={i} ref={(el) => { partRefs.current[i] = el; }}>
+          <sphereGeometry args={[radius * 1.7, 8, 8]} />
+          <meshStandardMaterial color="#ffffff" emissive={color} emissiveIntensity={2.2} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Main 3D Scene
 // ─────────────────────────────────────────────
 function Scene({
   highlightedProcesses, onProcessClick,
-  waferStates,
+  waferStates, warehouses, warehouseLinks,
+  hoveredWh, setHoveredWh,
 }: {
   highlightedProcesses: string[];
   onProcessClick?: (code: string) => void;
   waferStates: React.MutableRefObject<WaferState>[];
+  warehouses: WarehouseInfo[];
+  warehouseLinks: WarehouseLink[];
+  hoveredWh: string | null;
+  setHoveredWh: (c: string | null) => void;
 }) {
-  const isHL     = (c: string) => highlightedProcesses.includes(c);
-  const isDimmed = (c: string) => highlightedProcesses.length > 0 && !isHL(c);
+  const hasProcHL = highlightedProcesses.length > 0;
+  // 창고 hover 시 해당 창고가 공급하는 공정들
+  const whHlProcs = hoveredWh
+    ? warehouseLinks.filter((l) => l.whCode === hoveredWh).map((l) => l.procCode)
+    : [];
+  const effectiveHL = hoveredWh ? whHlProcs : highlightedProcesses;
+  const anyHL = effectiveHL.length > 0;
+
+  const isHL     = (c: string) => effectiveHL.includes(c);
+  const isDimmed = (c: string) => anyHL && !isHL(c);
+
+  // 파이프 활성 판정: 강조 없으면 전부 / 있으면 해당 공정·창고만
+  const pipeActive = (l: WarehouseLink) => {
+    if (hoveredWh) return l.whCode === hoveredWh;
+    if (hasProcHL) return highlightedProcesses.includes(l.procCode);
+    return true;
+  };
+  const whIsHL = (code: string) =>
+    hoveredWh === code ||
+    (hasProcHL && warehouseLinks.some((l) => l.whCode === code && highlightedProcesses.includes(l.procCode)));
+  const whIsDimmed = (code: string) =>
+    (!!hoveredWh && hoveredWh !== code) ||
+    (!hoveredWh && hasProcHL && !warehouseLinks.some((l) => l.whCode === code && highlightedProcesses.includes(l.procCode)));
+
   const floorW = 11, floorD = 30;
 
   // Count FOUPs currently at each bay (approximate — based on state at render time)
@@ -407,8 +575,28 @@ function Scene({
         <AnimatedFoup key={cfg.id} config={cfg} stateRef={waferStates[i]} />
       ))}
 
+      {/* 자재 야드 라벨 */}
+      {warehouses.length > 0 && (
+        <Text position={[WH_X, 3.7, 0]} fontSize={0.3} color="#6b7280" anchorX="center"
+          rotation={[0, Math.PI / 2, 0]}>
+          자재 창고 (Material Yard)
+        </Text>
+      )}
+
+      {/* 배관: 창고 → 공정 */}
+      {warehouseLinks.map((l) => (
+        <SupplyPipe key={`${l.whCode}-${l.procCode}`} link={l} active={pipeActive(l)} />
+      ))}
+
+      {/* 자재창고 건물 */}
+      {warehouses.map((wh) => (
+        <WarehouseBuilding key={wh.code} wh={wh}
+          isHL={whIsHL(wh.code)} isDimmed={whIsDimmed(wh.code)}
+          onHover={() => setHoveredWh(wh.code)} onLeave={() => setHoveredWh(null)} />
+      ))}
+
       <OrbitControls enablePan minDistance={6} maxDistance={45}
-        maxPolarAngle={Math.PI / 2.02} target={[0, 1.2, 0]} />
+        maxPolarAngle={Math.PI / 2.02} target={[-1.8, 1.2, 0]} />
     </>
   );
 }
@@ -421,12 +609,17 @@ export default function ProcessFlow3D({
   activeProcesses = [],
   onProcessClick,
   materialCounts = {},
+  warehouses = [],
+  warehouseLinks = [],
 }: {
   highlightedProcesses?: string[];
   activeProcesses?: string[];
   onProcessClick?: (code: string) => void;
   materialCounts?: Record<string, number>;
+  warehouses?: WarehouseInfo[];
+  warehouseLinks?: WarehouseLink[];
 }) {
+  const [hoveredWh, setHoveredWh] = useState<string | null>(null);
   // Wafer simulation state — refs so useFrame can mutate without re-renders
   const waferStates = useMemo(() =>
     WAFER_CONFIGS.map((cfg): React.MutableRefObject<WaferState> => ({
@@ -483,13 +676,17 @@ export default function ProcessFlow3D({
 
   return (
     <div className="relative w-full h-full">
-      <Canvas camera={{ position: [0, 22, 28], fov: 52 }} shadows
+      <Canvas camera={{ position: [-3, 21, 30], fov: 54 }} shadows
         style={{ background: "linear-gradient(180deg,#d0dce8 0%,#e0eaf4 100%)", borderRadius: 16 }}>
         <Suspense fallback={null}>
           <Scene
             highlightedProcesses={highlightedProcesses}
             onProcessClick={onProcessClick}
             waferStates={waferStates}
+            warehouses={warehouses}
+            warehouseLinks={warehouseLinks}
+            hoveredWh={hoveredWh}
+            setHoveredWh={setHoveredWh}
           />
         </Suspense>
       </Canvas>
