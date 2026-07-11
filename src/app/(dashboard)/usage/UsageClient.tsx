@@ -246,16 +246,16 @@ export default function UsageClient({
             <tr className="bg-[#FAFAFA] border-b border-[#F0F0F0]">
               {(
                 [
-                  { col: "code"      as SortKey, label: "품번",    align: "left",  px: "px-5" },
-                  { col: "name"      as SortKey, label: "자재명",  align: "left",  px: "px-4" },
-                  { col: "category"  as SortKey, label: "구분",    align: "left",  px: "px-4" },
-                  { col: "quantity"  as SortKey, label: "현재고",  align: "right", px: "px-4" },
-                  { col: "dailyUsage" as SortKey, label: "일소요량", align: "right", px: "px-4" },
-                  { col: "doh"       as SortKey, label: "보관일수", align: "left",  px: "px-4" },
-                  { col: null,                   label: "적용 공정", align: "left",  px: "px-4" },
-                  { col: null,                   label: "제품",     align: "left",  px: "px-4" },
-                  { col: "totalQty"  as SortKey, label: "월 소요량", align: "right", px: "px-4" },
-                ] as const
+                  { col: "code"       as SortKey | null, label: "품번",     align: "left"  as const, px: "px-5" },
+                  { col: "name"       as SortKey | null, label: "자재명",   align: "left"  as const, px: "px-4" },
+                  { col: "category"   as SortKey | null, label: "구분",     align: "left"  as const, px: "px-4" },
+                  { col: "quantity"   as SortKey | null, label: "현재고",   align: "right" as const, px: "px-4" },
+                  { col: "dailyUsage" as SortKey | null, label: "일소요량", align: "right" as const, px: "px-4" },
+                  { col: "doh"        as SortKey | null, label: "보관일수", align: "left"  as const, px: "px-4" },
+                  { col: null,                           label: "적용 공정", align: "left"  as const, px: "px-4" },
+                  { col: null,                           label: "제품",     align: "left"  as const, px: "px-4" },
+                  { col: "totalQty"   as SortKey | null, label: "월 소요량", align: "right" as const, px: "px-4" },
+                ]
               ).map(({ col, label, align, px }) => (
                 <th key={label} className={`${px} py-3`}>
                   {col ? (
