@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo, Suspense } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Text, CameraControls, Environment, Lightformer, MeshReflectorMaterial, ContactShadows } from "@react-three/drei";
+import { Text, CameraControls, Environment, Lightformer, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 
 export const PROCESSES = [
@@ -946,12 +946,10 @@ function Scene({
       {/* 접지 소프트 섀도우 (장비 바닥 그림자 → 무게감) */}
       <ContactShadows position={[0, 0.02, 0]} scale={44} blur={2.2} opacity={0.35} far={12} resolution={1024} color="#3a4250" />
 
-      {/* 클린룸 에폭시 바닥 (거울 반사 — 장비가 비쳐 실사 느낌) */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+      {/* 클린룸 에폭시 바닥 (매트 — 반사 아티팩트 없이 균일한 톤) */}
+      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <planeGeometry args={[floorW + 2, floorD + 2]} />
-        <MeshReflectorMaterial resolution={512} mirror={0.45} blur={[300, 100]} mixBlur={1}
-          mixStrength={1.2} roughness={0.5} depthScale={0.4} minDepthThreshold={0.3} maxDepthThreshold={1.2}
-          color="#dfe4ea" metalness={0.35} />
+        <meshStandardMaterial color="#e7eaef" roughness={0.6} metalness={0.06} />
       </mesh>
       {/* 클린룸 슬래브 두께 */}
       <mesh position={[0, -0.16, 0]}>
@@ -1121,7 +1119,7 @@ export default function ProcessFlow3D({
     <div className="relative w-full h-full">
       <Canvas camera={{ position: [-3, 21, 30], fov: 54 }} shadows dpr={[1, 2]}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.08 }}
-        style={{ background: "linear-gradient(180deg,#a9b8c8 0%,#c9d5e1 50%,#e4ebf2 100%)", borderRadius: 16 }}>
+        style={{ background: "linear-gradient(180deg,#eaeff5 0%,#f4f7fa 55%,#ffffff 100%)", borderRadius: 16 }}>
         <Suspense fallback={null}>
           <Scene
             highlightedProcesses={highlightedProcesses}

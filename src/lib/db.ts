@@ -33,10 +33,12 @@ export interface UserDoc {
 export interface MaterialDoc {
   _id: string; code: string; name: string; nameEn?: string | null;
   category: Category; unit: string; safetyStock: number; ropDays: number; notes?: string | null;
+  palletFactor?: number; // 파렛트 환산 예외 override (없으면 단위표 사용)
 }
 export interface WarehouseDoc {
   _id: string; code: string; name: string; type: string;
   totalCapacity: number; unit: string; temperature?: string | null; notes?: string | null;
+  legalLimit?: number; // 위험물 등 법적 저장 한도 (파렛트 환산)
 }
 export interface InventoryDoc {
   _id: string; materialId: string; warehouseId: string; quantity: number; avgDailyUsage: number;

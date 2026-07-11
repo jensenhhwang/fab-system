@@ -1,38 +1,29 @@
 export const dynamic = "force-dynamic";
 
 import {
-  getInventoriesWithRefs, getWarehousesWithInventory,
+  getInventoryRows, getWarehouseCapacity,
   getActiveRisks, getInfra, getRecentTransactions,
 } from "@/lib/queries";
 import AIBriefing from "@/components/AIBriefing";
 
 async function getDashboardData() {
-  // 전체 재고 목록 (DOH 계산용)
-  const inventories = await getInventoriesWithRefs();
+  // 재고 + 유도 DOH (일사용량은 ProcessUsage 마스터에서 유도 → 공정 탭과 정합)
+  const inventories = await getInventoryRows();
 
-  // DOH 계산: 현재고 ÷ 일평균사용량
   const dohList = inventories
-    .filter((inv) => inv.avgDailyUsage > 0)
-    .map((inv) => ({
-      ...inv,
-      doh: inv.quantity / inv.avgDailyUsage,
-    }));
+    .filter((inv) => inv.doh !== null)
+    .map((inv) => ({ ...inv, doh: inv.doh as number }));
 
   const alertItems = dohList.filter((i) => i.doh < i.material.ropDays);
   const criticalItems = dohList.filter((i) => i.doh < 5);
 
-  // 창고 현황
-  const warehouses = await getWarehousesWithInventory();
-
-  const warehouseStats = warehouses.map((wh) => {
-    const totalPallets = wh.inventory.reduce((sum, inv) => {
-      // 가스 봄베는 0.5 pallet 환산, 나머지는 1 pallet
-      const factor = inv.quantity > 500 ? 0.2 : 0.5;
-      return sum + Math.ceil(inv.quantity * factor);
-    }, 0);
-    const pct = Math.min(Math.round((totalPallets / wh.totalCapacity) * 100), 100);
-    return { ...wh, usedCapacity: totalPallets, pct };
-  });
+  // 창고 현황 — 실제 공간환산 기반 Capacity
+  const caps = await getWarehouseCapacity();
+  const warehouseStats = caps.map((wh) => ({
+    id: wh.id, name: wh.name, totalCapacity: wh.totalCapacity, unit: wh.unit,
+    temperature: wh.temperature,
+    usedCapacity: wh.occupancy, pct: Math.min(wh.utilization, 100),
+  }));
 
   // 활성 리스크
   const risks = await getActiveRisks();

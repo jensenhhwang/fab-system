@@ -1,6 +1,6 @@
 import Groq from "groq-sdk";
 import {
-  getInventoriesWithRefs, getWarehousesWithInventory,
+  getInventoryRows, getWarehouseCapacity,
   getActiveRisks, getInfra, getRecentTransactions,
 } from "@/lib/queries";
 
@@ -29,11 +29,11 @@ export type AIBriefing = {
 };
 
 async function getContextData(role: string) {
-  // 재고 경보 (DOH 기준)
-  const inventories = await getInventoriesWithRefs();
+  // 재고 경보 (DOH 기준 — 일사용량은 ProcessUsage 마스터에서 유도)
+  const inventories = await getInventoryRows();
   const dohAlerts = inventories
-    .filter((inv) => inv.avgDailyUsage > 0)
-    .map((inv) => ({ ...inv, doh: inv.quantity / inv.avgDailyUsage }))
+    .filter((inv) => inv.doh !== null)
+    .map((inv) => ({ ...inv, doh: inv.doh as number }))
     .filter((inv) => inv.doh < inv.material.ropDays)
     .sort((a, b) => a.doh - b.doh)
     .slice(0, 8)
@@ -46,12 +46,10 @@ async function getContextData(role: string) {
       unit: inv.material.unit,
     }));
 
-  // 창고 현황
-  const warehouses = await getWarehousesWithInventory();
-  const warehouseStatus = warehouses.map((wh) => {
-    const load = wh.inventory.reduce((s, i) => s + Math.ceil(i.quantity * 0.5), 0);
-    return { name: wh.name, pct: Math.min(Math.round((load / wh.totalCapacity) * 100), 100) };
-  });
+  // 창고 현황 — 실제 공간환산 Capacity
+  const warehouseStatus = (await getWarehouseCapacity()).map((wh) => ({
+    name: wh.name, pct: Math.min(wh.utilization, 100),
+  }));
 
   // 활성 리스크
   const risks = await getActiveRisks();
