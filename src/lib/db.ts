@@ -2,25 +2,26 @@ import { PrismaClient } from "@/generated/prisma/client";
 // Vercel serverless: WebSocket 대신 fetch 기반 HTTP 사용
 import { PrismaLibSql } from "@prisma/adapter-libsql/web";
 
-// libsql은 `fetch(Request객체)` 형태로 호출한다. 그런데 Next.js가 패치한
-// globalThis.fetch는 Request 객체가 들어오면 내부적으로 new Request(url, { body })로
-// 재조립하는데, 이 과정에서 libsql이 넣은 바이트 배열 바디가 손상되어 Turso가
-// HTTP 400을 반환한다. 이를 피하기 위해 Request를 (문자열 url, 구체적 바디)로
-// 풀어서 넘기는 커스텀 fetch를 사용한다.
+// libsql은 `fetch(Request객체)`로 호출하는데, Next.js가 패치한 globalThis.fetch가
+// Request 객체를 new Request(url,{body})로 재조립하며 바디를 손상시켜 Turso가 400을 낸다.
+// 성공하는 수동 curl(문자열 url + 평범한 헤더 객체 + 문자열 바디)과 100% 동일하게
+// 풀어서 넘겨 패치 로직의 손상 분기를 회피한다.
 const libsqlFetch: typeof globalThis.fetch = async (input, init) => {
   if (
     input &&
     typeof input === "object" &&
-    "arrayBuffer" in input &&
-    typeof (input as Request).arrayBuffer === "function" &&
+    "text" in input &&
+    typeof (input as Request).text === "function" &&
     "url" in input
   ) {
     const req = input as Request;
-    const body = await req.arrayBuffer();
+    const bodyText = await req.text(); // 문자열 바디 (curl과 동일)
+    const headers: Record<string, string> = {};
+    req.headers.forEach((v, k) => { headers[k] = v; });
     return globalThis.fetch(req.url, {
       method: req.method,
-      headers: req.headers,
-      body: body.byteLength ? body : undefined,
+      headers,
+      body: bodyText.length ? bodyText : undefined,
     });
   }
   return globalThis.fetch(input, init);
