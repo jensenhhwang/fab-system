@@ -71,7 +71,8 @@ export default function UsageClient({ materials }: { materials: Material[] }) {
           </div>
         </div>
 
-        <div style={{ height: 480 }}>
+        {/* 3D 캔버스 + hoveredMat 패널을 relative 컨테이너 안에 묶어서 레이아웃 시프트 완전 차단 */}
+        <div className="relative" style={{ height: 480 }}>
           <Suspense fallback={<div className="w-full h-full bg-[#e8f0f8] rounded-2xl flex items-center justify-center text-sm text-[#999]">3D 로딩 중…</div>}>
             <ProcessFlow3D
               highlightedProcesses={highlightedProcesses}
@@ -82,28 +83,33 @@ export default function UsageClient({ materials }: { materials: Material[] }) {
               materialCounts={materialCounts}
             />
           </Suspense>
-        </div>
 
-        {/* hover 중인 자재 상세 */}
-        {hoveredMat && (
-          <div className="mt-4 bg-[#0f172a] rounded-xl p-4">
-            <div className="text-[10px] text-slate-400 font-mono mb-0.5">{hoveredMat.code}</div>
-            <div className="text-sm font-bold text-white mb-3">{hoveredMat.name}</div>
-            <div className="flex flex-wrap gap-4">
-              {hoveredMat.usages.map((u, i) => {
-                const proc = PROCESSES.find((p) => p.code === u.proc);
-                return (
-                  <div key={i} className="flex items-center gap-2 text-[11px]">
-                    <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: proc?.color }} />
-                    <span className="text-slate-300">{u.proc} {proc?.name}</span>
-                    <span className="text-slate-500">{u.product}</span>
-                    <span className="font-bold text-white">{u.qty.toLocaleString()}</span>
-                  </div>
-                );
-              })}
-            </div>
+          {/* hover 중인 자재 상세 — absolute overlay라 레이아웃에 영향 없음 */}
+          <div
+            className="absolute bottom-0 left-0 right-0 rounded-b-2xl overflow-hidden pointer-events-none transition-opacity duration-150"
+            style={{ opacity: hoveredMat ? 1 : 0, background: "rgba(15,23,42,0.92)", backdropFilter: "blur(6px)" }}
+          >
+            {hoveredMat && (
+              <div className="p-4">
+                <div className="text-[10px] text-slate-400 font-mono mb-0.5">{hoveredMat.code}</div>
+                <div className="text-sm font-bold text-white mb-2">{hoveredMat.name}</div>
+                <div className="flex flex-wrap gap-4">
+                  {hoveredMat.usages.map((u, i) => {
+                    const proc = PROCESSES.find((p) => p.code === u.proc);
+                    return (
+                      <div key={i} className="flex items-center gap-2 text-[11px]">
+                        <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: proc?.color }} />
+                        <span className="text-slate-300">{u.proc} {proc?.name}</span>
+                        <span className="text-slate-500">{u.product}</span>
+                        <span className="font-bold text-white">{u.qty.toLocaleString()}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* 자재 테이블 */}
