@@ -58,9 +58,31 @@ const LOGS = [
       "현장생산 자재 UI 통일 — 현재고 셀 '현장생산' 배지, 일사용량 '연속공급', 보관일수 '현장생산' (재고·공정 탭 공통)",
       "UTL(유틸리티) 자재 공정 탭 누락 수정 — ProcessUsage 없는 자재도 재고 fallback으로 집계, '시설 전체' 태그 표시",
       "공정별 사용량 테이블 전 컬럼 정렬 ▲▼ 추가 (품번·자재명·구분·현재고·일소요량·보관일수·월소요량)",
+      "트리오 에이전트 구성 (크리·패브·엑스) — AGENTS.md 기반 기획팀 3인 서브에이전트 체계",
+      "입고 시뮬레이션 (/simulation) — 발주량 산정, ROP 기반 추천, 3D 창고 capacity 실시간 연동",
+    ],
+  },
+  {
+    day: 4,
+    date: "2026-07-12",
+    label: "FAB 규모 확장 + 3D 현실화 + 창고 연동 일관성",
+    color: "#7C3AED",
+    items: [
+      "Seed 재고·공정소비량 업계 표준 스케일업 — WH-A 68%, WH-B 51%, WH-C 75%, WH-D 46% (실제 FAB 수준)",
+      "WH-C totalCapacity 7500 cylinder-slot으로 확장 (특수가스 공급량 기준), WH-A 2000 pallet 조정",
+      "수요 시나리오 시뮬레이터 신규 추가 — 제품별(HBM·DRAM·NAND) 수요 변화 → 공정 소비량·창고 영향 예측",
+      "% 배지 클릭으로 직접 숫자 입력 (DemandSlider 인라인 input, Enter/Escape/blur 지원)",
+      "ProcessFlow3D: FAB_W 자동 계산 — 장비 수 변경 시 바닥·레일·창고·CUB·스크러버 모두 자동 스케일",
+      "장비 수 ×2 확장 (P04 식각 16대 기준 FAB_W ≈ 23 자동 산출), 기존 레이아웃 겹침 문제 해소",
+      "클린룸 raised access floor — 600mm 타일 격자선(LineSegments 단일 드로우콜), 에폭시 광택 바닥 재질",
+      "FOUP / 자재흐름 on/off 토글 버튼 — OFF 시 메시 언마운트·useFrame 제거로 실질적 성능 향상",
+      "창고 상세 3D ↔ 통계 패널 ↔ FAB 뷰 세 곳 일관성 확보 — utilization 기반 슬롯 확장으로 68% = 82/120 슬롯",
+      "operationalLayout ↔ 가상레이아웃 자동 전환 로직 (20%p 괴리 기준) — DB 슬롯 데이터 미동기화 방지",
     ],
   },
 ];
+
+
 
 export default function DevlogPage() {
   return (
@@ -120,10 +142,10 @@ export default function DevlogPage() {
               <div className="text-xs font-semibold text-[#999] mb-2">다음 세션 예정</div>
               <ul className="space-y-1.5">
                 {[
-                  "클린룸 외벽·천장 3D 추가 — 팹 사실화 마지막 단계 (~90%)",
-                  "입고 시뮬레이션 (/simulation) — 발주량 산정, ROP 기반 추천",
+                  "SCM 페이지 — 발주·납기·협력사 관리 연동",
+                  "리스크 알람 고도화 — 임계치 설정, 에스컬레이션 플로우",
                   "제품별 사용량 (/product) — HBM·DRAM·NAND 제품 단위 집계",
-                  "Vercel 배포 최신화 — Day 3 변경분 반영",
+                  "Vercel 배포 최신화 — Day 4 변경분 반영",
                 ].map((item, i) => (
                   <li key={i} className="flex items-start gap-2 text-[13px] text-[#999]">
                     <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#CCC] flex-shrink-0" />
