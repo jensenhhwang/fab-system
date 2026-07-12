@@ -47,47 +47,69 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F4F4] flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: "var(--bg-page)" }}>
       <div className="w-full max-w-md">
         {/* 로고 헤더 */}
-        <div className="bg-white rounded-2xl shadow-sm border border-[#E8E8E8] p-8 mb-4">
+        <div
+          className="bg-white rounded-2xl p-8 mb-4"
+          style={{ boxShadow: "var(--shadow-1)", border: "1px solid var(--border)" }}
+        >
           <div className="flex items-center gap-3 mb-8">
             <Image src="/skhynix_logo.png" alt="SK hynix" width={120} height={32} className="h-8 w-auto" />
-            <div className="w-px h-5 bg-[#E8E8E8]" />
-            <span className="text-xs text-[#999] font-medium tracking-wide">FAB 자재관리</span>
+            <div className="w-px h-5" style={{ backgroundColor: "var(--border)" }} />
+            <span
+              className="uppercase font-bold tracking-[0.08em]"
+              style={{ fontSize: "11px", color: "var(--text-3)" }}
+            >
+              FAB 자재관리
+            </span>
           </div>
 
           <div className="mb-6">
-            <h1 className="text-xl font-extrabold text-[#111] mb-1">로그인</h1>
-            <p className="text-sm text-[#999]">이천 M14/M16 자재관리 시스템</p>
+            <h1 className="text-xl font-bold mb-1" style={{ color: "var(--text-1)", letterSpacing: "-0.02em" }}>로그인</h1>
+            <p className="text-sm" style={{ color: "var(--text-3)" }}>이천 M14/M16 자재관리 시스템</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-[#555] mb-1.5">이메일</label>
+              <label className="block text-xs font-bold mb-1.5 uppercase tracking-[0.06em]" style={{ color: "var(--text-2)" }}>이메일</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="email@fab.skh"
                 required
-                className="w-full px-3.5 py-2.5 text-sm border border-[#E8E8E8] rounded-lg outline-none focus:border-[#EA002C] focus:ring-2 focus:ring-[#EA002C]/10 transition-all"
+                className="w-full px-3.5 py-2.5 text-sm rounded-lg outline-none transition-all"
+                style={{
+                  border: "1px solid var(--border)",
+                  backgroundColor: "var(--bg-page)",
+                  color: "var(--text-1)",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#EA002C"; e.target.style.boxShadow = "0 0 0 3px rgba(234,0,44,0.08)"; }}
+                onBlur={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none"; }}
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-[#555] mb-1.5">비밀번호</label>
+              <label className="block text-xs font-bold mb-1.5 uppercase tracking-[0.06em]" style={{ color: "var(--text-2)" }}>비밀번호</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="비밀번호 입력"
                 required
-                className="w-full px-3.5 py-2.5 text-sm border border-[#E8E8E8] rounded-lg outline-none focus:border-[#EA002C] focus:ring-2 focus:ring-[#EA002C]/10 transition-all"
+                className="w-full px-3.5 py-2.5 text-sm rounded-lg outline-none transition-all"
+                style={{
+                  border: "1px solid var(--border)",
+                  backgroundColor: "var(--bg-page)",
+                  color: "var(--text-1)",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#EA002C"; e.target.style.boxShadow = "0 0 0 3px rgba(234,0,44,0.08)"; }}
+                onBlur={(e) => { e.target.style.borderColor = "var(--border)"; e.target.style.boxShadow = "none"; }}
               />
             </div>
 
             {error && (
-              <div className="text-xs text-[#EA002C] bg-[#FFF0F2] border border-[#FFD6DA] rounded-lg px-3 py-2">
+              <div className="text-xs text-[#EA002C] bg-[#FFF0F2] rounded-lg px-3 py-2" style={{ border: "1px solid #FFD6DA" }}>
                 {error}
               </div>
             )}
@@ -95,7 +117,10 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#EA002C] text-white text-sm font-bold py-2.5 rounded-lg hover:bg-[#c8002a] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full text-white text-sm font-bold py-2.5 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              style={{ backgroundColor: "#EA002C" }}
+              onMouseEnter={(e) => { if (!loading) (e.target as HTMLButtonElement).style.backgroundColor = "#c8002a"; }}
+              onMouseLeave={(e) => { (e.target as HTMLButtonElement).style.backgroundColor = "#EA002C"; }}
             >
               {loading ? "로그인 중…" : "로그인"}
             </button>
@@ -103,25 +128,36 @@ export default function LoginPage() {
         </div>
 
         {/* 데모 계정 */}
-        <div className="bg-white rounded-2xl shadow-sm border border-[#E8E8E8] p-5">
-          <p className="text-xs font-semibold text-[#999] uppercase tracking-widest mb-3">데모 계정 (비밀번호: fab1234!)</p>
+        <div
+          className="bg-white rounded-2xl p-5"
+          style={{ boxShadow: "var(--shadow-1)", border: "1px solid var(--border)" }}
+        >
+          <p
+            className="uppercase font-bold tracking-[0.08em] mb-3"
+            style={{ fontSize: "11px", color: "var(--text-3)" }}
+          >
+            데모 계정 (비밀번호: fab1234!)
+          </p>
           <div className="grid grid-cols-2 gap-2">
             {DEMO_ACCOUNTS.map((acc) => (
               <button
                 key={acc.email}
                 onClick={() => fillAccount(acc)}
-                className="text-left p-3 rounded-xl border border-[#F0F0F0] hover:border-[#E8E8E8] hover:bg-[#F8F8F8] transition-all group"
+                className="text-left p-3 rounded-xl transition-all group"
+                style={{ border: "1px solid var(--border)", backgroundColor: "transparent" }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "var(--bg-page)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; }}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span
-                    className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white"
+                    className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white uppercase tracking-[0.04em]"
                     style={{ backgroundColor: acc.color }}
                   >
                     {acc.label}
                   </span>
                 </div>
-                <div className="text-xs font-semibold text-[#111]">{acc.name}</div>
-                <div className="text-[10px] text-[#999] mt-0.5">{acc.dept}</div>
+                <div className="text-xs font-semibold" style={{ color: "var(--text-1)" }}>{acc.name}</div>
+                <div style={{ fontSize: "10px", color: "var(--text-3)", marginTop: "2px" }}>{acc.dept}</div>
               </button>
             ))}
           </div>

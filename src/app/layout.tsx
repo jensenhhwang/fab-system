@@ -9,8 +9,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko" className="h-full antialiased" style={{ colorScheme: "light", backgroundColor: "#F4F4F4" }}>
-      <body className="h-full text-[#111111]" style={{ backgroundColor: "#F4F4F4" }}>
+    <html lang="ko" className="h-full antialiased" style={{ colorScheme: "light", backgroundColor: "#F3F0EE" }}>
+      <head>
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css"
+        />
+      </head>
+      <body className="h-full" style={{ backgroundColor: "#F3F0EE", color: "#141413" }}>
         <SessionProvider>{children}</SessionProvider>
       </body>
     </html>

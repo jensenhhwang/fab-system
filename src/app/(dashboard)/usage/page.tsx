@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { getProcessUsagesWithMaterial, getInventoryRows, getWarehouses } from "@/lib/queries";
+import { getProcessUsagesWithMaterial, getInventoryRows, getWarehouses, getWarehouseCapacity } from "@/lib/queries";
 import UsageClient from "./UsageClient";
 
 async function getUsageData() {
@@ -71,11 +71,13 @@ async function getUsageData() {
 // 공정 ↔ 자재창고 연결 그래프 도출
 //   ProcessUsage(공정→자재) ⋈ Inventory(자재→창고) → (창고,공정) 엣지
 async function getWarehouseGraph() {
-  const [usages, inventories, warehouses] = await Promise.all([
+  const [usages, inventories, warehouses, capacities] = await Promise.all([
     getProcessUsagesWithMaterial(),
     getInventoryRows(),
     getWarehouses(),
+    getWarehouseCapacity(),
   ]);
+  const capMap = new Map(capacities.map((c) => [c.code, c]));
 
   // materialId → 창고코드 (seed 상 자재는 대체로 단일 창고에 보관, 첫 매칭 사용)
   const matToWh = new Map<string, string>();
@@ -103,12 +105,27 @@ async function getWarehouseGraph() {
     return { whCode: e.whCode, procCode: e.procCode, qty: Math.round(e.qty), category };
   });
 
+  // ProcessFlow3D.tsx의 WH_META와 동일한 실물 창고 코드
+  const WH_PHYSICAL = new Set(["WH-A", "WH-B", "WH-C", "WH-D"]);
+
   // 창고 요약: 총 공급량 + 취급 카테고리 + 연결 공정 수
   const whSummary = warehouses.map((w) => {
     const wlinks = links.filter((l) => l.whCode === w.code);
     const catQty: Record<string, number> = {};
     for (const l of wlinks) catQty[l.category] = (catQty[l.category] ?? 0) + l.qty;
-    const categories = Object.entries(catQty).sort((a, b) => b[1] - a[1]).map(([c]) => c);
+
+    const cap = capMap.get(w.code);
+    const totalOcc = cap?.byCategory.reduce((s, b) => s + b.occupancy, 0) ?? 0;
+    const byCategory = cap?.byCategory.map((b) => ({
+      category: b.category,
+      pct: totalOcc > 0 ? b.occupancy / totalOcc : 0,
+    })) ?? [];
+
+    // 카테고리 우선순위: capacity 실재고 기준 → ProcessUsage 기준 순
+    const categories = byCategory.length > 0
+      ? byCategory.map((b) => b.category)
+      : Object.entries(catQty).sort((a, b) => b[1] - a[1]).map(([c]) => c);
+
     return {
       code: w.code,
       name: w.name,
@@ -116,8 +133,11 @@ async function getWarehouseGraph() {
       categories,
       processCount: new Set(wlinks.map((l) => l.procCode)).size,
       totalQty: wlinks.reduce((s, l) => s + l.qty, 0),
+      utilization: cap?.utilization ?? 0,
+      byCategory,
     };
-  }).filter((w) => w.totalQty > 0); // 공정과 연결된 창고만
+  // 실물 창고(WH-A/B/C/D)는 항상 포함, 나머지는 공정 연결이 있을 때만
+  }).filter((w) => w.totalQty > 0 || WH_PHYSICAL.has(w.code));
 
   return { links, warehouses: whSummary };
 }

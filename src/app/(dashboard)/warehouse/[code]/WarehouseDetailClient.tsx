@@ -3,6 +3,7 @@
 import { Canvas, useThree } from "@react-three/fiber";
 import { CameraControls, Edges, Environment, Grid, Html, RoundedBox } from "@react-three/drei";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import PanCameraControls from "@/components/PanCameraControls";
 import type { WarehouseCapacity } from "@/lib/queries";
 import type { VirtualStorageLocation } from "@/lib/warehouse-layout";
 
@@ -534,7 +535,7 @@ function Scene({ locations, selectedId, visibleIds, warehouseType, onSelect }: {
           dimmed={!visibleIds.has(location.id)} warehouseType={warehouseType}
           onSelect={() => onSelect(location.id)} />
       ))}
-      <CameraControls ref={controls} minDistance={3} maxDistance={36} maxPolarAngle={Math.PI / 2.05} />
+      <PanCameraControls ref={controls} minDistance={3} maxDistance={36} maxPolarAngle={Math.PI / 2.05} />
       <CameraFocus selected={selected} controls={controls} warehouseType={warehouseType} />
     </>
   );

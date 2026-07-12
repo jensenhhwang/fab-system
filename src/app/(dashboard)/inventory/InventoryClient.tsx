@@ -203,10 +203,10 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
       </div>
 
       {/* 재고 테이블 */}
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#F0F0F0] flex items-center justify-between">
+      <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: "var(--shadow-1)", border: "1px solid var(--border)" }}>
+        <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--border)" }}>
           <div className="flex items-center gap-3">
-            <span className="text-[13px] font-bold">
+            <span className="text-[13px] font-bold" style={{ color: "var(--text-1)", letterSpacing: "-0.01em" }}>
               {activeFilter === "ALL" ? "전체 재고 현황" : `${STATUS_BADGE[activeFilter]?.label} 품목`}
             </span>
             {activeFilter !== "ALL" && (
@@ -221,7 +221,7 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
               </span>
             )}
           </div>
-          <span className="text-[10px] text-[#999]">
+          <span style={{ fontSize: "10px", color: "var(--text-3)" }}>
             {filtered.length}품목{activeFilter !== "ALL" ? ` / 전체 ${items.length}품목` : ""}
           </span>
         </div>
@@ -229,7 +229,7 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="bg-[#FAFAFA] border-b border-[#F0F0F0]">
+              <tr style={{ backgroundColor: "var(--bg-page)", borderBottom: "1px solid var(--border)" }}>
                 {(
                   [
                     { col: "code"      as SortKey, label: "품번",     align: "left",   px: "px-5" },
@@ -246,8 +246,8 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
                   <th key={col} className={`${px} py-3`}>
                     <button
                       onClick={() => handleSort(col)}
-                      className={`text-[11px] font-semibold select-none hover:text-[#111] transition-colors flex items-center gap-0.5 ${align === "right" ? "ml-auto" : align === "center" ? "mx-auto" : ""}`}
-                      style={{ color: sortKey === col ? "#111" : "#999" }}
+                      className={`uppercase font-bold tracking-[0.06em] select-none transition-colors flex items-center gap-0.5 ${align === "right" ? "ml-auto" : align === "center" ? "mx-auto" : ""}`}
+                      style={{ fontSize: "11px", color: sortKey === col ? "var(--text-1)" : "var(--text-3)" }}
                     >
                       {label}
                       <SortIcon col={col} sortKey={sortKey} sortDir={sortDir} />
@@ -259,7 +259,7 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-5 py-12 text-center text-[#999] text-sm">
+                  <td colSpan={9} className="px-5 py-12 text-center text-sm" style={{ color: "var(--text-3)" }}>
                     해당 상태의 품목이 없습니다.
                   </td>
                 </tr>
@@ -270,11 +270,12 @@ export default function InventoryClient({ items }: { items: InventoryItem[] }) {
                   return (
                     <tr
                       key={inv.id}
-                      className="border-b border-[#F8F8F8] hover:bg-[#FAFAFA] transition-colors"
+                      className="transition-colors"
+                      style={{ borderBottom: "1px solid var(--border)" }}
                     >
-                      <td className="px-5 py-3 font-mono text-[11px] text-[#999]">{inv.material.code}</td>
+                      <td className="px-5 py-3 font-mono text-[11px]" style={{ color: "var(--text-3)" }}>{inv.material.code}</td>
                       <td className="px-4 py-3">
-                        <div className="font-semibold text-[#111]">{inv.material.name}</div>
+                        <div className="font-semibold" style={{ color: "var(--text-1)" }}>{inv.material.name}</div>
                         {inv.material.nameEn && (
                           <div className="text-[10px] text-[#999]">{inv.material.nameEn}</div>
                         )}

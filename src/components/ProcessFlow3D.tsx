@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useMemo, Suspense } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Text, CameraControls, Environment, Lightformer, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
+import PanCameraControls from "@/components/PanCameraControls";
 
 export const PROCESSES = [
   { code: "P01", name: "산화막",        nameEn: "Oxidation",     color: "#3B82F6", activities: ["열산화 성장", "SiO₂ 게이트막", "절연층 형성"],    nMachines: 4 },
@@ -466,22 +467,39 @@ function AnimatedFoup({ config, stateRef }: {
 export type WarehouseInfo = {
   code: string; name: string; type: string;
   categories: string[]; processCount: number; totalQty: number;
+  utilization?: number;
+  byCategory?: { category: string; pct: number }[];
 };
 export type WarehouseLink = {
   whCode: string; procCode: string; qty: number; category: string;
 };
 
 // 고층 AS/RS 자동화 랙 (개방형 철골 + 다단 선반 + 파렛트 + 스태커 크레인)
-function ASRSStructure({ w, d, h, color, opacity, dim }: {
+// utilization(0-100)과 byCategory로 실제 채움 상태 반영
+function ASRSStructure({ w, d, h, color, opacity, dim, utilization = 0, byCategory = [] }: {
   w: number; d: number; h: number; color: string; opacity: number; dim: boolean;
+  utilization?: number; byCategory?: { category: string; pct: number }[];
 }) {
   const levels = 6;
-  const bays = 4; // 통로 양쪽 랙 열 방향 파렛트 수(D 방향)
+  const bays = 4;
+  const totalSlots = levels * bays * 2; // 양쪽 랙
+  const filledSlots = Math.round(totalSlots * Math.min(utilization / 100, 1));
   const steel = dim ? "#9aa4ad" : "#6b7783";
   const postXs = [-w / 2, -0.15, 0.15, w / 2];
+
+  // 슬롯별 색상: byCategory 비율대로 색 배분
+  const slotColors: string[] = [];
+  let remaining = filledSlots;
+  for (const { category, pct } of byCategory) {
+    const n = Math.round(filledSlots * pct);
+    const c = CATEGORY_COLOR[category] ?? color;
+    for (let i = 0; i < n && remaining > 0; i++, remaining--) slotColors.push(c);
+  }
+  while (slotColors.length < filledSlots) slotColors.push(color);
+
+  let slotIdx = 0;
   return (
     <group>
-      {/* 수직 기둥 */}
       {postXs.map((px) =>
         [-d / 2, d / 2].map((pz) => (
           <mesh key={`p${px}-${pz}`} position={[px, h / 2, pz]} castShadow>
@@ -490,7 +508,6 @@ function ASRSStructure({ w, d, h, color, opacity, dim }: {
           </mesh>
         ))
       )}
-      {/* 다단 선반 빔 + 파렛트 */}
       {Array.from({ length: levels }).map((_, lv) => {
         const y = 0.5 + lv * ((h - 0.6) / levels);
         return (
@@ -501,17 +518,17 @@ function ASRSStructure({ w, d, h, color, opacity, dim }: {
                 <meshStandardMaterial color={steel} metalness={0.55} roughness={0.4} transparent opacity={opacity} />
               </mesh>
             ))}
-            {/* 파렛트 박스 (카테고리 색, 랜덤 채움) */}
             {[-w / 2 + 0.55, w / 2 - 0.55].map((rx) =>
               Array.from({ length: bays }).map((__, bi) => {
                 const pz = -d / 2 + 0.7 + bi * ((d - 1.2) / (bays - 1));
-                const filled = (lv * 7 + bi * 3 + (rx < 0 ? 1 : 0)) % 5 !== 0;
-                if (!filled) return null;
+                const thisIdx = slotIdx++;
+                const slotColor = slotColors[thisIdx];
+                if (!slotColor) return null;
                 return (
                   <mesh key={`box${rx}-${bi}`} position={[rx, y + 0.22, pz]} castShadow>
                     <boxGeometry args={[0.6, 0.34, 0.62]} />
-                    <meshStandardMaterial color={color} roughness={0.6}
-                      emissive={color} emissiveIntensity={dim ? 0.05 : 0.25} transparent opacity={opacity} />
+                    <meshStandardMaterial color={slotColor} roughness={0.6}
+                      emissive={slotColor} emissiveIntensity={dim ? 0.05 : 0.25} transparent opacity={opacity} />
                   </mesh>
                 );
               })
@@ -519,7 +536,6 @@ function ASRSStructure({ w, d, h, color, opacity, dim }: {
           </group>
         );
       })}
-      {/* 스태커 크레인 (중앙 통로 수직 마스트) */}
       <mesh position={[0, h / 2, 0]}>
         <boxGeometry args={[0.16, h, 0.16]} />
         <meshStandardMaterial color={dim ? "#c0c8d0" : "#e2b23a"} metalness={0.5} roughness={0.3}
@@ -529,7 +545,6 @@ function ASRSStructure({ w, d, h, color, opacity, dim }: {
         <boxGeometry args={[0.5, 0.5, 0.5]} />
         <meshStandardMaterial color="#c9a227" metalness={0.4} roughness={0.4} transparent opacity={opacity} />
       </mesh>
-      {/* 상단 지붕 프레임 + 측면 반투명 외벽 */}
       <mesh position={[0, h + 0.08, 0]}>
         <boxGeometry args={[w + 0.2, 0.12, d + 0.2]} />
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={dim ? 0.1 : 0.5} transparent opacity={opacity} />
@@ -538,71 +553,155 @@ function ASRSStructure({ w, d, h, color, opacity, dim }: {
         <boxGeometry args={[0.04, h, d]} />
         <meshStandardMaterial color="#cdd6df" metalness={0.2} roughness={0.5} transparent opacity={opacity * 0.18} />
       </mesh>
+      {/* 점유율 표시 바 (외벽 전면) */}
+      {utilization > 0 && (
+        <mesh position={[w / 2 + 0.06, (h * utilization / 100) / 2, 0]}>
+          <boxGeometry args={[0.06, h * utilization / 100, d * 0.18]} />
+          <meshStandardMaterial color={utilization > 80 ? "#EF4444" : utilization > 60 ? "#F7A600" : "#00B96B"}
+            emissive={utilization > 80 ? "#EF4444" : "#00B96B"} emissiveIntensity={dim ? 0.05 : 0.4} transparent opacity={opacity} />
+        </mesh>
+      )}
+      {/* 카테고리 스트라이프 — 건물 전면 하단, 항상 표시 (점유율과 무관) */}
+      {byCategory.length > 0 && (() => {
+        let xCursor = -w / 2;
+        return byCategory.map(({ category, pct }) => {
+          const bw = pct * w;
+          const cx = xCursor + bw / 2;
+          xCursor += bw;
+          const c = CATEGORY_COLOR[category] ?? "#64748B";
+          return (
+            <mesh key={category} position={[cx, 0.14, d / 2 + 0.025]}>
+              <boxGeometry args={[Math.max(bw - 0.03, 0.01), 0.2, 0.04]} />
+              <meshStandardMaterial color={c} emissive={c} emissiveIntensity={dim ? 0.1 : 0.55} transparent opacity={opacity * 0.92} />
+            </mesh>
+          );
+        });
+      })()}
     </group>
   );
 }
 
-// 방폭 위험물 별동 (저층 + 방류벽 + 벤트 스택)
-function HazmatStructure({ w, d, h, color, opacity, dim }: {
+// 방폭 위험물 별동 (저층 + 방류벽 + 벤트 스택 + 실제 점유율 fill)
+function HazmatStructure({ w, d, h, color, opacity, dim, utilization = 0, byCategory = [] }: {
   w: number; d: number; h: number; color: string; opacity: number; dim: boolean;
+  utilization?: number; byCategory?: { category: string; pct: number }[];
 }) {
+  const fillH = Math.max(0.01, h * 0.75 * Math.min(utilization / 100, 1));
+  // 카테고리별 X 분할 (위험물창고 내부 구획)
+  const zones = byCategory.filter((b) => b.pct > 0);
+  const zoneW = zones.length > 0 ? (w - 0.3) / zones.length : w - 0.3;
   return (
     <group>
-      {/* 본체 */}
       <mesh position={[0, h / 2, 0]} castShadow>
         <boxGeometry args={[w, h, d]} />
         <meshStandardMaterial color={dim ? "#d8dce0" : "#cbd3da"} roughness={0.7} metalness={0.05} transparent opacity={opacity} />
       </mesh>
-      {/* 위험물 경고 스트라이프 */}
+      {/* 카테고리별 내부 채움 볼륨 */}
+      {zones.map(({ category, pct }, i) => {
+        const cx = -w / 2 + 0.15 + i * zoneW + zoneW / 2;
+        const zoneColor = CATEGORY_COLOR[category] ?? color;
+        return (
+          <mesh key={category} position={[cx, fillH / 2, 0]}>
+            <boxGeometry args={[zoneW - 0.08, fillH, d - 0.2]} />
+            <meshStandardMaterial color={zoneColor} roughness={0.5}
+              emissive={zoneColor} emissiveIntensity={dim ? 0.05 : 0.3}
+              transparent opacity={opacity * (dim ? 0.35 : 0.7)} />
+          </mesh>
+        );
+      })}
       <mesh position={[0, h * 0.5, d / 2 + 0.01]}>
         <boxGeometry args={[w, 0.28, 0.02]} />
         <meshStandardMaterial color="#f2c200" emissive="#f2c200" emissiveIntensity={dim ? 0.1 : 0.5} transparent opacity={opacity} />
       </mesh>
-      {/* 지붕 (위험물 색) */}
       <mesh position={[0, h + 0.06, 0]}>
         <boxGeometry args={[w + 0.14, 0.12, d + 0.14]} />
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={dim ? 0.1 : 0.5} transparent opacity={opacity} />
       </mesh>
-      {/* 방류벽(containment berm) */}
       {[[0, d / 2 + 0.35], [0, -d / 2 - 0.35]].map(([bx, bz], i) => (
         <mesh key={i} position={[bx, 0.18, bz]}>
           <boxGeometry args={[w + 0.9, 0.36, 0.1]} />
           <meshStandardMaterial color="#94a3b8" roughness={0.8} transparent opacity={opacity} />
         </mesh>
       ))}
-      {/* 벤트 스택 */}
       {[-w / 2 + 0.4, w / 2 - 0.4].map((vx) => (
         <mesh key={vx} position={[vx, h + 0.55, -d / 2 + 0.4]}>
           <cylinderGeometry args={[0.08, 0.08, 1.0, 10]} />
           <meshStandardMaterial color="#8894a0" metalness={0.6} roughness={0.3} transparent opacity={opacity} />
         </mesh>
       ))}
+      {/* 카테고리 스트라이프 — 전면 하단 */}
+      {zones.length > 0 && (() => {
+        let xCursor = -w / 2;
+        return zones.map(({ category, pct }) => {
+          const bw = pct * w;
+          const cx = xCursor + bw / 2;
+          xCursor += bw;
+          const c = CATEGORY_COLOR[category] ?? "#64748B";
+          return (
+            <mesh key={category} position={[cx, 0.14, d / 2 + 0.025]}>
+              <boxGeometry args={[Math.max(bw - 0.03, 0.01), 0.2, 0.04]} />
+              <meshStandardMaterial color={c} emissive={c} emissiveIntensity={dim ? 0.1 : 0.55} transparent opacity={opacity * 0.92} />
+            </mesh>
+          );
+        });
+      })()}
     </group>
   );
 }
 
-// 평치/MRO 중층 창고 (박스 본체 + 지붕 + 도크 셔터)
-function FlatStructure({ w, d, h, color, opacity, dim }: {
+// 평치/MRO 중층 창고 (박스 본체 + 지붕 + 도크 셔터 + 실제 점유율 팔레트 스택)
+function FlatStructure({ w, d, h, color, opacity, dim, utilization = 0, byCategory = [] }: {
   w: number; d: number; h: number; color: string; opacity: number; dim: boolean;
+  utilization?: number; byCategory?: { category: string; pct: number }[];
 }) {
+  const fillH = Math.max(0.01, (h - 0.3) * Math.min(utilization / 100, 1));
+  const zones = byCategory.filter((b) => b.pct > 0);
+  const zoneW = zones.length > 0 ? (w - 0.3) / zones.length : w - 0.3;
   return (
     <group>
       <mesh position={[0, h / 2, 0]} castShadow>
         <boxGeometry args={[w, h, d]} />
-        <meshStandardMaterial color={dim ? "#dfe4e8" : "#e2e8f0"} roughness={0.55} metalness={0.05} transparent opacity={opacity} />
+        <meshStandardMaterial color={dim ? "#dfe4e8" : "#e2e8f0"} roughness={0.55} metalness={0.05} transparent opacity={opacity * 0.5} />
       </mesh>
-      {/* 지붕 */}
+      {/* 카테고리별 채움 볼륨 (바닥에서 쌓이는 방식) */}
+      {zones.map(({ category }, i) => {
+        const cx = -w / 2 + 0.15 + i * zoneW + zoneW / 2;
+        const zoneColor = CATEGORY_COLOR[category] ?? color;
+        return (
+          <mesh key={category} position={[cx, 0.15 + fillH / 2, 0]}>
+            <boxGeometry args={[zoneW - 0.1, fillH, d - 0.3]} />
+            <meshStandardMaterial color={zoneColor} roughness={0.55}
+              emissive={zoneColor} emissiveIntensity={dim ? 0.03 : 0.2}
+              transparent opacity={opacity * (dim ? 0.3 : 0.75)} />
+          </mesh>
+        );
+      })}
       <mesh position={[0, h + 0.07, 0]}>
         <boxGeometry args={[w + 0.14, 0.14, d + 0.14]} />
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={dim ? 0.1 : 0.5} transparent opacity={opacity} />
       </mesh>
-      {/* 도크 셔터 (팹 방향) */}
       {[-d / 4, d / 4].map((dz) => (
         <mesh key={dz} position={[w / 2 + 0.01, h * 0.32, dz]}>
           <boxGeometry args={[0.03, h * 0.55, d * 0.3]} />
           <meshStandardMaterial color="#475569" roughness={0.6} transparent opacity={opacity} />
         </mesh>
       ))}
+      {/* 카테고리 스트라이프 — 전면 하단 */}
+      {zones.length > 0 && (() => {
+        let xCursor = -w / 2;
+        return zones.map(({ category, pct }) => {
+          const bw = pct * w;
+          const cx = xCursor + bw / 2;
+          xCursor += bw;
+          const c = CATEGORY_COLOR[category] ?? "#64748B";
+          return (
+            <mesh key={category} position={[cx, 0.14, d / 2 + 0.025]}>
+              <boxGeometry args={[Math.max(bw - 0.03, 0.01), 0.2, 0.04]} />
+              <meshStandardMaterial color={c} emissive={c} emissiveIntensity={dim ? 0.1 : 0.55} transparent opacity={opacity * 0.92} />
+            </mesh>
+          );
+        });
+      })()}
     </group>
   );
 }
@@ -629,10 +728,10 @@ function WarehouseBuilding({ wh, isHL, isDimmed, onHover, onLeave, onFocus }: {
         <meshStandardMaterial color={dim ? "#c4ccd4" : "#b8c2cc"} roughness={0.9} transparent opacity={opacity} />
       </mesh>
 
-      {meta.kind === "asrs"   && <ASRSStructure   w={w} d={d} h={h} color={color} opacity={opacity} dim={dim} />}
-      {meta.kind === "hazmat" && <HazmatStructure w={w} d={d} h={h} color={color} opacity={opacity} dim={dim} />}
+      {meta.kind === "asrs"   && <ASRSStructure   w={w} d={d} h={h} color={color} opacity={opacity} dim={dim} utilization={wh.utilization} byCategory={wh.byCategory} />}
+      {meta.kind === "hazmat" && <HazmatStructure w={w} d={d} h={h} color={color} opacity={opacity} dim={dim} utilization={wh.utilization} byCategory={wh.byCategory} />}
       {(meta.kind === "flat" || meta.kind === "mro") &&
-        <FlatStructure w={w} d={d} h={h} color={color} opacity={opacity} dim={dim} />}
+        <FlatStructure w={w} d={d} h={h} color={color} opacity={opacity} dim={dim} utilization={wh.utilization} byCategory={wh.byCategory} />}
 
       {/* 라벨 (구조물 위) */}
       <Text position={[0, h + 0.42, 0]} fontSize={0.34}
@@ -645,7 +744,7 @@ function WarehouseBuilding({ wh, isHL, isDimmed, onHover, onLeave, onFocus }: {
       {!isDimmed && (
         <Text position={[0, 0.55, d / 2 + 0.35]} fontSize={0.14} color="#64748b"
           anchorX="center" anchorY="middle">
-          {`${wh.processCount}개 공정 · ${wh.totalQty.toLocaleString()}/월`}
+          {`${wh.processCount}개 공정 · ${wh.utilization != null ? `점유 ${wh.utilization}%` : `${wh.totalQty.toLocaleString()}/월`}`}
         </Text>
       )}
     </group>
@@ -900,6 +999,7 @@ function Scene({
   focus: FocusView;
 }) {
   const camRef = useRef<CameraControls>(null);
+
   const hasProcHL = highlightedProcesses.length > 0;
   // 창고 hover 시 해당 창고가 공급하는 공정들
   const whHlProcs = hoveredWh
@@ -1031,7 +1131,7 @@ function Scene({
           onFocus={() => onFocusWh(wh.code)} />
       ))}
 
-      <CameraControls ref={camRef} minDistance={2.2} maxDistance={75}
+      <PanCameraControls ref={camRef} minDistance={2.2} maxDistance={75}
         dollySpeed={1.7} truckSpeed={1.6} maxPolarAngle={Math.PI / 2.05} />
       <FocusController controls={camRef} focus={focus} />
     </>
@@ -1045,6 +1145,7 @@ export default function ProcessFlow3D({
   highlightedProcesses = [],
   activeProcesses = [],
   onProcessClick,
+  onWarehouseClick,
   materialCounts = {},
   warehouses = [],
   warehouseLinks = [],
@@ -1052,6 +1153,7 @@ export default function ProcessFlow3D({
   highlightedProcesses?: string[];
   activeProcesses?: string[];
   onProcessClick?: (code: string) => void;
+  onWarehouseClick?: (code: string) => void;
   materialCounts?: Record<string, number>;
   warehouses?: WarehouseInfo[];
   warehouseLinks?: WarehouseLink[];
@@ -1061,8 +1163,12 @@ export default function ProcessFlow3D({
   const [focus, setFocus] = useState<FocusView>(OVERVIEW_FOCUS);
   const [focusLabel, setFocusLabel] = useState<string | null>(null);
   const focusWh = (code: string) => {
-    setFocus(focusForWarehouse(code));
-    setFocusLabel(`${code} 창고`);
+    if (onWarehouseClick) {
+      onWarehouseClick(code);
+    } else {
+      setFocus(focusForWarehouse(code));
+      setFocusLabel(`${code} 창고`);
+    }
   };
   const focusBay = (code: string) => {
     setFocus(focusForBay(code));
@@ -1157,7 +1263,7 @@ export default function ProcessFlow3D({
         )}
       </div>
       <div className="absolute top-3 left-1/2 -translate-x-1/2 text-[10px] text-white/70 bg-black/40 backdrop-blur-sm rounded-full px-3 py-1 pointer-events-none">
-        창고·공정 클릭 → 확대 · 드래그 회전 · 휠 줌
+        드래그 이동 · 우클릭 회전 · 휠 줌 · 클릭 확대
       </div>
 
       {/* FOUP status overlay */}
@@ -1198,18 +1304,62 @@ export default function ProcessFlow3D({
         })}
       </div>
 
-      {/* Legend */}
-      <div className="absolute top-3 right-3 bg-black/50 backdrop-blur-sm rounded-lg px-3 py-2 pointer-events-none">
-        <div className="text-[9px] text-white/50 mb-1">Photo (P03)만 5회+ 방문</div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-[#EC4899]" />
-          <span className="text-[9px] text-white/70">FOUP = 웨이퍼 25장 카세트</span>
+      {/* 창고 hover 팝업 — capacity 데이터 미리보기 */}
+      {hoveredWh && (() => {
+        const wh = warehouses.find((w) => w.code === hoveredWh);
+        if (!wh) return null;
+        const util = wh.utilization ?? 0;
+        const cats = wh.byCategory ?? [];
+        return (
+          <div className="absolute top-3 right-3 bg-black/80 backdrop-blur-sm rounded-xl px-3 py-2.5 pointer-events-none min-w-[160px]">
+            <div className="text-[11px] font-bold text-white mb-0.5">{wh.code}</div>
+            <div className="text-[9px] text-white/50 mb-2">{wh.name}</div>
+            {util > 0 ? (
+              <>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <div className="flex-1 h-1.5 bg-white/15 rounded-full overflow-hidden flex">
+                    {cats.map((b) => (
+                      <div key={b.category}
+                        style={{ width: `${b.pct * 100}%`, background: CATEGORY_COLOR[b.category] ?? "#888" }} />
+                    ))}
+                  </div>
+                  <span className="text-[10px] font-bold text-white flex-shrink-0">{util}%</span>
+                </div>
+                <div className="flex flex-col gap-0.5 mb-2">
+                  {cats.slice(0, 4).map((b) => (
+                    <div key={b.category} className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-sm flex-shrink-0"
+                        style={{ background: CATEGORY_COLOR[b.category] ?? "#888" }} />
+                      <span className="text-[9px] text-white/60">{b.category}</span>
+                      <span className="text-[9px] text-white ml-auto">{(b.pct * 100).toFixed(0)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="text-[9px] text-white/30 mb-2">점유 데이터 없음</div>
+            )}
+            <div className="text-[8px] text-white/30 border-t border-white/10 pt-1.5">
+              {wh.processCount}개 공정 공급 · 클릭하면 상세 보기
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Legend — hover 중이 아닐 때 */}
+      {!hoveredWh && (
+        <div className="absolute top-3 right-3 bg-black/50 backdrop-blur-sm rounded-lg px-3 py-2 pointer-events-none">
+          <div className="text-[9px] text-white/50 mb-1">Photo (P03)만 5회+ 방문</div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-[#EC4899]" />
+            <span className="text-[9px] text-white/70">FOUP = 웨이퍼 25장 카세트</span>
+          </div>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <div className="w-6 h-0.5 bg-[#8898aa]" />
+            <span className="text-[9px] text-white/70">AMHS 자동 반송 레일</span>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <div className="w-6 h-0.5 bg-[#8898aa]" />
-          <span className="text-[9px] text-white/70">AMHS 자동 반송 레일</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

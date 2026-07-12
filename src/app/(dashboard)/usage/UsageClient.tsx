@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
+import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { PROCESSES } from "@/components/ProcessFlow3D";
 
@@ -57,6 +58,7 @@ export default function UsageClient({
   warehouseLinks?: WarehouseLink[];
   warehouses?: WarehouseInfo[];
 }) {
+  const router = useRouter();
   const [hoveredMat, setHoveredMat] = useState<Material | null>(null);
   const [selectedProc, setSelectedProc] = useState<string | null>(null);
   const [filterProduct, setFilterProduct] = useState<"ALL" | "HBM" | "DRAM" | "NAND">("ALL");
@@ -108,14 +110,17 @@ export default function UsageClient({
   return (
     <>
       <div className="mb-5">
-        <div className="text-2xl font-extrabold tracking-tight">공정별 사용량</div>
-        <div className="text-sm text-[#999] mt-1">
+        <div className="uppercase font-bold tracking-[0.08em] mb-1" style={{ fontSize: "11px", color: "var(--text-3)" }}>
+          반도체 공정 / 자재 분석
+        </div>
+        <div className="text-2xl font-bold" style={{ color: "var(--text-1)", letterSpacing: "-0.025em" }}>공정별 사용량</div>
+        <div className="text-sm mt-1" style={{ color: "var(--text-3)" }}>
           자재에 커서를 올리면 해당 공정이 흐름도에 하이라이트됩니다
         </div>
       </div>
 
       {/* 공정 흐름도 */}
-      <div className="bg-white rounded-2xl shadow-sm p-5 mb-5">
+      <div className="bg-white rounded-2xl p-5 mb-5" style={{ boxShadow: "var(--shadow-1)", border: "1px solid var(--border)" }}>
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm font-bold text-[#111]">
             반도체 공정 흐름도 + 자재 공급망 (Fab Process &amp; Material Flow)
@@ -151,6 +156,7 @@ export default function UsageClient({
               onProcessClick={(code) =>
                 setSelectedProc((prev) => (prev === code ? null : code))
               }
+              onWarehouseClick={(code) => router.push(`/warehouse/${code}`)}
               materialCounts={materialCounts}
               warehouses={warehouses}
               warehouseLinks={warehouseLinks}
@@ -186,9 +192,9 @@ export default function UsageClient({
       </div>
 
       {/* 자재 테이블 */}
-      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+      <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: "var(--shadow-1)", border: "1px solid var(--border)" }}>
         {/* 필터 */}
-        <div className="px-5 py-3 border-b border-[#F0F0F0] flex items-center gap-3 flex-wrap">
+        <div className="px-5 py-3 flex items-center gap-3 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
           <span className="text-[11px] font-semibold text-[#999]">제품</span>
           {(["ALL", "HBM", "DRAM", "NAND"] as const).map((p) => (
             <button
@@ -243,7 +249,7 @@ export default function UsageClient({
 
         <table className="w-full text-xs">
           <thead>
-            <tr className="bg-[#FAFAFA] border-b border-[#F0F0F0]">
+            <tr style={{ backgroundColor: "var(--bg-page)", borderBottom: "1px solid var(--border)" }}>
               {(
                 [
                   { col: "code"       as SortKey | null, label: "품번",     align: "left"  as const, px: "px-5" },
@@ -261,14 +267,14 @@ export default function UsageClient({
                   {col ? (
                     <button
                       onClick={() => handleSort(col)}
-                      className={`text-[11px] font-semibold select-none hover:text-[#111] transition-colors flex items-center gap-0.5 ${align === "right" ? "ml-auto" : ""}`}
-                      style={{ color: sortKey === col ? "#111" : "#999" }}
+                      className={`uppercase font-bold tracking-[0.06em] select-none transition-colors flex items-center gap-0.5 ${align === "right" ? "ml-auto" : ""}`}
+                      style={{ fontSize: "11px", color: sortKey === col ? "var(--text-1)" : "var(--text-3)" }}
                     >
                       {label}
                       <SortIcon col={col} sortKey={sortKey} sortDir={sortDir} />
                     </button>
                   ) : (
-                    <span className={`text-[11px] font-semibold text-[#999] flex ${align === "right" ? "justify-end" : ""}`}>{label}</span>
+                    <span className={`uppercase font-bold tracking-[0.06em] flex ${align === "right" ? "justify-end" : ""}`} style={{ fontSize: "11px", color: "var(--text-3)" }}>{label}</span>
                   )}
                 </th>
               ))}
@@ -287,8 +293,8 @@ export default function UsageClient({
                   key={mat.id}
                   onMouseEnter={() => setHoveredMat(mat)}
                   onMouseLeave={() => setHoveredMat(null)}
-                  className="border-b border-[#F8F8F8] transition-colors cursor-pointer"
-                  style={{ background: isHovered ? "#FFF5F5" : undefined }}
+                  className="transition-colors cursor-pointer"
+                  style={{ background: isHovered ? "#FFF5F5" : "transparent", borderBottom: "1px solid var(--border)" }}
                 >
                   <td className="px-5 py-2.5 font-mono text-[11px] text-[#999]">{mat.code}</td>
                   <td className="px-4 py-2.5 font-semibold text-[#111]">{mat.name}</td>
