@@ -107,6 +107,17 @@ export interface WikiDoc {
   _id: string; date: Date; title: string; category: string; content: string;
   result?: string | null; nextAction?: string | null; userId: string; createdAt: Date;
 }
+export type BenefitCategory = "COST" | "TIME" | "RISK" | "QUALITY" | "CONTROL";
+export type BenefitValueType = "CASH_SAVING" | "WORKING_CAPITAL" | "COST_AVOIDANCE" | "TIME_VALUE" | "RISK_AVOIDANCE" | "FORECAST_QUALITY";
+export type BenefitStatus = "HYPOTHESIS" | "OBSERVED" | "CALCULATED" | "VALIDATED" | "REALIZED" | "NOT_REALIZED" | "REJECTED";
+export interface BenefitCaseDoc {
+  _id: string; title: string; category: BenefitCategory; valueType: BenefitValueType; status: BenefitStatus;
+  materialId?: string | null; baselineDescription: string; systemFinding: string; actionTaken?: string | null;
+  actualOutcome?: string | null; affectedQuantity?: number | null; unit?: string | null; unitPrice?: number | null;
+  calculationFormula?: string | null; calculatedAmount?: number | null; approvedAmount?: number | null;
+  evidence?: string | null; ownerId: string; validatorId?: string | null; detectedAt: Date;
+  validatedAt?: Date | null; createdAt: Date; updatedAt: Date;
+}
 
 // ─── 컬렉션 접근자 ─────────────────────────────────────────
 export async function collections(): Promise<{
@@ -127,6 +138,7 @@ export async function collections(): Promise<{
   handlingUnits: Collection<HandlingUnitDoc>;
   inventoryMovements: Collection<InventoryMovementDoc>;
   facilityTelemetry: Collection<FacilityTelemetryDoc>;
+  benefitCases: Collection<BenefitCaseDoc>;
 }> {
   const db = await getDb();
   return {
@@ -147,5 +159,6 @@ export async function collections(): Promise<{
     handlingUnits: db.collection<HandlingUnitDoc>("handlingUnits"),
     inventoryMovements: db.collection<InventoryMovementDoc>("inventoryMovements"),
     facilityTelemetry: db.collection<FacilityTelemetryDoc>("facilityTelemetry"),
+    benefitCases: db.collection<BenefitCaseDoc>("benefitCases"),
   };
 }

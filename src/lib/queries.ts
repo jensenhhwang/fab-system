@@ -2,6 +2,7 @@ import {
   collections,
   type MaterialDoc, type WarehouseDoc, type InventoryDoc, type ProcessUsageDoc,
   type TransactionDoc, type RiskLevel, type UserDoc, type WikiDoc, type InfraDoc,
+  type BenefitCaseDoc,
 } from "@/lib/db";
 import { materialFactor, WORKING_DAYS } from "@/lib/capacity";
 import type { VirtualStorageLocation } from "@/lib/warehouse-layout";
@@ -120,6 +121,17 @@ export async function getWikiEntries(): Promise<WikiShaped[]> {
 export async function createWikiEntry(data: Omit<WikiDoc, "_id">): Promise<void> {
   const { wikiEntries } = await collections();
   await wikiEntries.insertOne({ _id: crypto.randomUUID(), ...data });
+}
+
+export async function getBenefitCases(): Promise<(BenefitCaseDoc & { id: string })[]> {
+  const { benefitCases } = await collections();
+  const docs = await benefitCases.find({}).sort({ detectedAt: -1 }).toArray();
+  return docs.map((doc) => ({ ...doc, id: doc._id }));
+}
+
+export async function createBenefitCase(data: Omit<BenefitCaseDoc, "_id">): Promise<void> {
+  const { benefitCases } = await collections();
+  await benefitCases.insertOne({ _id: crypto.randomUUID(), ...data });
 }
 
 // ─────────────────────────────────────────────

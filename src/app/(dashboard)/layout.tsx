@@ -26,7 +26,6 @@ const NAV = [
     group: "시장 인텔리전스",
     items: [
       { href: "/market",            label: "시장 가격·생산능력" },
-      { href: "/simulation/market", label: "수요 시나리오 시뮬" },
     ],
   },
   {
@@ -35,7 +34,14 @@ const NAV = [
       { href: "/inventory", label: "재고·보관일수",   badge: "alert" },
       { href: "/usage",     label: "공정별 사용량" },
       { href: "/product",   label: "제품별 사용량" },
-      { href: "/simulation",label: "입고 시뮬레이션" },
+    ],
+  },
+  {
+    group: "의사결정",
+    items: [
+      { href: "/simulation", label: "운영 시나리오" },
+      { href: "/simulation/market", label: "수요예측 시나리오" },
+      { href: "/value",      label: "성과 관리" },
     ],
   },
   {
@@ -55,7 +61,6 @@ const NAV = [
   {
     group: "기록",
     items: [
-      { href: "/wiki",    label: "업무 일지" },
       { href: "/devlog",  label: "개발 이력" },
     ],
   },
@@ -70,6 +75,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
+    if (href === "/simulation") return pathname === "/simulation";
     return pathname.startsWith(href);
   }
 
