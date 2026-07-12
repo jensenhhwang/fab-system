@@ -23,6 +23,13 @@ const NAV = [
   { group: "Dashboard",   items: [{ href: "/",           label: "종합 현황" }] },
   { group: "창고 관리",   items: [{ href: "/warehouse",  label: "창고 Capacity" }] },
   {
+    group: "시장 인텔리전스",
+    items: [
+      { href: "/market",            label: "시장 가격·생산능력" },
+      { href: "/simulation/market", label: "수요 시나리오 시뮬" },
+    ],
+  },
+  {
     group: "자재 분석",
     items: [
       { href: "/inventory", label: "재고·보관일수",   badge: "alert" },

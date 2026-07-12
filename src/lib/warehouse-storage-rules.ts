@@ -9,9 +9,9 @@ export type SupplyProfile = {
 };
 
 export const FACILITY_MASTER = [
-  { _id: "WH-A", code: "WH-A", name: "A동 — 자동화 창고 (AS/RS)", type: "AS_RS", capacityMode: "SPACE", totalCapacity: 7000, unit: "pallet", temperature: "20~25°C / 습도 45~55%", notes: "표준 팔레트 일반 소모품·슬러리·포장 자재 자동보관" },
+  { _id: "WH-A", code: "WH-A", name: "A동 — 자동화 창고 (AS/RS)", type: "AS_RS", capacityMode: "SPACE", totalCapacity: 2000, unit: "pallet", temperature: "20~25°C / 습도 45~55%", notes: "표준 팔레트 일반 소모품·슬러리·포장 자재 자동보관" },
   { _id: "WH-B", code: "WH-B", name: "B동 — 평치·항온 창고", type: "FLAT", capacityMode: "SPACE", totalCapacity: 2600, unit: "pallet", temperature: "항온 Zone 5~25°C", notes: "포토레지스트·필름·온도민감 자재 보관" },
-  { _id: "WH-C", code: "WH-C", name: "C동 — 특수가스 안전창고", type: "HAZMAT", capacityMode: "SPACE", totalCapacity: 1000, unit: "cylinder-slot", temperature: "15~20°C / 방폭·강제배기", notes: "독성·부식성·자연발화성 특수가스 예비 실린더 보관 · 허가상한은 사업장 설정값", legalLimit: 900 },
+  { _id: "WH-C", code: "WH-C", name: "C동 — 특수가스 안전창고", type: "HAZMAT", capacityMode: "SPACE", totalCapacity: 7500, unit: "cylinder-slot", temperature: "15~20°C / 방폭·강제배기", notes: "독성·부식성·자연발화성 특수가스 예비 실린더 보관 · 허가상한은 사업장 설정값", legalLimit: 6750 },
   { _id: "WH-D", code: "WH-D", name: "D동 — 공구·MRO 창고", type: "MRO", capacityMode: "SPACE", totalCapacity: 2200, unit: "slot", temperature: "실온", notes: "Probe Card·PVD Target·Quartz Kit 등 개체관리" },
   { _id: "YD-GAS", code: "YD-GAS", name: "벌크가스 야드", type: "BULK_GAS", capacityMode: "TANK_LEVEL", totalCapacity: 100, unit: "%", temperature: "옥외 탱크·기화기·정제기", notes: "N₂·Ar·O₂·H₂·He·CO₂ 중앙공급" },
   { _id: "YD-CHEM", code: "YD-CHEM", name: "벌크 케미컬 야드", type: "BULK_CHEM", capacityMode: "TANK_LEVEL", totalCapacity: 100, unit: "%", temperature: "물질별 탱크·방유 구획", notes: "HF·H₂O₂·H₂SO₄·NH₄OH·HCl·H₃PO₄·TMAH BCDS" },

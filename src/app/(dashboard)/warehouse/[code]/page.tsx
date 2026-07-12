@@ -30,7 +30,15 @@ export default async function WarehouseDetailPage({ params }: { params: Promise<
         unit: item.material.unit,
       },
     }));
-  const locations = operationalLayout ?? buildVirtualWarehouseLayout(warehouse.code, warehouse.type, inventory);
+  // operationalLayout이 있어도 점유율 괴리가 20%p 이상이면 가상 레이아웃 사용
+  // (DB 슬롯 데이터가 inventory 기반 utilization과 동기화 안 된 경우 방지)
+  const opOccPct = operationalLayout
+    ? Math.round(operationalLayout.filter(l => l.status !== "AVAILABLE").length / Math.max(operationalLayout.length, 1) * 100)
+    : null;
+  const useVirtual = !operationalLayout || Math.abs((opOccPct ?? 0) - warehouse.utilization) > 20;
+  const locations = useVirtual
+    ? buildVirtualWarehouseLayout(warehouse.code, warehouse.type, inventory, { utilization: warehouse.utilization, byCategory: warehouse.byCategory })
+    : operationalLayout!;
 
   return (
     <div className="h-[calc(100dvh-148px)] min-h-[520px] flex flex-col overflow-hidden">

@@ -7,24 +7,28 @@ import * as THREE from "three";
 import PanCameraControls from "@/components/PanCameraControls";
 
 export const PROCESSES = [
-  { code: "P01", name: "산화막",        nameEn: "Oxidation",     color: "#3B82F6", activities: ["열산화 성장", "SiO₂ 게이트막", "절연층 형성"],    nMachines: 4 },
-  { code: "P02", name: "CVD",           nameEn: "CVD",           color: "#8B5CF6", activities: ["박막 증착", "PECVD/LPCVD", "유전체 형성"],          nMachines: 6 },
-  { code: "P03", name: "포토",          nameEn: "Photo",         color: "#EC4899", activities: ["PR 도포", "EUV/ArF 노광", "현상·검사"],             nMachines: 6, yellowBay: true },
-  { code: "P04", name: "식각",          nameEn: "Etching",       color: "#F97316", activities: ["건식/습식 식각", "패턴 전사", "선택비 제어"],         nMachines: 8 },
-  { code: "P05", name: "이온주입",      nameEn: "Ion Implant",   color: "#EAB308", activities: ["불순물 주입", "도즈량 제어", "열처리 활성화"],        nMachines: 4 },
-  { code: "P06", name: "금속배선1",     nameEn: "Metallization", color: "#10B981", activities: ["Al/Cu 스퍼터링", "배선 패터닝", "비아 형성"],         nMachines: 5 },
-  { code: "P07", name: "CMP",           nameEn: "CMP",           color: "#06B6D4", activities: ["전면 평탄화", "연마 속도 제어", "슬러리 관리"],       nMachines: 5 },
-  { code: "P08", name: "TSV/배선2",     nameEn: "TSV/Metal2",    color: "#EF4444", activities: ["관통 전극 형성", "Cu 도금", "3D 적층 배선"],          nMachines: 4 },
-  { code: "P09", name: "웨이퍼테스트",  nameEn: "Wafer Test",    color: "#84CC16", activities: ["전기 특성 검사", "수율 분석", "불량 맵핑"],            nMachines: 6 },
-  { code: "P10", name: "패키징",        nameEn: "Packaging",     color: "#D946EF", activities: ["다이 절단", "HBM 적층 본딩", "최종 검사"],            nMachines: 5 },
+  { code: "P01", name: "산화막",        nameEn: "Oxidation",     color: "#3B82F6", activities: ["열산화 성장", "SiO₂ 게이트막", "절연층 형성"],    nMachines: 8  },
+  { code: "P02", name: "CVD",           nameEn: "CVD",           color: "#8B5CF6", activities: ["박막 증착", "PECVD/LPCVD", "유전체 형성"],          nMachines: 12 },
+  { code: "P03", name: "포토",          nameEn: "Photo",         color: "#EC4899", activities: ["PR 도포", "EUV/ArF 노광", "현상·검사"],             nMachines: 12, yellowBay: true },
+  { code: "P04", name: "식각",          nameEn: "Etching",       color: "#F97316", activities: ["건식/습식 식각", "패턴 전사", "선택비 제어"],         nMachines: 16 },
+  { code: "P05", name: "이온주입",      nameEn: "Ion Implant",   color: "#EAB308", activities: ["불순물 주입", "도즈량 제어", "열처리 활성화"],        nMachines: 8  },
+  { code: "P06", name: "금속배선1",     nameEn: "Metallization", color: "#10B981", activities: ["Al/Cu 스퍼터링", "배선 패터닝", "비아 형성"],         nMachines: 10 },
+  { code: "P07", name: "CMP",           nameEn: "CMP",           color: "#06B6D4", activities: ["전면 평탄화", "연마 속도 제어", "슬러리 관리"],       nMachines: 10 },
+  { code: "P08", name: "TSV/배선2",     nameEn: "TSV/Metal2",    color: "#EF4444", activities: ["관통 전극 형성", "Cu 도금", "3D 적층 배선"],          nMachines: 8  },
+  { code: "P09", name: "웨이퍼테스트",  nameEn: "Wafer Test",    color: "#84CC16", activities: ["전기 특성 검사", "수율 분석", "불량 맵핑"],            nMachines: 12 },
+  { code: "P10", name: "패키징",        nameEn: "Packaging",     color: "#D946EF", activities: ["다이 절단", "HBM 적층 본딩", "최종 검사"],            nMachines: 10 },
 ];
 
-const PITCH     = 1.3;  // 장비 간 정비 클리어런스 반영
+const PITCH     = 1.3;
 const MACHINE_H = 1.75;
 const MACHINE_W = 0.72;
 const MACHINE_D = 0.65;
-const BAY_HALF  = 1.6;  // 통로+체이스 공간 확보
+const BAY_HALF  = 1.6;
 const CORR_HALF = 1.55;
+
+// 장비 수 변경 시 FAB 폭 자동 스케일
+const _MAX_BAY_W = Math.max(...PROCESSES.map(p => (p.nMachines - 1) * PITCH + MACHINE_W + 0.4));
+const FAB_W = Math.max(12, Math.ceil(_MAX_BAY_W) + 2);
 
 // ─── 자재 카테고리 색 (usage 테이블과 통일) ───
 export const CATEGORY_COLOR: Record<string, string> = {
@@ -38,7 +42,7 @@ export const CATEGORY_COLOR: Record<string, string> = {
 // ─── 자재창고 배치 (fab 서측 자재 야드) ───
 // 실제 팹처럼 종류별로 크기·형태가 다름. x는 좌측 야드, z는 코드별 배치.
 // kind: asrs=고층 자동화랙 / hazmat=방폭 저층 별동 / flat=평치 중층 / mro=소형
-const WH_X = -11.5;
+const WH_X = -(FAB_W / 2 + 5.5);
 const WH_META: Record<string, {
   z: number; short: string; lane: number;
   kind: "asrs" | "hazmat" | "flat" | "mro";
@@ -49,15 +53,15 @@ const WH_META: Record<string, {
   "WH-B": { z:  6.0, short: "B동 평치창고",          lane: 2, kind: "flat",   w: 3.2, d: 4.4, h: 3.6 }, // 중층
   "WH-D": { z: 11.6, short: "D동 공구·MRO",         lane: 3, kind: "mro",    w: 2.6, d: 3.0, h: 2.8 }, // 소형
 };
-const WH_HEADER_X = -6.0; // 벽면 서플라이 헤더 X
+const WH_HEADER_X = -(FAB_W / 2 + 0.5); // 벽면 서플라이 헤더 X
 
 // 가스야드 (벌크가스 ISO 탱크 — 창고 아님, 배관으로 팹 공급)
-const GAS_YARD = { x: -12.2, z: -15.0 };
+const GAS_YARD = { x: WH_X - 0.7, z: -15.0 };
 const SUPPLY_ORIGIN: Record<string, { x: number; z: number; lane: number }> = {
-  "YD-GAS": { x: GAS_YARD.x, z: GAS_YARD.z, lane: 0 },
-  "YD-CHEM": { x: -12.2, z: -12.8, lane: 1 },
-  "SUP-PREC": { x: -12.2, z: -5.8, lane: 2 },
-  "FAC-UPW": { x: -12.2, z: 3.0, lane: 3 },
+  "YD-GAS":  { x: GAS_YARD.x, z: GAS_YARD.z, lane: 0 },
+  "YD-CHEM": { x: GAS_YARD.x, z: -12.8, lane: 1 },
+  "SUP-PREC":{ x: GAS_YARD.x, z: -5.8,  lane: 2 },
+  "FAC-UPW": { x: GAS_YARD.x, z:  3.0,  lane: 3 },
 };
 
 const FEOL_ORDER = ["P01", "P02", "P03", "P04", "P05"] as const;
@@ -99,13 +103,21 @@ export const WAFER_RECIPE = [
 ];
 
 export const WAFER_CONFIGS = [
-  { id: "W01", label: "FOUP-A", color: "#EF4444", startStep: 0  },
-  { id: "W02", label: "FOUP-B", color: "#3B82F6", startStep: 6  },
-  { id: "W03", label: "FOUP-C", color: "#EAB308", startStep: 13 },
-  { id: "W04", label: "FOUP-D", color: "#10B981", startStep: 20 },
+  { id: "W01",  label: "FOUP-01", color: "#EF4444", startStep: 0  },
+  { id: "W02",  label: "FOUP-02", color: "#3B82F6", startStep: 2  },
+  { id: "W03",  label: "FOUP-03", color: "#EAB308", startStep: 4  },
+  { id: "W04",  label: "FOUP-04", color: "#10B981", startStep: 6  },
+  { id: "W05",  label: "FOUP-05", color: "#8B5CF6", startStep: 8  },
+  { id: "W06",  label: "FOUP-06", color: "#F97316", startStep: 10 },
+  { id: "W07",  label: "FOUP-07", color: "#06B6D4", startStep: 12 },
+  { id: "W08",  label: "FOUP-08", color: "#EC4899", startStep: 14 },
+  { id: "W09",  label: "FOUP-09", color: "#84CC16", startStep: 16 },
+  { id: "W10",  label: "FOUP-10", color: "#F59E0B", startStep: 18 },
+  { id: "W11",  label: "FOUP-11", color: "#D946EF", startStep: 20 },
+  { id: "W12",  label: "FOUP-12", color: "#64748B", startStep: 22 },
 ];
 
-const RAIL_X        = 4.8;
+const RAIL_X        = FAB_W * 0.37;
 const RAIL_Y        = 3.18;
 const PROCESS_SECS  = 2.2;
 const TRAVEL_SPEED  = 5.5; // units/sec
@@ -357,9 +369,11 @@ function ProcessBay({ proc, isHL, isDimmed, activeFoupCount, onClick }: {
 // ─────────────────────────────────────────────
 function OverheadInfra() {
   const sceneD = 30;
+  const rx = FAB_W * 0.41;  // 백본 레일 X 위치 (fab 폭 기준)
+  const lxs = [-rx * 0.5, 0, rx * 0.5];  // 조명 스트립 X 위치
   return (
     <group>
-      {[-4.2, 4.2].map((x) => (
+      {[-rx, rx].map((x) => (
         <mesh key={x} position={[x, RAIL_Y, 0]}>
           <boxGeometry args={[0.07, 0.055, sceneD - 1]} />
           <meshStandardMaterial color="#8898aa" metalness={0.75} roughness={0.2} />
@@ -367,11 +381,11 @@ function OverheadInfra() {
       ))}
       {Array.from({ length: 11 }, (_, i) => (i - 5) * 2.8).map((z) => (
         <mesh key={z} position={[0, RAIL_Y, z]}>
-          <boxGeometry args={[9.8, 0.045, 0.055]} />
+          <boxGeometry args={[FAB_W + 1, 0.045, 0.055]} />
           <meshStandardMaterial color="#9aabb8" metalness={0.6} roughness={0.3} />
         </mesh>
       ))}
-      {[-2.4, 0, 2.4].map((x) =>
+      {lxs.map((x) =>
         [-12, -6, 0, 6, 12].map((z) => (
           <mesh key={`ls-${x}-${z}`} position={[x, RAIL_Y - 0.07, z]}>
             <boxGeometry args={[0.12, 0.018, 2.2]} />
@@ -452,10 +466,10 @@ function AnimatedFoup({ config, stateRef }: {
         <meshStandardMaterial color={config.color} emissive={config.color} emissiveIntensity={1.2}
           transparent opacity={0.85} />
       </mesh>
-      {/* Label */}
-      <Text position={[0, 0.22, 0]} fontSize={0.1} color={config.color}
+      {/* Label — 번호만 표시해서 12개가 돼도 뷰가 깔끔하게 유지됨 */}
+      <Text position={[0, 0.22, 0]} fontSize={0.09} color={config.color}
         anchorX="center" anchorY="bottom">
-        {config.label}
+        {config.id.replace("W", "")}
       </Text>
     </group>
   );
@@ -851,7 +865,7 @@ function SupplyPipe({ link, active }: { link: WarehouseLink; active: boolean }) 
 // CUB (중앙 유틸리티동): 가스·케미컬 공급설비 + 냉각탑
 // ─────────────────────────────────────────────
 function CUB() {
-  const x = 9.8, W = 3.2, D = 7.0, H = 5.0;
+  const x = FAB_W / 2 + 4.5, W = 3.2, D = 7.0, H = 5.0;
   return (
     <group position={[x, 0, 0]}>
       <mesh position={[0, 0.05, 0]} receiveShadow>
@@ -889,7 +903,7 @@ function AuxFacilities() {
   return (
     <group>
       {/* 스크러버 야드 — 배기가스 정화 컬럼 */}
-      <group position={[13.8, 0, 2]}>
+      <group position={[FAB_W / 2 + 8, 0, 2]}>
         <mesh position={[0, 0.04, 0]} receiveShadow>
           <boxGeometry args={[2.2, 0.08, 5.0]} />
           <meshStandardMaterial color="#b0bac4" roughness={0.9} />
@@ -919,7 +933,7 @@ function AuxFacilities() {
       </group>
 
       {/* 케미컬 공급동 (VMB) + 드럼 야드 */}
-      <group position={[9.8, 0, -10]}>
+      <group position={[FAB_W / 2 + 4.5, 0, -10]}>
         <mesh position={[0, 0.04, 0]} receiveShadow>
           <boxGeometry args={[3.4, 0.08, 3.0]} />
           <meshStandardMaterial color="#b8c2cc" roughness={0.9} />
@@ -949,7 +963,7 @@ function AuxFacilities() {
 // 카메라 포커스: 클릭한 대상으로 부드럽게 이동
 // ─────────────────────────────────────────────
 export type FocusView = { cam: [number, number, number]; look: [number, number, number] };
-export const OVERVIEW_FOCUS: FocusView = { cam: [-4, 25, 42], look: [0, 0.5, 0] };
+export const OVERVIEW_FOCUS: FocusView = { cam: [-4, FAB_W * 1.15, FAB_W * 1.9], look: [0, 0.5, 0] };
 
 export function focusForWarehouse(code: string): FocusView {
   const m = WH_META[code];
@@ -980,12 +994,35 @@ function FocusController({ controls, focus }: {
 }
 
 // ─────────────────────────────────────────────
+// 클린룸 raised access floor — 600 mm 타일 격자선
+// ─────────────────────────────────────────────
+function CleanroomFloorGrid() {
+  const geom = useMemo(() => {
+    const W = 13, D = 36, step = 0.6;
+    const pts: number[] = [];
+    for (let z = -D / 2; z <= D / 2 + 0.001; z += step)
+      pts.push(-W / 2, 0, z, W / 2, 0, z);
+    for (let x = -W / 2; x <= W / 2 + 0.001; x += step)
+      pts.push(x, 0, -D / 2, x, 0, D / 2);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    return g;
+  }, []);
+  return (
+    <lineSegments geometry={geom} position={[0, 0.007, 0]}>
+      <lineBasicMaterial color="#9baab8" transparent opacity={0.38} />
+    </lineSegments>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Main 3D Scene
 // ─────────────────────────────────────────────
 function Scene({
   highlightedProcesses, onProcessClick,
   waferStates, warehouses, warehouseLinks,
   hoveredWh, setHoveredWh, onFocusWh, onFocusBay, focus,
+  showFoup, showPipes,
 }: {
   highlightedProcesses: string[];
   onProcessClick?: (code: string) => void;
@@ -997,6 +1034,8 @@ function Scene({
   onFocusWh: (code: string) => void;
   onFocusBay: (code: string) => void;
   focus: FocusView;
+  showFoup: boolean;
+  showPipes: boolean;
 }) {
   const camRef = useRef<CameraControls>(null);
 
@@ -1024,7 +1063,7 @@ function Scene({
     (!!hoveredWh && hoveredWh !== code) ||
     (!hoveredWh && hasProcHL && !warehouseLinks.some((l) => l.whCode === code && highlightedProcesses.includes(l.procCode)));
 
-  const floorW = 11, floorD = 34;
+  const floorW = FAB_W, floorD = 34;
 
   // Count FOUPs currently at each bay (approximate — based on state at render time)
   const foupCounts: Record<string, number> = {};
@@ -1040,25 +1079,25 @@ function Scene({
       <ambientLight intensity={0.45} color="#eef2f8" />
       <directionalLight position={[8, 16, 10]} intensity={1.3} color="#fff6e8" castShadow
         shadow-mapSize={[2048, 2048]} shadow-bias={-0.0002}
-        shadow-camera-left={-16} shadow-camera-right={16}
+        shadow-camera-left={-floorW} shadow-camera-right={floorW}
         shadow-camera-top={24} shadow-camera-bottom={-24} />
       <directionalLight position={[-6, 10, -8]} intensity={0.4} color="#dce6ff" />
 
-      {/* IBL 환경광 (금속·유리에 반사 → 실사 느낌). Lightformer로 스튜디오 라이트 구성(외부 다운로드 X) */}
       <Environment resolution={256}>
-        <Lightformer intensity={2.2} form="rect" position={[0, 10, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[16, 24, 1]} color="#ffffff" />
-        <Lightformer intensity={1.1} form="rect" position={[10, 6, 6]} rotation={[0, -Math.PI / 3, 0]} scale={[8, 10, 1]} color="#eaf0ff" />
-        <Lightformer intensity={0.9} form="rect" position={[-10, 6, -4]} rotation={[0, Math.PI / 3, 0]} scale={[8, 10, 1]} color="#fff3e6" />
+        <Lightformer intensity={2.2} form="rect" position={[0, 10, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[floorW, 24, 1]} color="#ffffff" />
+        <Lightformer intensity={1.1} form="rect" position={[floorW / 2, 6, 6]} rotation={[0, -Math.PI / 3, 0]} scale={[8, 10, 1]} color="#eaf0ff" />
+        <Lightformer intensity={0.9} form="rect" position={[-floorW / 2, 6, -4]} rotation={[0, Math.PI / 3, 0]} scale={[8, 10, 1]} color="#fff3e6" />
       </Environment>
 
-      {/* 접지 소프트 섀도우 (장비 바닥 그림자 → 무게감) */}
-      <ContactShadows position={[0, 0.02, 0]} scale={44} blur={2.2} opacity={0.35} far={12} resolution={1024} color="#3a4250" />
+      <ContactShadows position={[0, 0.02, 0]} scale={floorW + 40} blur={2.2} opacity={0.3} far={12} resolution={1024} color="#3a4250" />
 
-      {/* 클린룸 에폭시 바닥 (매트 — 반사 아티팩트 없이 균일한 톤) */}
+      {/* 클린룸 에폭시 바닥 — 광택 코팅 (실제 FAB) */}
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
         <planeGeometry args={[floorW + 2, floorD + 2]} />
-        <meshStandardMaterial color="#e7eaef" roughness={0.6} metalness={0.06} />
+        <meshStandardMaterial color="#eaecf0" roughness={0.22} metalness={0.18} />
       </mesh>
+      {/* 600 mm 타일 격자선 (raised access floor) */}
+      <CleanroomFloorGrid />
       {/* 클린룸 슬래브 두께 */}
       <mesh position={[0, -0.16, 0]}>
         <boxGeometry args={[floorW + 2, 0.32, floorD + 2]} />
@@ -1106,7 +1145,7 @@ function Scene({
       ))}
 
       {/* Animated FOUPs */}
-      {WAFER_CONFIGS.map((cfg, i) => (
+      {showFoup && WAFER_CONFIGS.map((cfg, i) => (
         <AnimatedFoup key={cfg.id} config={cfg} stateRef={waferStates[i]} />
       ))}
 
@@ -1119,7 +1158,7 @@ function Scene({
       )}
 
       {/* 배관: 창고 → 공정 */}
-      {warehouseLinks.map((l) => (
+      {showPipes && warehouseLinks.map((l) => (
         <SupplyPipe key={`${l.whCode}-${l.procCode}`} link={l} active={pipeActive(l)} />
       ))}
 
@@ -1159,6 +1198,8 @@ export default function ProcessFlow3D({
   warehouseLinks?: WarehouseLink[];
 }) {
   const [hoveredWh, setHoveredWh] = useState<string | null>(null);
+  const [showFoup, setShowFoup] = useState(true);
+  const [showPipes, setShowPipes] = useState(true);
   // 카메라 포커스 상태 (클릭 → 줌인)
   const [focus, setFocus] = useState<FocusView>(OVERVIEW_FOCUS);
   const [focusLabel, setFocusLabel] = useState<string | null>(null);
@@ -1246,62 +1287,64 @@ export default function ProcessFlow3D({
             onFocusWh={focusWh}
             onFocusBay={focusBay}
             focus={focus}
+            showFoup={showFoup}
+            showPipes={showPipes}
           />
         </Suspense>
       </Canvas>
 
-      {/* 카메라 포커스 컨트롤 */}
-      <div className="absolute top-3 left-3 flex items-center gap-2">
-        <button onClick={resetView}
-          className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-black/60 backdrop-blur-sm text-white/90 hover:bg-black/75 transition-colors pointer-events-auto">
-          ⤢ 전체 뷰
-        </button>
-        {focusLabel && (
-          <span className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-[#EA002C]/85 text-white pointer-events-none">
-            🔍 {focusLabel}
-          </span>
-        )}
+      {/* 카메라 포커스 + 애니메이션 컨트롤 */}
+      <div className="absolute top-3 left-3 flex flex-col gap-2 pointer-events-auto">
+        <div className="flex items-center gap-2">
+          <button onClick={resetView}
+            className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-black/60 backdrop-blur-sm text-white/90 hover:bg-black/75 transition-colors">
+            ⤢ 전체 뷰
+          </button>
+          {focusLabel && (
+            <span className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-[#EA002C]/85 text-white pointer-events-none">
+              🔍 {focusLabel}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setShowFoup(v => !v)}
+            className="text-[10px] font-bold px-2.5 py-1 rounded-md backdrop-blur-sm transition-all"
+            style={{ background: showFoup ? "rgba(59,130,246,0.75)" : "rgba(0,0,0,0.45)", color: "#fff" }}>
+            FOUP {showFoup ? "ON" : "OFF"}
+          </button>
+          <button onClick={() => setShowPipes(v => !v)}
+            className="text-[10px] font-bold px-2.5 py-1 rounded-md backdrop-blur-sm transition-all"
+            style={{ background: showPipes ? "rgba(16,185,129,0.75)" : "rgba(0,0,0,0.45)", color: "#fff" }}>
+            자재흐름 {showPipes ? "ON" : "OFF"}
+          </button>
+        </div>
       </div>
       <div className="absolute top-3 left-1/2 -translate-x-1/2 text-[10px] text-white/70 bg-black/40 backdrop-blur-sm rounded-full px-3 py-1 pointer-events-none">
         드래그 이동 · 우클릭 회전 · 휠 줌 · 클릭 확대
       </div>
 
-      {/* FOUP status overlay */}
-      <div className="absolute bottom-3 left-3 flex flex-col gap-1.5 pointer-events-none">
-        {legendData.map((w) => {
-          const recipeSlice = WAFER_RECIPE.slice(
-            Math.max(0, w.stepIdx - 2), w.stepIdx + 4
-          );
-          return (
-            <div key={w.id}
-              className="flex items-center gap-2 bg-black/60 backdrop-blur-sm rounded-lg px-2.5 py-1.5">
-              <div className="w-3 h-3 rounded-sm flex-shrink-0 animate-pulse"
-                style={{ backgroundColor: w.color, animationPlayState: w.phase === "processing" ? "running" : "paused" }} />
-              <span className="text-[10px] font-bold text-white/90">{w.label}</span>
-              <div className="flex items-center gap-0.5">
-                {recipeSlice.map((code, ri) => {
-                  const isNow = ri === Math.min(2, w.stepIdx);
-                  const proc = PROCESSES.find((p) => p.code === code);
-                  return (
-                    <span key={ri}
-                      className="text-[9px] font-bold px-1 py-0.5 rounded"
-                      style={{
-                        background: isNow ? proc?.color ?? "#444" : "#333",
-                        color: isNow ? "#fff" : "#888",
-                        scale: isNow ? "1.1" : "1",
-                      }}>
-                      {code}
-                    </span>
-                  );
-                })}
-                <span className="text-[9px] text-white/40 ml-0.5">…</span>
+      {/* FOUP status overlay — 2열 컴팩트 그리드 */}
+      <div className="absolute bottom-3 left-3 pointer-events-none bg-black/55 backdrop-blur-sm rounded-xl px-2.5 py-2">
+        <div className="text-[9px] text-white/40 mb-1.5 font-semibold tracking-wider">FOUP × {legendData.length}</div>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+          {legendData.map((w) => {
+            const proc = PROCESSES.find((p) => p.code === w.bay);
+            return (
+              <div key={w.id} className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-sm flex-shrink-0"
+                  style={{ backgroundColor: w.color, opacity: w.phase === "processing" ? 1 : 0.45 }} />
+                <span className="text-[9px] font-bold text-white/70 w-5">{w.id.replace("W", "")}</span>
+                <span className="text-[9px] font-bold px-1 py-0.5 rounded-sm"
+                  style={{ background: proc?.color ?? "#333", color: "#fff" }}>
+                  {w.bay}
+                </span>
+                <span className="text-[8px] text-white/35">
+                  {w.phase === "processing" ? "⚙" : "▶"}
+                </span>
               </div>
-              <span className="text-[9px] text-white/50 ml-auto">
-                {w.phase === "processing" ? `⚙ ${(w as any).bayName ?? w.bay}` : "▶ 이동중"}
-              </span>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {/* 창고 hover 팝업 — capacity 데이터 미리보기 */}

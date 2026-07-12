@@ -145,75 +145,76 @@ async function main() {
   console.log(`✅ Materials: ${materialDefs.length}종`);
 
   // ─── 5. 재고 (현재고 + 일평균사용량) ──────────────────────
+  // 창고별 재고 배율 (업계 기준 점유율 달성):
+  // WH-A 실질 자재 ×7 → 목표 68%  / WH-B 자재 ×13 → 목표 51%
+  // WH-C 가스 실린더 ×7 → 목표 75%  (totalCapacity 7500)
+  // WH-D MRO qty ×16, daily ×4 → 목표 46%
   const inventoryData = [
-    // GAS — A동 자동화창고
+    // GAS — 벌크가스 야드(YD-GAS)·전구체실(SUP-PREC) 행: 공급형태 기준으로 재배치되므로 qty 그대로 유지
     { code: "GAS-001", whCode: "WH-A", qty: 2800, daily: 180 },
     { code: "GAS-002", whCode: "WH-A", qty: 340,  daily: 22  },
     { code: "GAS-003", whCode: "WH-A", qty: 920,  daily: 55  },
-    { code: "GAS-004", whCode: "WH-A", qty: 210,  daily: 12  },
     { code: "GAS-008", whCode: "WH-A", qty: 580,  daily: 38  },
     { code: "GAS-009", whCode: "WH-A", qty: 280,  daily: 18  },
     { code: "GAS-010", whCode: "WH-A", qty: 95,   daily: 4.5 },
     { code: "GAS-014", whCode: "WH-A", qty: 140,  daily: 9   },
-    { code: "GAS-015", whCode: "WH-A", qty: 88,   daily: 5.5 },
     { code: "GAS-016", whCode: "WH-A", qty: 32,   daily: 1.8 },
     { code: "GAS-017", whCode: "WH-A", qty: 55,   daily: 3.2 },
     { code: "GAS-018", whCode: "WH-A", qty: 28,   daily: 1.5 },
     { code: "GAS-019", whCode: "WH-A", qty: 18,   daily: 0.8 },
     { code: "GAS-020", whCode: "WH-A", qty: 22,   daily: 1.1 },
-    // GAS 위험물 — C동
-    { code: "GAS-005", whCode: "WH-C", qty: 72,   daily: 6.8 },
-    { code: "GAS-006", whCode: "WH-C", qty: 45,   daily: 3.5 },
-    { code: "GAS-007", whCode: "WH-C", qty: 28,   daily: 2.1 },
-    { code: "GAS-011", whCode: "WH-C", qty: 58,   daily: 4.2 },
-    { code: "GAS-012", whCode: "WH-C", qty: 42,   daily: 3.0 },
-    { code: "GAS-013", whCode: "WH-C", qty: 38,   daily: 2.8 },
-    // CHM — A동
-    { code: "CHM-007", whCode: "WH-A", qty: 145,  daily: 8.5 },
-    { code: "CHM-008", whCode: "WH-A", qty: 92,   daily: 6.2 },
-    { code: "CHM-009", whCode: "WH-A", qty: 22,   daily: 1.2 },
-    { code: "CHM-010", whCode: "WH-A", qty: 78,   daily: 5.8 },
-    { code: "CHM-011", whCode: "WH-A", qty: 38,   daily: 2.2 },
-    // CHM 위험물 — C동
+    // CHM 벌크 — YD-CHEM: 그대로 유지
     { code: "CHM-001", whCode: "WH-C", qty: 128,  daily: 14  },
     { code: "CHM-002", whCode: "WH-C", qty: 165,  daily: 22  },
     { code: "CHM-003", whCode: "WH-C", qty: 142,  daily: 18  },
     { code: "CHM-004", whCode: "WH-C", qty: 98,   daily: 12  },
     { code: "CHM-005", whCode: "WH-C", qty: 82,   daily: 10  },
     { code: "CHM-006", whCode: "WH-C", qty: 65,   daily: 7.5 },
-    // CSM — B동
-    { code: "CSM-001", whCode: "WH-B", qty: 420,  daily: 28  },
-    { code: "CSM-002", whCode: "WH-B", qty: 380,  daily: 24  },
-    { code: "CSM-003", whCode: "WH-B", qty: 255,  daily: 16  },
-    { code: "CSM-004", whCode: "WH-B", qty: 95,   daily: 1.4 },
-    { code: "CSM-005", whCode: "WH-B", qty: 52,   daily: 1.4 },
-    { code: "CSM-011", whCode: "WH-B", qty: 145,  daily: 9.5 },
-    { code: "CSM-012", whCode: "WH-B", qty: 18,   daily: 0.8 },
-    { code: "CSM-013", whCode: "WH-B", qty: 62,   daily: 3.5 },
-    // CSM MRO — D동
-    { code: "CSM-006", whCode: "WH-D", qty: 14,   daily: 0.48 },
-    { code: "CSM-007", whCode: "WH-D", qty: 11,   daily: 0.38 },
-    { code: "CSM-008", whCode: "WH-D", qty: 9,    daily: 0.32 },
-    { code: "CSM-009", whCode: "WH-D", qty: 6,    daily: 0.18 },
-    { code: "CSM-010", whCode: "WH-D", qty: 8,    daily: 0.22 },
-    // UTL·PKG
+    { code: "CHM-010", whCode: "WH-A", qty: 78,   daily: 5.8 },
+    // UTL
     { code: "UTL-001", whCode: "WH-A", qty: 0,    daily: 5000 },
-    { code: "UTL-002", whCode: "WH-A", qty: 95,   daily: 6.5  },
-    { code: "PKG-001", whCode: "WH-B", qty: 820,  daily: 52   },
-    // 도판트·식각 특수가스 → 위험물창고(C동)
-    { code: "GAS-021", whCode: "WH-C", qty: 48,   daily: 3.2 },
-    { code: "GAS-022", whCode: "WH-C", qty: 36,   daily: 2.5 },
-    { code: "GAS-023", whCode: "WH-C", qty: 22,   daily: 1.4 },
-    { code: "GAS-024", whCode: "WH-C", qty: 18,   daily: 1.1 },
-    { code: "GAS-025", whCode: "WH-C", qty: 52,   daily: 4.0 },
-    { code: "GAS-026", whCode: "WH-C", qty: 46,   daily: 3.6 },
-    // 케미컬 → A동
-    { code: "CHM-012", whCode: "WH-A", qty: 62,   daily: 5.0 },
-    { code: "CHM-013", whCode: "WH-A", qty: 84,   daily: 6.5 },
-    // CSM → B동, 석영파츠 → D동, PKG → B동
-    { code: "CSM-014", whCode: "WH-B", qty: 40,   daily: 1.6 },
-    { code: "CSM-015", whCode: "WH-D", qty: 15,   daily: 0.4 },
-    { code: "PKG-002", whCode: "WH-B", qty: 210,  daily: 9.0 },
+    // WH-C 특수가스 실린더 ×7 (totalCapacity 7500 기준 목표 75%)
+    { code: "GAS-004", whCode: "WH-A", qty: 1470, daily: 84   },
+    { code: "GAS-005", whCode: "WH-C", qty: 504,  daily: 47.6 },
+    { code: "GAS-006", whCode: "WH-C", qty: 315,  daily: 24.5 },
+    { code: "GAS-007", whCode: "WH-C", qty: 196,  daily: 14.7 },
+    { code: "GAS-011", whCode: "WH-C", qty: 406,  daily: 29.4 },
+    { code: "GAS-012", whCode: "WH-C", qty: 294,  daily: 21.0 },
+    { code: "GAS-013", whCode: "WH-C", qty: 266,  daily: 19.6 },
+    { code: "GAS-015", whCode: "WH-A", qty: 616,  daily: 38.5 },
+    { code: "GAS-021", whCode: "WH-C", qty: 336,  daily: 22.4 },
+    { code: "GAS-022", whCode: "WH-C", qty: 252,  daily: 17.5 },
+    { code: "GAS-023", whCode: "WH-C", qty: 154,  daily: 9.8  },
+    { code: "GAS-024", whCode: "WH-C", qty: 126,  daily: 7.7  },
+    { code: "GAS-025", whCode: "WH-C", qty: 364,  daily: 28.0 },
+    { code: "GAS-026", whCode: "WH-C", qty: 322,  daily: 25.2 },
+    // WH-A 실질 소모품 ×7 (totalCapacity 2000 기준 목표 68%)
+    { code: "CSM-001", whCode: "WH-B", qty: 2940, daily: 196  },
+    { code: "CSM-002", whCode: "WH-B", qty: 2660, daily: 168  },
+    { code: "CSM-003", whCode: "WH-B", qty: 1785, daily: 112  },
+    { code: "CSM-004", whCode: "WH-B", qty: 665,  daily: 9.8  },
+    { code: "CSM-005", whCode: "WH-B", qty: 364,  daily: 9.8  },
+    { code: "CSM-011", whCode: "WH-B", qty: 1015, daily: 66.5 },
+    { code: "CSM-012", whCode: "WH-B", qty: 126,  daily: 5.6  },
+    { code: "CSM-013", whCode: "WH-B", qty: 434,  daily: 24.5 },
+    { code: "CHM-011", whCode: "WH-A", qty: 266,  daily: 15.4 },
+    { code: "UTL-002", whCode: "WH-A", qty: 665,  daily: 45.5 },
+    // WH-B PR·PKG 자재 ×13 (totalCapacity 2600 기준 목표 51%)
+    { code: "CHM-007", whCode: "WH-A", qty: 1885, daily: 110.5 },
+    { code: "CHM-008", whCode: "WH-A", qty: 1196, daily: 80.6  },
+    { code: "CHM-009", whCode: "WH-A", qty: 286,  daily: 15.6  },
+    { code: "CHM-012", whCode: "WH-A", qty: 806,  daily: 65.0  },
+    { code: "CHM-013", whCode: "WH-A", qty: 1092, daily: 84.5  },
+    { code: "PKG-001", whCode: "WH-B", qty: 10660,daily: 676   },
+    { code: "PKG-002", whCode: "WH-B", qty: 2730, daily: 117   },
+    { code: "CSM-014", whCode: "WH-B", qty: 520,  daily: 20.8  },
+    // WH-D MRO qty ×16, daily ×4 (totalCapacity 2200 기준 목표 46%)
+    { code: "CSM-006", whCode: "WH-D", qty: 224,  daily: 1.92 },
+    { code: "CSM-007", whCode: "WH-D", qty: 176,  daily: 1.52 },
+    { code: "CSM-008", whCode: "WH-D", qty: 144,  daily: 1.28 },
+    { code: "CSM-009", whCode: "WH-D", qty: 96,   daily: 0.72 },
+    { code: "CSM-010", whCode: "WH-D", qty: 128,  daily: 0.88 },
+    { code: "CSM-015", whCode: "WH-D", qty: 240,  daily: 1.6  },
   ];
 
   const validMat = (code: string) => Boolean(materials[code]);
@@ -232,194 +233,192 @@ async function main() {
 
   // ─── 6. 공정별 사용량 (Product × Process × Material) ──────
   // HBM 월 사용량 = 전체의 약 35%, DRAM 45%, NAND 20% 기준 추산
+  // processUsage: 생산 규모 ×7 반영 (WH-D 관련 소모품은 ×4 — 교체주기 기준)
   const processUsageData = [
-    // N₂ — 전 공정 (HBM)
-    { code: "GAS-001", proc: "P01", product: "HBM",  qty: 1680 },
-    { code: "GAS-001", proc: "P02", product: "HBM",  qty: 2100 },
-    { code: "GAS-001", proc: "P03", product: "HBM",  qty: 980  },
-    { code: "GAS-001", proc: "P07", product: "HBM",  qty: 840  },
-    { code: "GAS-001", proc: "P08", product: "HBM",  qty: 1260 },
-    // N₂ — DRAM
-    { code: "GAS-001", proc: "P01", product: "DRAM", qty: 2200 },
-    { code: "GAS-001", proc: "P02", product: "DRAM", qty: 2800 },
-    { code: "GAS-001", proc: "P03", product: "DRAM", qty: 1200 },
-    { code: "GAS-001", proc: "P07", product: "DRAM", qty: 1100 },
-    // N₂ — NAND
-    { code: "GAS-001", proc: "P02", product: "NAND", qty: 1200 },
-    { code: "GAS-001", proc: "P04", product: "NAND", qty: 900  },
-    // ArF PR — 포토 공정
-    { code: "CHM-007", proc: "P03", product: "HBM",  qty: 85  },
-    { code: "CHM-007", proc: "P03", product: "DRAM", qty: 112 },
-    { code: "CHM-007", proc: "P03", product: "NAND", qty: 48  },
-    // EUV PR
-    { code: "CHM-009", proc: "P03", product: "HBM",  qty: 12  },
-    { code: "CHM-009", proc: "P03", product: "DRAM", qty: 18  },
-    // KrF PR
-    { code: "CHM-008", proc: "P03", product: "HBM",  qty: 62  },
-    { code: "CHM-008", proc: "P03", product: "DRAM", qty: 82  },
-    { code: "CHM-008", proc: "P03", product: "NAND", qty: 120 },
-    // HF
-    { code: "CHM-001", proc: "P04", product: "HBM",  qty: 95  },
-    { code: "CHM-001", proc: "P04", product: "DRAM", qty: 128 },
-    { code: "CHM-001", proc: "P04", product: "NAND", qty: 82  },
-    // H₂O₂
-    { code: "CHM-002", proc: "P01", product: "HBM",  qty: 145 },
-    { code: "CHM-002", proc: "P04", product: "HBM",  qty: 88  },
-    { code: "CHM-002", proc: "P01", product: "DRAM", qty: 195 },
-    { code: "CHM-002", proc: "P04", product: "DRAM", qty: 115 },
-    // H₃PO₄ — NAND ONO
-    { code: "CHM-006", proc: "P04", product: "NAND", qty: 210 },
-    // CMP Ceria 슬러리
-    { code: "CSM-001", proc: "P07", product: "HBM",  qty: 285 },  // TSV Reveal +18%
-    { code: "CSM-001", proc: "P07", product: "DRAM", qty: 210 },
-    { code: "CSM-001", proc: "P07", product: "NAND", qty: 95  },
-    // CMP Silica 슬러리 (W)
-    { code: "CSM-002", proc: "P07", product: "HBM",  qty: 195 },
-    { code: "CSM-002", proc: "P07", product: "DRAM", qty: 245 },
-    { code: "CSM-002", proc: "P07", product: "NAND", qty: 380 },  // NAND 워드라인
-    // CMP Cu 슬러리
-    { code: "CSM-003", proc: "P07", product: "HBM",  qty: 168 },
-    { code: "CSM-003", proc: "P07", product: "DRAM", qty: 132 },
-    // CMP 패드
-    { code: "CSM-004", proc: "P07", product: "HBM",  qty: 38 },
-    { code: "CSM-004", proc: "P07", product: "DRAM", qty: 28 },
-    { code: "CSM-004", proc: "P07", product: "NAND", qty: 12 },
-    // PVD Ti 타겟
-    { code: "CSM-006", proc: "P06", product: "HBM",  qty: 3.5 },
-    { code: "CSM-006", proc: "P06", product: "DRAM", qty: 4.2 },
-    { code: "CSM-006", proc: "P06", product: "NAND", qty: 2.8 },
-    // Cu ECD (HBM 전용 — TSV Fill)
-    { code: "CHM-011", proc: "P08", product: "HBM",  qty: 38 },
-    // SnAg μBump (HBM 전용)
-    { code: "CSM-012", proc: "P08", product: "HBM",  qty: 18 },
-    // Probe Card HBM
-    { code: "CSM-009", proc: "P09", product: "HBM",  qty: 1.5 },
-    // Probe Card DRAM
-    { code: "CSM-010", proc: "P09", product: "DRAM", qty: 2.0 },
-    // WF₆ — NAND W CVD
-    { code: "GAS-007", proc: "P02", product: "NAND", qty: 38 },
-    // BDEAS — NAND ONO ALD
-    { code: "GAS-016", proc: "P02", product: "NAND", qty: 32 },
-    // EMC — HBM 패키징
-    { code: "PKG-001", proc: "P10", product: "HBM",  qty: 420 },
-    // 이온주입 도판트 (P05) — 공정-자재 공백 해소
-    { code: "GAS-021", proc: "P05", product: "DRAM", qty: 42 },
-    { code: "GAS-021", proc: "P05", product: "NAND", qty: 55 },
-    { code: "GAS-022", proc: "P05", product: "DRAM", qty: 38 },
-    { code: "GAS-023", proc: "P05", product: "NAND", qty: 28 },
-    { code: "GAS-024", proc: "P05", product: "HBM",  qty: 18 },
-    // 식각 특수가스 (P04)
-    { code: "GAS-025", proc: "P04", product: "NAND", qty: 68 },
-    { code: "GAS-026", proc: "P04", product: "DRAM", qty: 52 },
-    // 세정·EBR
-    { code: "CHM-013", proc: "P07", product: "HBM",  qty: 62 },
-    { code: "CHM-012", proc: "P03", product: "DRAM", qty: 48 },
-    // HBM 패키징 보강
-    { code: "CSM-014", proc: "P10", product: "HBM",  qty: 35 },
-    { code: "PKG-002", proc: "P10", product: "HBM",  qty: 180 },
-
-    // ── 데이터 정합 보완: 공정 귀속 가능한 27종 ProcessUsage 추가 ──────────────
-    // GAS-002 H₂ — P07 금속 어닐 (H₂/N₂ 분위기)
-    { code: "GAS-002", proc: "P07", product: "HBM",  qty: 230 },
-    { code: "GAS-002", proc: "P07", product: "DRAM", qty: 297 },
-    { code: "GAS-002", proc: "P07", product: "NAND", qty: 133 },
-    // GAS-003 Ar — P06 PVD 스퍼터링 캐리어 가스
-    { code: "GAS-003", proc: "P06", product: "HBM",  qty: 578 },
-    { code: "GAS-003", proc: "P06", product: "DRAM", qty: 742 },
-    { code: "GAS-003", proc: "P06", product: "NAND", qty: 330 },
-    // GAS-004 SiH₄ — P02 LPCVD/PECVD 폴리실리콘
-    { code: "GAS-004", proc: "P02", product: "HBM",  qty: 90  },
-    { code: "GAS-004", proc: "P02", product: "DRAM", qty: 162 },
-    { code: "GAS-004", proc: "P02", product: "NAND", qty: 108 },
-    // GAS-005 NH₃ — P02 Si₃N₄ CVD (NAND ONO 스택 중심)
-    { code: "GAS-005", proc: "P02", product: "DRAM", qty: 82  },
-    { code: "GAS-005", proc: "P02", product: "NAND", qty: 122 },
-    // GAS-006 NF₃ — P02 CVD 챔버 in-situ 세정
-    { code: "GAS-006", proc: "P02", product: "HBM",  qty: 37  },
-    { code: "GAS-006", proc: "P02", product: "DRAM", qty: 47  },
-    { code: "GAS-006", proc: "P02", product: "NAND", qty: 21  },
-    // GAS-008 O₂ — P01 열산화 (게이트 SiO₂·LOCOS)
-    { code: "GAS-008", proc: "P01", product: "HBM",  qty: 400 },
-    { code: "GAS-008", proc: "P01", product: "DRAM", qty: 512 },
-    { code: "GAS-008", proc: "P01", product: "NAND", qty: 228 },
-    // GAS-009 CO₂ — P03 초임계 CO₂ 드라이 세정
-    { code: "GAS-009", proc: "P03", product: "HBM",  qty: 216 },
-    { code: "GAS-009", proc: "P03", product: "DRAM", qty: 216 },
-    { code: "GAS-009", proc: "P03", product: "NAND", qty: 108 },
-    // GAS-010 He — P05 이온주입 웨이퍼 척 냉각
-    { code: "GAS-010", proc: "P05", product: "HBM",  qty: 47  },
-    { code: "GAS-010", proc: "P05", product: "DRAM", qty: 61  },
-    { code: "GAS-010", proc: "P05", product: "NAND", qty: 27  },
-    // GAS-011 CF₄ — P04 SiO₂/Si₃N₄ 드라이 식각
-    { code: "GAS-011", proc: "P04", product: "HBM",  qty: 44  },
-    { code: "GAS-011", proc: "P04", product: "DRAM", qty: 57  },
-    { code: "GAS-011", proc: "P04", product: "NAND", qty: 25  },
-    // GAS-012 SF₆ — P04 Si 등방성 식각 (NAND 트렌치 중심)
-    { code: "GAS-012", proc: "P04", product: "DRAM", qty: 36  },
-    { code: "GAS-012", proc: "P04", product: "NAND", qty: 54  },
-    // GAS-013 Cl₂ — P04 Al·W 이방성 식각
-    { code: "GAS-013", proc: "P04", product: "HBM",  qty: 29  },
-    { code: "GAS-013", proc: "P04", product: "DRAM", qty: 38  },
-    { code: "GAS-013", proc: "P04", product: "NAND", qty: 17  },
-    // GAS-014 TEOS — P02 PECVD SiO₂ (ILD·STI 갭필)
-    { code: "GAS-014", proc: "P02", product: "HBM",  qty: 95  },
-    { code: "GAS-014", proc: "P02", product: "DRAM", qty: 121 },
-    { code: "GAS-014", proc: "P02", product: "NAND", qty: 54  },
-    // GAS-015 DCS — P02 LPCVD Si₃N₄ 질화막
-    { code: "GAS-015", proc: "P02", product: "DRAM", qty: 74  },
-    { code: "GAS-015", proc: "P02", product: "NAND", qty: 91  },
-    // GAS-017 TiCl₄ — P06 ALD TiN 배리어 금속
-    { code: "GAS-017", proc: "P06", product: "HBM",  qty: 34  },
-    { code: "GAS-017", proc: "P06", product: "DRAM", qty: 43  },
-    { code: "GAS-017", proc: "P06", product: "NAND", qty: 19  },
-    // GAS-018 TDMAT — P07 ALD TiN (HBM TSV 라이너)
-    { code: "GAS-018", proc: "P07", product: "HBM",  qty: 29  },
-    { code: "GAS-018", proc: "P07", product: "DRAM", qty: 16  },
-    // GAS-019 TEMAHf — P01 ALD HfO₂ High-k 게이트 절연막
-    { code: "GAS-019", proc: "P01", product: "DRAM", qty: 16  },
-    { code: "GAS-019", proc: "P01", product: "HBM",  qty: 8   },
-    // GAS-020 DIPAS — P04 ALD SiO₂ 스페이서 (EUV 더블패터닝)
-    { code: "GAS-020", proc: "P04", product: "HBM",  qty: 13  },
-    { code: "GAS-020", proc: "P04", product: "DRAM", qty: 20  },
-    // CHM-003 H₂SO₄ — P03 SPM 피라냐 세정 (PR 애싱 전후)
-    { code: "CHM-003", proc: "P03", product: "HBM",  qty: 189 },
-    { code: "CHM-003", proc: "P03", product: "DRAM", qty: 243 },
-    { code: "CHM-003", proc: "P03", product: "NAND", qty: 108 },
-    // CHM-004 NH₄OH — P03 SC1(APM) 세정 (파티클 제거)
-    { code: "CHM-004", proc: "P03", product: "HBM",  qty: 126 },
-    { code: "CHM-004", proc: "P03", product: "DRAM", qty: 162 },
-    { code: "CHM-004", proc: "P03", product: "NAND", qty: 72  },
-    // CHM-005 HCl — P03 SC2(HPM) 세정 (금속 오염 제거)
-    { code: "CHM-005", proc: "P03", product: "HBM",  qty: 105 },
-    { code: "CHM-005", proc: "P03", product: "DRAM", qty: 135 },
-    { code: "CHM-005", proc: "P03", product: "NAND", qty: 60  },
-    // CHM-010 TMAH — P03 포토레지스트 현상
-    { code: "CHM-010", proc: "P03", product: "HBM",  qty: 61  },
-    { code: "CHM-010", proc: "P03", product: "DRAM", qty: 78  },
-    { code: "CHM-010", proc: "P03", product: "NAND", qty: 35  },
-    // CSM-005 CMP 컨디셔너 디스크 — P07 CMP
-    { code: "CSM-005", proc: "P07", product: "HBM",  qty: 15  },
-    { code: "CSM-005", proc: "P07", product: "DRAM", qty: 19  },
-    { code: "CSM-005", proc: "P07", product: "NAND", qty: 8   },
-    // CSM-007 PVD W 타겟 — P06 W 글루레이어 스퍼터
-    { code: "CSM-007", proc: "P06", product: "HBM",  qty: 4.2 },
-    { code: "CSM-007", proc: "P06", product: "DRAM", qty: 5.4 },
-    { code: "CSM-007", proc: "P06", product: "NAND", qty: 2.4 },
-    // CSM-008 PVD TiN 타겟 — P06 반응성 스퍼터
-    { code: "CSM-008", proc: "P06", product: "HBM",  qty: 3.5 },
-    { code: "CSM-008", proc: "P06", product: "DRAM", qty: 4.5 },
-    { code: "CSM-008", proc: "P06", product: "NAND", qty: 2.0 },
-    // CSM-011 PR 스트리퍼 — P03 애싱 후 잔류 PR 제거
-    { code: "CSM-011", proc: "P03", product: "HBM",  qty: 100 },
-    { code: "CSM-011", proc: "P03", product: "DRAM", qty: 128 },
-    { code: "CSM-011", proc: "P03", product: "NAND", qty: 57  },
-    // CSM-013 백그라인딩 테이프 — P08 웨이퍼 박화 보호
-    { code: "CSM-013", proc: "P08", product: "HBM",  qty: 73  },
-    { code: "CSM-013", proc: "P08", product: "DRAM", qty: 32  },
-    // CSM-015 석영 파츠 — P04 식각 챔버 PM 소모품
-    { code: "CSM-015", proc: "P04", product: "HBM",  qty: 4.2 },
-    { code: "CSM-015", proc: "P04", product: "DRAM", qty: 5.4 },
-    { code: "CSM-015", proc: "P04", product: "NAND", qty: 2.4 },
+    // N₂ — 전 공정 (HBM) ×7
+    { code: "GAS-001", proc: "P01", product: "HBM",  qty: 11760 },
+    { code: "GAS-001", proc: "P02", product: "HBM",  qty: 14700 },
+    { code: "GAS-001", proc: "P03", product: "HBM",  qty: 6860  },
+    { code: "GAS-001", proc: "P07", product: "HBM",  qty: 5880  },
+    { code: "GAS-001", proc: "P08", product: "HBM",  qty: 8820  },
+    // N₂ — DRAM ×7
+    { code: "GAS-001", proc: "P01", product: "DRAM", qty: 15400 },
+    { code: "GAS-001", proc: "P02", product: "DRAM", qty: 19600 },
+    { code: "GAS-001", proc: "P03", product: "DRAM", qty: 8400  },
+    { code: "GAS-001", proc: "P07", product: "DRAM", qty: 7700  },
+    // N₂ — NAND ×7
+    { code: "GAS-001", proc: "P02", product: "NAND", qty: 8400  },
+    { code: "GAS-001", proc: "P04", product: "NAND", qty: 6300  },
+    // ArF PR ×7
+    { code: "CHM-007", proc: "P03", product: "HBM",  qty: 595  },
+    { code: "CHM-007", proc: "P03", product: "DRAM", qty: 784  },
+    { code: "CHM-007", proc: "P03", product: "NAND", qty: 336  },
+    // EUV PR ×7
+    { code: "CHM-009", proc: "P03", product: "HBM",  qty: 84   },
+    { code: "CHM-009", proc: "P03", product: "DRAM", qty: 126  },
+    // KrF PR ×7
+    { code: "CHM-008", proc: "P03", product: "HBM",  qty: 434  },
+    { code: "CHM-008", proc: "P03", product: "DRAM", qty: 574  },
+    { code: "CHM-008", proc: "P03", product: "NAND", qty: 840  },
+    // HF ×7
+    { code: "CHM-001", proc: "P04", product: "HBM",  qty: 665  },
+    { code: "CHM-001", proc: "P04", product: "DRAM", qty: 896  },
+    { code: "CHM-001", proc: "P04", product: "NAND", qty: 574  },
+    // H₂O₂ ×7
+    { code: "CHM-002", proc: "P01", product: "HBM",  qty: 1015 },
+    { code: "CHM-002", proc: "P04", product: "HBM",  qty: 616  },
+    { code: "CHM-002", proc: "P01", product: "DRAM", qty: 1365 },
+    { code: "CHM-002", proc: "P04", product: "DRAM", qty: 805  },
+    // H₃PO₄ ×7
+    { code: "CHM-006", proc: "P04", product: "NAND", qty: 1470 },
+    // CMP Ceria 슬러리 ×7
+    { code: "CSM-001", proc: "P07", product: "HBM",  qty: 1995 },
+    { code: "CSM-001", proc: "P07", product: "DRAM", qty: 1470 },
+    { code: "CSM-001", proc: "P07", product: "NAND", qty: 665  },
+    // CMP Silica 슬러리 (W) ×7
+    { code: "CSM-002", proc: "P07", product: "HBM",  qty: 1365 },
+    { code: "CSM-002", proc: "P07", product: "DRAM", qty: 1715 },
+    { code: "CSM-002", proc: "P07", product: "NAND", qty: 2660 },
+    // CMP Cu 슬러리 ×7
+    { code: "CSM-003", proc: "P07", product: "HBM",  qty: 1176 },
+    { code: "CSM-003", proc: "P07", product: "DRAM", qty: 924  },
+    // CMP 패드 ×7
+    { code: "CSM-004", proc: "P07", product: "HBM",  qty: 266  },
+    { code: "CSM-004", proc: "P07", product: "DRAM", qty: 196  },
+    { code: "CSM-004", proc: "P07", product: "NAND", qty: 84   },
+    // PVD Ti 타겟 ×4 (WH-D)
+    { code: "CSM-006", proc: "P06", product: "HBM",  qty: 14   },
+    { code: "CSM-006", proc: "P06", product: "DRAM", qty: 16.8 },
+    { code: "CSM-006", proc: "P06", product: "NAND", qty: 11.2 },
+    // Cu ECD ×7
+    { code: "CHM-011", proc: "P08", product: "HBM",  qty: 266  },
+    // SnAg μBump ×7
+    { code: "CSM-012", proc: "P08", product: "HBM",  qty: 126  },
+    // Probe Card ×4 (WH-D)
+    { code: "CSM-009", proc: "P09", product: "HBM",  qty: 6.0  },
+    { code: "CSM-010", proc: "P09", product: "DRAM", qty: 8.0  },
+    // WF₆ ×7
+    { code: "GAS-007", proc: "P02", product: "NAND", qty: 266  },
+    // BDEAS ×7
+    { code: "GAS-016", proc: "P02", product: "NAND", qty: 224  },
+    // EMC ×7
+    { code: "PKG-001", proc: "P10", product: "HBM",  qty: 2940 },
+    // 도판트 가스 ×7
+    { code: "GAS-021", proc: "P05", product: "DRAM", qty: 294  },
+    { code: "GAS-021", proc: "P05", product: "NAND", qty: 385  },
+    { code: "GAS-022", proc: "P05", product: "DRAM", qty: 266  },
+    { code: "GAS-023", proc: "P05", product: "NAND", qty: 196  },
+    { code: "GAS-024", proc: "P05", product: "HBM",  qty: 126  },
+    // 식각 특수가스 ×7
+    { code: "GAS-025", proc: "P04", product: "NAND", qty: 476  },
+    { code: "GAS-026", proc: "P04", product: "DRAM", qty: 364  },
+    // 세정·EBR ×7
+    { code: "CHM-013", proc: "P07", product: "HBM",  qty: 434  },
+    { code: "CHM-012", proc: "P03", product: "DRAM", qty: 336  },
+    // HBM 패키징 ×7
+    { code: "CSM-014", proc: "P10", product: "HBM",  qty: 245  },
+    { code: "PKG-002", proc: "P10", product: "HBM",  qty: 1260 },
+    // GAS-002 H₂ ×7
+    { code: "GAS-002", proc: "P07", product: "HBM",  qty: 1610 },
+    { code: "GAS-002", proc: "P07", product: "DRAM", qty: 2079 },
+    { code: "GAS-002", proc: "P07", product: "NAND", qty: 931  },
+    // GAS-003 Ar ×7
+    { code: "GAS-003", proc: "P06", product: "HBM",  qty: 4046 },
+    { code: "GAS-003", proc: "P06", product: "DRAM", qty: 5194 },
+    { code: "GAS-003", proc: "P06", product: "NAND", qty: 2310 },
+    // GAS-004 SiH₄ ×7
+    { code: "GAS-004", proc: "P02", product: "HBM",  qty: 630  },
+    { code: "GAS-004", proc: "P02", product: "DRAM", qty: 1134 },
+    { code: "GAS-004", proc: "P02", product: "NAND", qty: 756  },
+    // GAS-005 NH₃ ×7
+    { code: "GAS-005", proc: "P02", product: "DRAM", qty: 574  },
+    { code: "GAS-005", proc: "P02", product: "NAND", qty: 854  },
+    // GAS-006 NF₃ ×7
+    { code: "GAS-006", proc: "P02", product: "HBM",  qty: 259  },
+    { code: "GAS-006", proc: "P02", product: "DRAM", qty: 329  },
+    { code: "GAS-006", proc: "P02", product: "NAND", qty: 147  },
+    // GAS-008 O₂ ×7
+    { code: "GAS-008", proc: "P01", product: "HBM",  qty: 2800 },
+    { code: "GAS-008", proc: "P01", product: "DRAM", qty: 3584 },
+    { code: "GAS-008", proc: "P01", product: "NAND", qty: 1596 },
+    // GAS-009 CO₂ ×7
+    { code: "GAS-009", proc: "P03", product: "HBM",  qty: 1512 },
+    { code: "GAS-009", proc: "P03", product: "DRAM", qty: 1512 },
+    { code: "GAS-009", proc: "P03", product: "NAND", qty: 756  },
+    // GAS-010 He ×7
+    { code: "GAS-010", proc: "P05", product: "HBM",  qty: 329  },
+    { code: "GAS-010", proc: "P05", product: "DRAM", qty: 427  },
+    { code: "GAS-010", proc: "P05", product: "NAND", qty: 189  },
+    // GAS-011 CF₄ ×7
+    { code: "GAS-011", proc: "P04", product: "HBM",  qty: 308  },
+    { code: "GAS-011", proc: "P04", product: "DRAM", qty: 399  },
+    { code: "GAS-011", proc: "P04", product: "NAND", qty: 175  },
+    // GAS-012 SF₆ ×7
+    { code: "GAS-012", proc: "P04", product: "DRAM", qty: 252  },
+    { code: "GAS-012", proc: "P04", product: "NAND", qty: 378  },
+    // GAS-013 Cl₂ ×7
+    { code: "GAS-013", proc: "P04", product: "HBM",  qty: 203  },
+    { code: "GAS-013", proc: "P04", product: "DRAM", qty: 266  },
+    { code: "GAS-013", proc: "P04", product: "NAND", qty: 119  },
+    // GAS-014 TEOS ×7
+    { code: "GAS-014", proc: "P02", product: "HBM",  qty: 665  },
+    { code: "GAS-014", proc: "P02", product: "DRAM", qty: 847  },
+    { code: "GAS-014", proc: "P02", product: "NAND", qty: 378  },
+    // GAS-015 DCS ×7
+    { code: "GAS-015", proc: "P02", product: "DRAM", qty: 518  },
+    { code: "GAS-015", proc: "P02", product: "NAND", qty: 637  },
+    // GAS-017 TiCl₄ ×7
+    { code: "GAS-017", proc: "P06", product: "HBM",  qty: 238  },
+    { code: "GAS-017", proc: "P06", product: "DRAM", qty: 301  },
+    { code: "GAS-017", proc: "P06", product: "NAND", qty: 133  },
+    // GAS-018 TDMAT ×7
+    { code: "GAS-018", proc: "P07", product: "HBM",  qty: 203  },
+    { code: "GAS-018", proc: "P07", product: "DRAM", qty: 112  },
+    // GAS-019 TEMAHf ×7
+    { code: "GAS-019", proc: "P01", product: "DRAM", qty: 112  },
+    { code: "GAS-019", proc: "P01", product: "HBM",  qty: 56   },
+    // GAS-020 DIPAS ×7
+    { code: "GAS-020", proc: "P04", product: "HBM",  qty: 91   },
+    { code: "GAS-020", proc: "P04", product: "DRAM", qty: 140  },
+    // CHM-003 H₂SO₄ ×7
+    { code: "CHM-003", proc: "P03", product: "HBM",  qty: 1323 },
+    { code: "CHM-003", proc: "P03", product: "DRAM", qty: 1701 },
+    { code: "CHM-003", proc: "P03", product: "NAND", qty: 756  },
+    // CHM-004 NH₄OH ×7
+    { code: "CHM-004", proc: "P03", product: "HBM",  qty: 882  },
+    { code: "CHM-004", proc: "P03", product: "DRAM", qty: 1134 },
+    { code: "CHM-004", proc: "P03", product: "NAND", qty: 504  },
+    // CHM-005 HCl ×7
+    { code: "CHM-005", proc: "P03", product: "HBM",  qty: 735  },
+    { code: "CHM-005", proc: "P03", product: "DRAM", qty: 945  },
+    { code: "CHM-005", proc: "P03", product: "NAND", qty: 420  },
+    // CHM-010 TMAH ×7
+    { code: "CHM-010", proc: "P03", product: "HBM",  qty: 427  },
+    { code: "CHM-010", proc: "P03", product: "DRAM", qty: 546  },
+    { code: "CHM-010", proc: "P03", product: "NAND", qty: 245  },
+    // CSM-005 CMP 컨디셔너 디스크 ×7
+    { code: "CSM-005", proc: "P07", product: "HBM",  qty: 105  },
+    { code: "CSM-005", proc: "P07", product: "DRAM", qty: 133  },
+    { code: "CSM-005", proc: "P07", product: "NAND", qty: 56   },
+    // CSM-007 PVD W 타겟 ×4 (WH-D)
+    { code: "CSM-007", proc: "P06", product: "HBM",  qty: 16.8 },
+    { code: "CSM-007", proc: "P06", product: "DRAM", qty: 21.6 },
+    { code: "CSM-007", proc: "P06", product: "NAND", qty: 9.6  },
+    // CSM-008 PVD TiN 타겟 ×4 (WH-D)
+    { code: "CSM-008", proc: "P06", product: "HBM",  qty: 14   },
+    { code: "CSM-008", proc: "P06", product: "DRAM", qty: 18   },
+    { code: "CSM-008", proc: "P06", product: "NAND", qty: 8.0  },
+    // CSM-011 PR 스트리퍼 ×7
+    { code: "CSM-011", proc: "P03", product: "HBM",  qty: 700  },
+    { code: "CSM-011", proc: "P03", product: "DRAM", qty: 896  },
+    { code: "CSM-011", proc: "P03", product: "NAND", qty: 399  },
+    // CSM-013 백그라인딩 테이프 ×7
+    { code: "CSM-013", proc: "P08", product: "HBM",  qty: 511  },
+    { code: "CSM-013", proc: "P08", product: "DRAM", qty: 224  },
+    // CSM-015 석영 파츠 ×4 (WH-D)
+    { code: "CSM-015", proc: "P04", product: "HBM",  qty: 16.8 },
+    { code: "CSM-015", proc: "P04", product: "DRAM", qty: 21.6 },
+    { code: "CSM-015", proc: "P04", product: "NAND", qty: 9.6  },
   ];
 
   await col("processUsage").insertMany(
