@@ -2,14 +2,16 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getInventoryRows, getWarehouseCapacity } from "@/lib/queries";
+import { getFacilityTelemetry, getInventoryRows, getWarehouseCapacity, getWarehouseOperationalLayout } from "@/lib/queries";
 import { buildVirtualWarehouseLayout } from "@/lib/warehouse-layout";
 import WarehouseDetailClient from "./WarehouseDetailClient";
 
 export default async function WarehouseDetailPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
   const normalizedCode = code.toUpperCase();
-  const [warehouses, inventoryRows] = await Promise.all([getWarehouseCapacity(), getInventoryRows(true)]);
+  const [warehouses, inventoryRows, operationalLayout, telemetry] = await Promise.all([
+    getWarehouseCapacity(), getInventoryRows(true), getWarehouseOperationalLayout(normalizedCode), getFacilityTelemetry(normalizedCode),
+  ]);
   const warehouse = warehouses.find((item) => item.code === normalizedCode);
   if (!warehouse) notFound();
 
@@ -28,7 +30,7 @@ export default async function WarehouseDetailPage({ params }: { params: Promise<
         unit: item.material.unit,
       },
     }));
-  const locations = buildVirtualWarehouseLayout(warehouse.code, warehouse.type, inventory);
+  const locations = operationalLayout ?? buildVirtualWarehouseLayout(warehouse.code, warehouse.type, inventory);
 
   return (
     <div className="h-[calc(100dvh-148px)] min-h-[520px] flex flex-col overflow-hidden">
@@ -43,7 +45,7 @@ export default async function WarehouseDetailPage({ params }: { params: Promise<
         <span className="rounded-full bg-[#EAF4FF] text-[#0078D4] px-3 py-1.5 text-[11px] font-bold">Phase 1 · 위치 시뮬레이션</span>
       </div>
 
-      <WarehouseDetailClient warehouse={warehouse} locations={locations} />
+      <WarehouseDetailClient warehouse={warehouse} locations={locations} telemetry={telemetry} />
     </div>
   );
 }

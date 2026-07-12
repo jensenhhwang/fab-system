@@ -28,6 +28,22 @@ test.describe("대시보드", () => {
     await expect(page.getByText("사용량")).toBeVisible({ timeout: 10_000 });
   });
 
+  test("창고 Capacity와 표준 시설 순서가 표시된다", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto(`${BASE}/warehouse`);
+    await expect(page.getByText("창고 Capacity")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("A동 — 자동화 창고 (AS/RS)")).toBeVisible();
+    await expect(page.getByText("벌크가스 야드")).toBeVisible();
+    await expect(page.getByText("벌크 케미컬 야드")).toBeVisible();
+  });
+
+  test("창고 상세에서 DB 위치·로트 UI가 표시된다", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto(`${BASE}/warehouse/WH-A`);
+    await expect(page.getByText("위치·자재 찾기")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("선택 위치 상세")).toBeVisible();
+  });
+
   test("업무 일지 페이지 로드", async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto(`${BASE}/wiki`);

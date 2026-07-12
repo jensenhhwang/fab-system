@@ -26,6 +26,9 @@ export type VirtualStorageLocation = {
   supplyFlow?: string;
   targetFacility?: string;
   relocationRequired?: boolean;
+  lotNo?: string;
+  containerId?: string;
+  expiryDate?: string;
 };
 
 export type WarehouseInventoryInput = {

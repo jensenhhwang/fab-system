@@ -37,6 +37,9 @@ export interface MaterialDoc {
   category: Category; unit: string; safetyStock: number; ropDays: number; notes?: string | null;
   palletFactor?: number; // 파렛트 환산 예외 override (없으면 단위표 사용)
   supplyMode?: SupplyMode; // 공급 형태 (기존 문서는 분류 규칙으로 fallback)
+  regulatoryClass?: string; // 실제 SDS/허가 데이터 연결용
+  designatedQuantity?: number; // 물질별 지정수량 (material unit 기준)
+  permittedQuantity?: number; // 사업장 허가량 (material unit 기준)
 }
 export interface WarehouseDoc {
   _id: string; code: string; name: string; type: string;
@@ -48,6 +51,36 @@ export interface InventoryDoc {
   _id: string; materialId: string; warehouseId: string; quantity: number; avgDailyUsage: number;
   capacityLimit?: number; // 벌크 탱크별 최대량 (자재 unit 기준)
   status?: InventoryStatus;
+}
+export interface WarehouseZoneDoc {
+  _id: string; warehouseId: string; code: string; name: string; zoneType: string;
+  temperatureMin?: number; temperatureMax?: number; humidityMin?: number; humidityMax?: number;
+  hazardClass?: string[]; accessLevel?: string;
+}
+export interface StorageLocationDoc {
+  _id: string; warehouseId: string; zoneId: string; code: string;
+  aisle?: number; bay?: number; level?: number; bin?: number;
+  locationType: "PALLET" | "SHELF" | "BIN" | "CYLINDER" | "TANK" | "CANISTER" | "PROCESS";
+  capacity: number; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED" | "MAINTENANCE";
+  position: { x: number; y: number; z: number };
+}
+export interface InventoryLotDoc {
+  _id: string; materialId: string; lotNo: string; quantity: number; availableQuantity: number;
+  receivedAt: Date; manufactureDate?: Date; expiryDate?: Date;
+  qualityStatus: InventoryStatus; holdReason?: string; updatedAt: Date;
+}
+export interface HandlingUnitDoc {
+  _id: string; inventoryLotId: string; materialId: string; warehouseId: string; locationId: string;
+  containerType: string; quantity: number; status: InventoryStatus; updatedAt: Date;
+}
+export interface InventoryMovementDoc {
+  _id: string; handlingUnitId?: string; materialId: string; type: "RECEIPT" | "PUTAWAY" | "MOVE" | "PICK" | "ISSUE" | "HOLD" | "RELEASE" | "QUARANTINE";
+  fromLocationId?: string | null; toLocationId?: string | null; quantity: number;
+  reason?: string; userId: string; createdAt: Date;
+}
+export interface FacilityTelemetryDoc {
+  _id: string; warehouseId: string; metric: "LEVEL" | "TEMPERATURE" | "HUMIDITY" | "PRESSURE" | "GAS_ALARM" | "UPW_RESISTIVITY" | "FLOW";
+  value: number; unit: string; status: "NORMAL" | "WARNING" | "CRITICAL" | "STALE"; measuredAt: Date;
 }
 export interface ProcessUsageDoc {
   _id: string; materialId: string; processCode: string; product: Product; monthlyQty: number;
@@ -88,6 +121,12 @@ export async function collections(): Promise<{
   infraEquipment: Collection<InfraDoc>;
   risks: Collection<RiskDoc>;
   wikiEntries: Collection<WikiDoc>;
+  warehouseZones: Collection<WarehouseZoneDoc>;
+  storageLocations: Collection<StorageLocationDoc>;
+  inventoryLots: Collection<InventoryLotDoc>;
+  handlingUnits: Collection<HandlingUnitDoc>;
+  inventoryMovements: Collection<InventoryMovementDoc>;
+  facilityTelemetry: Collection<FacilityTelemetryDoc>;
 }> {
   const db = await getDb();
   return {
@@ -102,5 +141,11 @@ export async function collections(): Promise<{
     infraEquipment: db.collection<InfraDoc>("infraEquipment"),
     risks: db.collection<RiskDoc>("risks"),
     wikiEntries: db.collection<WikiDoc>("wikiEntries"),
+    warehouseZones: db.collection<WarehouseZoneDoc>("warehouseZones"),
+    storageLocations: db.collection<StorageLocationDoc>("storageLocations"),
+    inventoryLots: db.collection<InventoryLotDoc>("inventoryLots"),
+    handlingUnits: db.collection<HandlingUnitDoc>("handlingUnits"),
+    inventoryMovements: db.collection<InventoryMovementDoc>("inventoryMovements"),
+    facilityTelemetry: db.collection<FacilityTelemetryDoc>("facilityTelemetry"),
   };
 }

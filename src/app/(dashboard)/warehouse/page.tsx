@@ -85,7 +85,7 @@ export default async function WarehousePage() {
           <div className="text-4xl font-black text-[#0078D4] leading-none">{caps.length}<span className="text-lg font-semibold">개소</span></div>
         </div>
         <div className="bg-white rounded-2xl p-5 shadow-sm border-t-4 border-[#EA002C]">
-          <div className="text-[11px] text-[#999] mb-1 font-medium">위험물 한도 경보</div>
+          <div className="text-[11px] text-[#999] mb-1 font-medium">허가 저장량 경보</div>
           <div className="text-4xl font-black text-[#EA002C] leading-none">{hazmatOver.length}</div>
           <div className="text-xs mt-1 text-[#999]">법적 한도 90% 초과</div>
         </div>
@@ -122,7 +122,7 @@ export default async function WarehousePage() {
                 style={{ background: (wh.legalUtilization ?? 0) >= 90 ? "#FFF0F2" : "#FFFBEB" }}>
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold" style={{ color: (wh.legalUtilization ?? 0) >= 90 ? "#EA002C" : "#B97500" }}>
-                    ⚠ 위험물 법적 저장 한도
+                    ⚠ 사업장 허가 저장 한도
                   </span>
                   <span className="text-[11px] font-black" style={{ color: (wh.legalUtilization ?? 0) >= 90 ? "#EA002C" : "#B97500" }}>
                     {wh.legalUtilization}% ({wh.occupancy.toLocaleString()}/{wh.legalLimit.toLocaleString()})

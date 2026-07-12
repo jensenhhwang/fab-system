@@ -11,7 +11,7 @@ export type SupplyProfile = {
 export const FACILITY_MASTER = [
   { _id: "WH-A", code: "WH-A", name: "A동 — 자동화 창고 (AS/RS)", type: "AS_RS", capacityMode: "SPACE", totalCapacity: 7000, unit: "pallet", temperature: "20~25°C / 습도 45~55%", notes: "표준 팔레트 일반 소모품·슬러리·포장 자재 자동보관" },
   { _id: "WH-B", code: "WH-B", name: "B동 — 평치·항온 창고", type: "FLAT", capacityMode: "SPACE", totalCapacity: 2600, unit: "pallet", temperature: "항온 Zone 5~25°C", notes: "포토레지스트·필름·온도민감 자재 보관" },
-  { _id: "WH-C", code: "WH-C", name: "C동 — 특수가스 안전창고", type: "HAZMAT", capacityMode: "SPACE", totalCapacity: 800, unit: "cylinder-slot", temperature: "15~20°C / 방폭·강제배기", notes: "독성·부식성·자연발화성 특수가스 예비 실린더 보관", legalLimit: 620 },
+  { _id: "WH-C", code: "WH-C", name: "C동 — 특수가스 안전창고", type: "HAZMAT", capacityMode: "SPACE", totalCapacity: 1000, unit: "cylinder-slot", temperature: "15~20°C / 방폭·강제배기", notes: "독성·부식성·자연발화성 특수가스 예비 실린더 보관 · 허가상한은 사업장 설정값", legalLimit: 900 },
   { _id: "WH-D", code: "WH-D", name: "D동 — 공구·MRO 창고", type: "MRO", capacityMode: "SPACE", totalCapacity: 2200, unit: "slot", temperature: "실온", notes: "Probe Card·PVD Target·Quartz Kit 등 개체관리" },
   { _id: "YD-GAS", code: "YD-GAS", name: "벌크가스 야드", type: "BULK_GAS", capacityMode: "TANK_LEVEL", totalCapacity: 100, unit: "%", temperature: "옥외 탱크·기화기·정제기", notes: "N₂·Ar·O₂·H₂·He·CO₂ 중앙공급" },
   { _id: "YD-CHEM", code: "YD-CHEM", name: "벌크 케미컬 야드", type: "BULK_CHEM", capacityMode: "TANK_LEVEL", totalCapacity: 100, unit: "%", temperature: "물질별 탱크·방유 구획", notes: "HF·H₂O₂·H₂SO₄·NH₄OH·HCl·H₃PO₄·TMAH BCDS" },
@@ -28,12 +28,14 @@ export type StorageRule = {
 };
 
 const RULES: Record<string, StorageRule> = {
+  "GAS-004": gas("PYROPHORIC_GAS", "자연발화성 가스실", "자연발화성·가연성", "SiH₄는 공기 접촉 시 자연발화 위험이 있어 산화성 가스와 방화 구획으로 분리합니다."),
   "GAS-005": gas("TOXIC_GAS", "독성·부식성 가스실", "독성·부식성", "암모니아 누출 시 흡입 위험과 부식성이 있어 환기형 전용 캐비닛에 격리합니다."),
   "GAS-006": gas("OXIDIZING_GAS", "산화성·불활성 가스실", "산화성 가스", "NF₃는 산화성 고압가스로 가연성·자연발화성 가스와 분리합니다."),
   "GAS-007": gas("TOXIC_GAS", "독성·부식성 가스실", "고독성·부식성", "WF₆는 수분과 반응해 부식성 부산물을 만들 수 있어 건조한 전용 가스 캐비닛에 둡니다."),
   "GAS-011": gas("OXIDIZING_GAS", "산화성·불활성 가스실", "고압 공정가스", "CF₄는 고압 실린더 전도 방지와 누출 관리가 필요한 공정가스로 별도 실린더 랙에 둡니다."),
   "GAS-012": gas("OXIDIZING_GAS", "산화성·불활성 가스실", "고압 공정가스", "SF₆는 고압 용기 상태와 누출을 관리하는 전용 실린더 구역에 둡니다."),
   "GAS-013": gas("TOXIC_GAS", "독성·부식성 가스실", "독성·산화성·부식성", "Cl₂는 독성과 부식성이 강해 가스 감지·국소배기·자동 차단이 있는 캐비닛에 격리합니다."),
+  "GAS-015": gas("PYROPHORIC_GAS", "자연발화성 가스실", "가연성·부식성", "DCS는 가연성과 부식성이 있는 특수가스로 점화원·산화성 가스에서 격리하고 건조 상태를 유지합니다."),
   "GAS-021": gas("TOXIC_GAS", "독성·부식성 가스실", "고독성·부식성", "BF₃는 독성·부식성 도판트 가스로 밀폐 캐비닛과 전용 배기가 필요합니다."),
   "GAS-022": gas("PYROPHORIC_GAS", "자연발화성 가스실", "고독성·가연성", "PH₃는 고독성·가연성 도판트 가스로 점화원과 산화성 가스에서 격리합니다."),
   "GAS-023": gas("PYROPHORIC_GAS", "자연발화성 가스실", "고독성·가연성", "AsH₃는 초고독성 가스로 연속 감지와 자동 차단이 가능한 격리 캐비닛에 둡니다."),

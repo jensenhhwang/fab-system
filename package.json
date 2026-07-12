@@ -9,6 +9,7 @@
     "lint": "eslint",
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate-storage": "tsx prisma/migrate-storage-layout.ts",
+    "db:migrate-warehouse-ops": "tsx prisma/migrate-warehouse-operations.ts",
     "db:validate": "tsx prisma/validate-data-consistency.ts"
   },
   "dependencies": {

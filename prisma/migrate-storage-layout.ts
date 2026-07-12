@@ -51,6 +51,10 @@ async function main() {
       { $set: { warehouseId: target, ...(isTank && item.quantity > 0 ? { capacityLimit: Math.ceil(item.quantity / 0.68) } : {}) } },
     );
   }
+  await db.collection("risks").updateOne(
+    { title: { $regex: "C동 위험물창고 Capacity" } },
+    { $set: { title: "C동 특수가스 허가 저장량 모니터링 (89%)", description: "특수가스 803 cylinder-slot / 사업장 설정 허가상한 900. 90% 도달 전 분할 입고·공급사 보관 전환 필요", mitigation: "입고 전 예상 점유 검증, 90% 초과 주문 분할, 비상 시 공급사 오프사이트 재고 활용" } },
+  );
   const after = await db.collection<{ materialId: string; warehouseId: string; quantity: number }>("inventory").find({}).toArray();
   const totalQuantityAfter = after.reduce((sum, item) => sum + item.quantity, 0);
   const facilityIds = new Set(FACILITY_MASTER.map((facility) => facility._id));

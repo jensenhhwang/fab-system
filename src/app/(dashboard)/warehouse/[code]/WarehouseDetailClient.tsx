@@ -547,31 +547,46 @@ function statusLabel(status: VirtualStorageLocation["status"]) {
   return "가용";
 }
 
-export default function WarehouseDetailClient({ warehouse, locations }: {
+export default function WarehouseDetailClient({ warehouse, locations, telemetry }: {
   warehouse: WarehouseCapacity;
   locations: VirtualStorageLocation[];
+  telemetry: { metric: string; value: number; unit: string; status: string; measuredAt: string }[];
 }) {
   const [query, setQuery] = useState("");
   const [zone, setZone] = useState("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const zones = useMemo(() => [...new Set(locations.map((item) => item.zone))], [locations]);
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, VirtualStorageLocation["status"]>>({});
+  const [operationMessage, setOperationMessage] = useState("");
+  const effectiveLocations = useMemo(() => locations.map((item) => statusOverrides[item.id] ? { ...item, status: statusOverrides[item.id] } : item), [locations, statusOverrides]);
+  const zones = useMemo(() => [...new Set(effectiveLocations.map((item) => item.zone))], [effectiveLocations]);
   const normalized = query.trim().toLowerCase();
-  const filtered = useMemo(() => locations.filter((item) => {
+  const filtered = useMemo(() => effectiveLocations.filter((item) => {
     const zoneMatch = zone === "ALL" || item.zone === zone;
     const queryMatch = !normalized || `${item.code} ${item.materialCode ?? ""} ${item.materialName ?? ""}`.toLowerCase().includes(normalized);
     return zoneMatch && queryMatch;
-  }), [locations, zone, normalized]);
+  }), [effectiveLocations, zone, normalized]);
   const visibleIds = useMemo(() => new Set(filtered.map((item) => item.id)), [filtered]);
-  const selected = locations.find((item) => item.id === selectedId) ?? null;
-  const occupied = locations.filter((item) => item.status !== "AVAILABLE").length;
-  const available = locations.filter((item) => item.status === "AVAILABLE").length;
-  const hold = locations.filter((item) => item.status === "HOLD" || item.status === "QUARANTINE").length;
+  const selected = effectiveLocations.find((item) => item.id === selectedId) ?? null;
+  const occupied = effectiveLocations.filter((item) => item.status !== "AVAILABLE").length;
+  const available = effectiveLocations.filter((item) => item.status === "AVAILABLE").length;
+  const hold = effectiveLocations.filter((item) => item.status === "HOLD" || item.status === "QUARANTINE").length;
 
   const selectLocation = (id: string) => setSelectedId(id);
   const selectFromList = (id: string) => {
     setSelectedId(id);
-    const item = locations.find((location) => location.id === id);
+    const item = effectiveLocations.find((location) => location.id === id);
     if (item) setZone(item.zone);
+  };
+  const updateInventoryStatus = async (status: "AVAILABLE" | "HOLD" | "QUARANTINE") => {
+    if (!selected?.containerId) return;
+    const reason = status === "AVAILABLE" ? "검사 완료 및 출고 제한 해제" : window.prompt(status === "HOLD" ? "Hold 사유를 입력하세요" : "격리 사유를 입력하세요");
+    if (status !== "AVAILABLE" && !reason) return;
+    setOperationMessage("처리 중...");
+    const response = await fetch("/api/warehouse/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ handlingUnitId: selected.containerId, status, reason }) });
+    const result = await response.json();
+    if (!response.ok) { setOperationMessage(result.error ?? "처리 실패"); return; }
+    setStatusOverrides((current) => ({ ...current, [selected.id]: status === "AVAILABLE" ? "OCCUPIED" : status }));
+    setOperationMessage(status === "AVAILABLE" ? "출고 제한이 해제되었습니다" : `${status} 상태로 변경되었습니다`);
   };
 
   return (
@@ -623,13 +638,18 @@ export default function WarehouseDetailClient({ warehouse, locations }: {
         <section className="relative min-h-0 min-w-0 overflow-hidden rounded-2xl border border-[#E0E5EA] bg-[#EEF3F8] shadow-sm">
           <Canvas camera={{ position: [11, 9, 13], fov: 46 }} shadows dpr={[1, 1.7]}>
             <Suspense fallback={null}>
-              <Scene locations={locations} selectedId={selectedId} visibleIds={visibleIds}
+              <Scene locations={effectiveLocations} selectedId={selectedId} visibleIds={visibleIds}
                 warehouseType={warehouse.type} onSelect={selectLocation} />
             </Suspense>
           </Canvas>
           <div className="absolute top-3 left-3 rounded-lg bg-black/65 px-3 py-2 text-[10px] text-white/90 backdrop-blur-sm pointer-events-none">
             위치 클릭 · 드래그 회전 · 휠 줌
           </div>
+          {telemetry.length > 0 && (
+            <div className="absolute top-3 right-3 rounded-lg bg-white/92 px-3 py-2 backdrop-blur-sm pointer-events-none">
+              {telemetry.map((item) => <div key={item.metric} className="flex items-center gap-2 text-[9px]"><span className="h-1.5 w-1.5 rounded-full bg-[#00B96B]" /><span className="font-bold text-[#4B5563]">{item.metric}</span><span>{item.value} {item.unit}</span></div>)}
+            </div>
+          )}
           <div className="absolute bottom-3 left-3 right-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-white/92 px-3 py-2 text-[9px] font-semibold text-[#555] backdrop-blur-sm pointer-events-none">
             <span className="font-extrabold text-[#333]">자재 구분</span>
             {Object.entries(CATEGORY_COLOR).map(([category, color]) => (
@@ -663,7 +683,18 @@ export default function WarehouseDetailClient({ warehouse, locations }: {
                 {selected.targetFacility && <Detail label="목적 공급시설" value={selected.targetFacility} accent={selected.relocationRequired} />}
                 <Detail label="보관 수량" value={selected.quantity != null ? `${selected.quantity.toLocaleString()} ${selected.unit}` : "—"} />
                 <Detail label="보관일수" value={selected.doh != null ? `${selected.doh.toFixed(1)}일` : "—"} />
+                <Detail label="로트번호" value={selected.lotNo ?? "—"} />
+                <Detail label="용기 ID" value={selected.containerId ?? "—"} />
+                <Detail label="유효기간" value={selected.expiryDate ? new Date(selected.expiryDate).toLocaleDateString("ko-KR") : "—"} />
               </div>
+              {selected.containerId && (
+                <div className="mt-4 grid grid-cols-3 gap-1.5">
+                  <button onClick={() => updateInventoryStatus("HOLD")} className="rounded-lg border border-[#EAB308] px-2 py-2 text-[9px] font-bold text-[#9A6B00] hover:bg-[#FFFBE6]">Hold</button>
+                  <button onClick={() => updateInventoryStatus("QUARANTINE")} className="rounded-lg border border-[#F97316] px-2 py-2 text-[9px] font-bold text-[#C2410C] hover:bg-[#FFF4ED]">격리</button>
+                  <button onClick={() => updateInventoryStatus("AVAILABLE")} className="rounded-lg border border-[#10B981] px-2 py-2 text-[9px] font-bold text-[#047857] hover:bg-[#ECFDF5]">해제</button>
+                </div>
+              )}
+              {operationMessage && <div className="mt-2 text-[9px] font-semibold text-[#667085]">{operationMessage}</div>}
               {selected.rationale && (
                 <div className="mt-4 rounded-xl bg-[#FFF8E7] p-3">
                   <div className="text-[10px] font-extrabold text-[#A86500] mb-1.5">이 위치에 배치한 이유</div>

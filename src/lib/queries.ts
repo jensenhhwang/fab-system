@@ -4,6 +4,8 @@ import {
   type TransactionDoc, type RiskLevel, type UserDoc, type WikiDoc, type InfraDoc,
 } from "@/lib/db";
 import { materialFactor, WORKING_DAYS } from "@/lib/capacity";
+import type { VirtualStorageLocation } from "@/lib/warehouse-layout";
+import { getGeneralStorageRationale, getStorageRule, getSupplyProfile } from "@/lib/warehouse-storage-rules";
 
 // Prisma의 include 결과와 동일한 형태(중첩 객체 + id)로 반환해서
 // 기존 페이지 JSX를 그대로 유지한다.
@@ -212,6 +214,61 @@ export async function getWarehouseCapacity(): Promise<WarehouseCapacity[]> {
     const order = ["WH-A", "WH-B", "WH-C", "WH-D", "YD-GAS", "YD-CHEM", "SUP-PREC", "FAC-UPW"];
     return order.indexOf(a.code) - order.indexOf(b.code);
   });
+}
+
+// 저장 위치·로트·용기 기반 상세 레이아웃. 운영 컬렉션이 없으면 호출자가 가상 레이아웃으로 fallback.
+export async function getWarehouseOperationalLayout(warehouseCode: string): Promise<VirtualStorageLocation[] | null> {
+  const { warehouses, warehouseZones, storageLocations, handlingUnits, inventoryLots, materials, inventory } = await collections();
+  const warehouse = await warehouses.findOne({ code: warehouseCode });
+  if (!warehouse) return null;
+  const locations = await storageLocations.find({ warehouseId: warehouse._id }).sort({ code: 1 }).toArray();
+  if (!locations.length) return null;
+  const [zones, units, inventoryDocs] = await Promise.all([
+    warehouseZones.find({ warehouseId: warehouse._id }).toArray(),
+    handlingUnits.find({ warehouseId: warehouse._id }).toArray(),
+    inventory.find({ warehouseId: warehouse._id }).toArray(),
+  ]);
+  const materialIds = [...new Set(units.map((unit) => unit.materialId))];
+  const lotIds = [...new Set(units.map((unit) => unit.inventoryLotId))];
+  const [materialDocs, lotDocs] = await Promise.all([
+    materials.find({ _id: { $in: materialIds } }).toArray(),
+    inventoryLots.find({ _id: { $in: lotIds } }).toArray(),
+  ]);
+  const unitByLocation = new Map(units.map((unit) => [unit.locationId, unit]));
+  const materialMap = new Map(materialDocs.map((material) => [material._id, material]));
+  const lotMap = new Map(lotDocs.map((lot) => [lot._id, lot]));
+  const inventoryMap = new Map(inventoryDocs.map((item) => [item.materialId, item]));
+  const zoneMap = new Map(zones.map((zone) => [zone._id, zone.name]));
+  const usage = await getMaterialDailyUsage();
+  return locations.map((location) => {
+    const unit = unitByLocation.get(location._id);
+    const material = unit ? materialMap.get(unit.materialId) : undefined;
+    const lot = unit ? lotMap.get(unit.inventoryLotId) : undefined;
+    const inv = unit ? inventoryMap.get(unit.materialId) : undefined;
+    const daily = unit ? usage.get(unit.materialId)?.daily ?? 0 : 0;
+    const rule = material ? getStorageRule(material.code) : null;
+    const supply = material ? getSupplyProfile(material.code) : null;
+    const status = unit?.status === "HOLD" || unit?.status === "QUARANTINE" ? unit.status : unit ? "OCCUPIED" : "AVAILABLE";
+    return {
+      id: location._id, code: location.code, zone: zoneMap.get(location.zoneId) ?? location.zoneId, aisle: location.aisle ?? 0, bay: location.bay ?? 0, level: location.level ?? 0,
+      position: [location.position.x, location.position.y, location.position.z], status,
+      materialId: unit?.materialId, materialCode: material?.code, materialName: material?.name, category: material?.category,
+      quantity: unit?.quantity, unit: material?.unit, doh: unit && daily > 0 ? unit.quantity / daily : null,
+      hazard: rule?.hazard, rationale: rule?.rationale ?? (material ? getGeneralStorageRationale(warehouse.type) : undefined), controls: rule?.controls,
+      supplyMode: supply?.mode, supplyLabel: supply?.label, supplyFlow: supply?.flow, targetFacility: supply?.targetFacility,
+      relocationRequired: warehouse.type === "HAZMAT" && (supply?.mode === "BULK_GAS" || supply?.mode === "BULK_CHEMICAL"),
+      lotNo: lot?.lotNo, containerId: unit?._id, expiryDate: lot?.expiryDate?.toISOString(),
+      ...(inv?.status === "HOLD" || inv?.status === "QUARANTINE" ? { status: inv.status } : {}),
+    } satisfies VirtualStorageLocation;
+  });
+}
+
+export async function getFacilityTelemetry(warehouseCode: string) {
+  const { warehouses, facilityTelemetry } = await collections();
+  const warehouse = await warehouses.findOne({ code: warehouseCode });
+  if (!warehouse) return [];
+  const docs = await facilityTelemetry.find({ warehouseId: warehouse._id }).sort({ metric: 1 }).toArray();
+  return docs.map((doc) => ({ metric: doc.metric, value: doc.value, unit: doc.unit, status: doc.status, measuredAt: doc.measuredAt.toISOString() }));
 }
 
 // 인증
