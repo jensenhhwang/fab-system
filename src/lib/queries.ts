@@ -136,7 +136,8 @@ export async function getMaterialDailyUsage(): Promise<Map<string, DailyUsage>> 
   // 비공정 자재(UPW·유틸·MRO) → 재고 avgDailyUsage 로 보조
   const invs = await inventory.find({}).toArray();
   const fb = new Map<string, number>();
-  for (const inv of invs) fb.set(inv.materialId, (fb.get(inv.materialId) ?? 0) + (inv.avgDailyUsage ?? 0));
+  // 위치별 재고 행에 동일한 fallback 사용량이 반복될 수 있으므로 합산하지 않고 최댓값 사용.
+  for (const inv of invs) fb.set(inv.materialId, Math.max(fb.get(inv.materialId) ?? 0, inv.avgDailyUsage ?? 0));
   for (const [mid, d] of fb) if (!map.has(mid)) map.set(mid, { daily: d, monthlyQty: d * WORKING_DAYS, source: "fallback" });
   return map;
 }
@@ -144,13 +145,17 @@ export async function getMaterialDailyUsage(): Promise<Map<string, DailyUsage>> 
 // 재고 행 + 유도 일사용량·DOH·월소요량 (재고 페이지·대시보드·공정 페이지 공용)
 export type InventoryRow = InventoryWithRefs & {
   dailyUsage: number; usageSource: "process" | "fallback"; doh: number | null; monthlyQty: number;
+  totalQuantity: number;
 };
 export async function getInventoryRows(sortByCode = false): Promise<InventoryRow[]> {
   const [rows, usage] = await Promise.all([getInventoriesWithRefs(sortByCode), getMaterialDailyUsage()]);
+  const totals = new Map<string, number>();
+  for (const row of rows) totals.set(row.materialId, (totals.get(row.materialId) ?? 0) + row.quantity);
   return rows.map((r) => {
     const u = usage.get(r.materialId);
     const daily = u?.daily ?? 0;
-    return { ...r, dailyUsage: daily, usageSource: u?.source ?? "fallback", doh: daily > 0 ? r.quantity / daily : null, monthlyQty: u?.monthlyQty ?? 0 };
+    const totalQuantity = totals.get(r.materialId) ?? r.quantity;
+    return { ...r, totalQuantity, dailyUsage: daily, usageSource: u?.source ?? "fallback", doh: daily > 0 ? totalQuantity / daily : null, monthlyQty: u?.monthlyQty ?? 0 };
   });
 }
 
@@ -161,6 +166,7 @@ export type WarehouseCapacity = {
   occupancy: number; utilization: number; legalUtilization: number | null;
   byCategory: { category: string; occupancy: number }[];
   materialCount: number; temperature?: string | null;
+  capacityMode: "SPACE" | "TANK_LEVEL" | "CONTINUOUS";
 };
 export async function getWarehouseCapacity(): Promise<WarehouseCapacity[]> {
   const [whs, rows] = await Promise.all([getWarehouses(), getInventoriesWithRefs()]);
@@ -168,15 +174,33 @@ export async function getWarehouseCapacity(): Promise<WarehouseCapacity[]> {
     const items = rows.filter((r) => r.warehouseId === wh._id);
     const catMap = new Map<string, number>();
     let occ = 0;
-    for (const it of items) {
-      const o = it.quantity * materialFactor(it.material);
-      occ += o;
-      catMap.set(it.material.category, (catMap.get(it.material.category) ?? 0) + o);
+    const mode = wh.capacityMode ?? "SPACE";
+    if (mode === "TANK_LEVEL") {
+      const levels = items.map((it) => Math.min(100, (it.quantity / Math.max(it.capacityLimit ?? it.quantity, 1)) * 100));
+      occ = levels.length ? levels.reduce((sum, level) => sum + level, 0) / levels.length : 0;
+      for (const it of items) {
+        const level = Math.min(100, (it.quantity / Math.max(it.capacityLimit ?? it.quantity, 1)) * 100);
+        catMap.set(it.material.category, (catMap.get(it.material.category) ?? 0) + level / Math.max(items.length, 1));
+      }
+    } else if (mode === "CONTINUOUS") {
+      occ = 100;
+      for (const it of items) catMap.set(it.material.category, 100);
+    } else if (["HAZMAT", "MRO", "PRECURSOR"].includes(wh.type)) {
+      for (const it of items) {
+        occ += it.quantity;
+        catMap.set(it.material.category, (catMap.get(it.material.category) ?? 0) + it.quantity);
+      }
+    } else {
+      for (const it of items) {
+        const o = it.quantity * materialFactor(it.material);
+        occ += o;
+        catMap.set(it.material.category, (catMap.get(it.material.category) ?? 0) + o);
+      }
     }
     const legal = wh.legalLimit ?? null;
     return {
       id: wh.id, code: wh.code, name: wh.name, type: wh.type,
-      totalCapacity: wh.totalCapacity, unit: wh.unit, temperature: wh.temperature,
+      totalCapacity: wh.totalCapacity, unit: wh.unit, temperature: wh.temperature, capacityMode: mode,
       legalLimit: legal, occupancy: Math.round(occ),
       utilization: wh.totalCapacity > 0 ? Math.round((occ / wh.totalCapacity) * 100) : 0,
       legalUtilization: legal ? Math.round((occ / legal) * 100) : null,
@@ -184,7 +208,10 @@ export async function getWarehouseCapacity(): Promise<WarehouseCapacity[]> {
         .sort((a, b) => b.occupancy - a.occupancy),
       materialCount: items.length,
     };
-  }).sort((a, b) => a.code.localeCompare(b.code));
+  }).sort((a, b) => {
+    const order = ["WH-A", "WH-B", "WH-C", "WH-D", "YD-GAS", "YD-CHEM", "SUP-PREC", "FAC-UPW"];
+    return order.indexOf(a.code) - order.indexOf(b.code);
+  });
 }
 
 // 인증

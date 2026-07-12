@@ -2,6 +2,7 @@ import "dotenv/config"; // tsx로 직접 실행 시 .env 로드
 import bcrypt from "bcryptjs";
 import { MongoClient } from "mongodb";
 import { randomUUID } from "crypto";
+import { FACILITY_MASTER, getCanonicalFacility, getSupplyProfile } from "../src/lib/warehouse-storage-rules";
 
 // MongoDB(Atlas) 네이티브 드라이버로 시드. _id는 자연키(코드) 사용.
 const client = new MongoClient(process.env.DATABASE_URL as string);
@@ -32,12 +33,7 @@ async function main() {
   console.log(`✅ Users: ${usersData.length}명`);
 
   // ─── 2. 창고 ───────────────────────────────────────────────
-  const warehousesData = [
-    { _id: "WH-A", code: "WH-A", name: "A동 — 자동화 창고 (AS/RS)", type: "AS_RS", totalCapacity: 7000, unit: "pallet", temperature: "20~25°C / 습도 45~55%", notes: "고층 자동화 창고, WMS 연동, CVD·증착용 케미컬 주 보관" },
-    { _id: "WH-B", code: "WH-B", name: "B동 — 평치 창고 (일반)", type: "FLAT", totalCapacity: 2600, unit: "pallet", temperature: "실온 (10~30°C)", notes: "일반 자재, CMP 패드·슬러리 등 소모성 인프라 자재 보관" },
-    { _id: "WH-C", code: "WH-C", name: "C동 — 위험물 전용 창고", type: "HAZMAT", totalCapacity: 800, unit: "pallet", temperature: "15~20°C / 방폭 설비", notes: "HF·NH₃·H₂O₂ 등 위험물 보관, 입고 수량 법적 제한", legalLimit: 620 },
-    { _id: "WH-D", code: "WH-D", name: "D동 — 공구·MRO 창고", type: "MRO", totalCapacity: 2200, unit: "slot", temperature: "실온", notes: "Probe Card·소모성 공구·교체 부품 보관" },
-  ];
+  const warehousesData = FACILITY_MASTER.map((facility) => ({ ...facility }));
   await col("warehouses").insertMany(warehousesData);
   console.log(`✅ Warehouses: ${warehousesData.length}개`);
 
@@ -141,7 +137,7 @@ async function main() {
   ];
 
   await col("materials").insertMany(
-    materialDefs.map((def) => ({ _id: def.code, ...def, createdAt: new Date() }))
+    materialDefs.map((def) => ({ _id: def.code, ...def, supplyMode: getSupplyProfile(def.code).mode, createdAt: new Date() }))
   );
   // 자재 코드가 곧 _id (관계 참조용)
   const materials: Record<string, { id: string }> = {};
@@ -226,8 +222,10 @@ async function main() {
       .filter((inv) => validMat(inv.code))
       .map((inv) => ({
         _id: `${inv.code}__${inv.whCode}`,
-        materialId: inv.code, warehouseId: inv.whCode,
-        quantity: inv.qty, avgDailyUsage: inv.daily, updatedAt: new Date(),
+        materialId: inv.code, warehouseId: getCanonicalFacility(inv.code),
+        quantity: inv.qty, avgDailyUsage: inv.daily, status: "AVAILABLE",
+        capacityLimit: inv.qty > 0 ? Math.ceil(inv.qty / 0.68) : undefined,
+        updatedAt: new Date(),
       }))
   );
   console.log(`✅ Inventory: ${inventoryData.length}건`);

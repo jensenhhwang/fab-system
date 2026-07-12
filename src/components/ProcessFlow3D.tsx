@@ -52,6 +52,12 @@ const WH_HEADER_X = -6.0; // 벽면 서플라이 헤더 X
 
 // 가스야드 (벌크가스 ISO 탱크 — 창고 아님, 배관으로 팹 공급)
 const GAS_YARD = { x: -12.2, z: -15.0 };
+const SUPPLY_ORIGIN: Record<string, { x: number; z: number; lane: number }> = {
+  "YD-GAS": { x: GAS_YARD.x, z: GAS_YARD.z, lane: 0 },
+  "YD-CHEM": { x: -12.2, z: -12.8, lane: 1 },
+  "SUP-PREC": { x: -12.2, z: -5.8, lane: 2 },
+  "FAC-UPW": { x: -12.2, z: 3.0, lane: 3 },
+};
 
 const FEOL_ORDER = ["P01", "P02", "P03", "P04", "P05"] as const;
 const BEOL_ORDER = ["P06", "P07", "P08", "P09", "P10"] as const;
@@ -685,13 +691,15 @@ function GasYard({ dim }: { dim: boolean }) {
 // ─────────────────────────────────────────────
 function makePipeCurve(whCode: string, bayZ: number): THREE.CatmullRomCurve3 {
   const meta = WH_META[whCode];
-  const lane = meta?.lane ?? 0;
+  const supply = SUPPLY_ORIGIN[whCode];
+  const lane = meta?.lane ?? supply?.lane ?? 0;
   const y = 0.55 + lane * 0.32;       // 창고별 헤더 높이 분리
-  const wz = meta?.z ?? 0;
+  const wz = meta?.z ?? supply?.z ?? 0;
+  const originX = supply?.x ?? WH_X;
   const wOut = (meta?.w ?? 2) / 2 + 0.2; // 창고 팹-방향 출구 면
   const hx = WH_HEADER_X - lane * 0.18; // 헤더 X도 살짝 분리
   return new THREE.CatmullRomCurve3([
-    new THREE.Vector3(WH_X + wOut, y, wz),   // 창고 출구
+    new THREE.Vector3(originX + wOut, y, wz), // 창고/중앙공급시설 출구
     new THREE.Vector3(hx, y, wz),            // 벽면 헤더 진입
     new THREE.Vector3(hx, y, bayZ),          // 헤더 따라 Z 이동
     new THREE.Vector3(-2.6, 0.42, bayZ),     // 베이로 드롭

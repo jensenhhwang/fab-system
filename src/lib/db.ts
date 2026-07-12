@@ -25,6 +25,8 @@ export type Category = "GAS" | "CHM" | "CSM" | "UTL" | "PKG";
 export type Product = "HBM" | "DRAM" | "NAND";
 export type RiskLevel = "HIGH" | "MEDIUM" | "LOW";
 export type TxType = "IN" | "OUT";
+export type InventoryStatus = "AVAILABLE" | "HOLD" | "QUARANTINE";
+export type SupplyMode = "ON_SITE" | "BULK_GAS" | "SPECIALTY_CYLINDER" | "BULK_CHEMICAL" | "DRUM_CHEMICAL" | "PRECURSOR_CANISTER" | "GENERAL_STORAGE";
 
 export interface UserDoc {
   _id: string; email: string; name: string; password: string;
@@ -34,14 +36,18 @@ export interface MaterialDoc {
   _id: string; code: string; name: string; nameEn?: string | null;
   category: Category; unit: string; safetyStock: number; ropDays: number; notes?: string | null;
   palletFactor?: number; // 파렛트 환산 예외 override (없으면 단위표 사용)
+  supplyMode?: SupplyMode; // 공급 형태 (기존 문서는 분류 규칙으로 fallback)
 }
 export interface WarehouseDoc {
   _id: string; code: string; name: string; type: string;
   totalCapacity: number; unit: string; temperature?: string | null; notes?: string | null;
   legalLimit?: number; // 위험물 등 법적 저장 한도 (파렛트 환산)
+  capacityMode?: "SPACE" | "TANK_LEVEL" | "CONTINUOUS";
 }
 export interface InventoryDoc {
   _id: string; materialId: string; warehouseId: string; quantity: number; avgDailyUsage: number;
+  capacityLimit?: number; // 벌크 탱크별 최대량 (자재 unit 기준)
+  status?: InventoryStatus;
 }
 export interface ProcessUsageDoc {
   _id: string; materialId: string; processCode: string; product: Product; monthlyQty: number;
