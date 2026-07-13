@@ -26,7 +26,13 @@ export async function POST(
 
   await inventoryLots.updateOne(
     { _id: id },
-    { $set: { availableQuantity: newAvailable, updatedAt: now } }
+    {
+      $set: {
+        availableQuantity: newAvailable,
+        qualityStatus: newAvailable === 0 ? "CONSUMED" : lot.qualityStatus,
+        updatedAt: now,
+      },
+    }
   );
 
   await inventoryMovements.insertOne({
