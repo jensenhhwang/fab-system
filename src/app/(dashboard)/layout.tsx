@@ -22,7 +22,10 @@ const ROLE_LABELS: Record<string, string> = {
 const NAV = [
   { group: "Dashboard",   items: [{ href: "/",           label: "종합 현황" }] },
   { group: "운영 관제",   items: [{ href: "/daily-control", label: "생산·자재 연동" }] },
-  { group: "창고 관리",   items: [{ href: "/warehouse",  label: "창고 Capacity" }] },
+  { group: "창고 관리",   items: [
+    { href: "/warehouse",  label: "창고 Capacity" },
+    { href: "/wms",        label: "창고관리 (WMS)" },
+  ]},
   {
     group: "시장 인텔리전스",
     items: [

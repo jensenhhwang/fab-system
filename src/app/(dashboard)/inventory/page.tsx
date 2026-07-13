@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { getInventoryRows } from "@/lib/queries";
+import { collections } from "@/lib/db";
 import InventoryClient from "./InventoryClient";
 
 async function getInventoryData() {
@@ -39,13 +40,21 @@ async function getInventoryData() {
 
 export default async function InventoryPage() {
   const items = await getInventoryData();
+
+  const { inventoryLots } = await collections();
+  const lotAgg = await inventoryLots.aggregate<{ _id: string; count: number }>([
+    { $match: { qualityStatus: "AVAILABLE" } },
+    { $group: { _id: "$materialId", count: { $sum: 1 } } },
+  ]).toArray();
+  const lotCounts = Object.fromEntries(lotAgg.map((r) => [r._id, r.count]));
+
   return (
     <>
       <div className="mb-1 text-2xl font-extrabold tracking-tight">재고 · 보관일수</div>
       <div className="text-sm text-[#999] mb-6">
         보관일수(DOH) = 현재고 ÷ 일평균사용량 · 일사용량은 공정별 사용량에서 유도 · 기준: {new Date().toLocaleDateString("ko-KR")}
       </div>
-      <InventoryClient items={items} />
+      <InventoryClient items={items} lotCounts={lotCounts} />
     </>
   );
 }
