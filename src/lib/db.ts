@@ -68,6 +68,7 @@ export interface InventoryLotDoc {
   _id: string; materialId: string; lotNo: string; quantity: number; availableQuantity: number;
   receivedAt: Date; manufactureDate?: Date; expiryDate?: Date;
   qualityStatus: InventoryStatus; holdReason?: string; updatedAt: Date;
+  warehouseId?: string; slotId?: string;
 }
 export interface HandlingUnitDoc {
   _id: string; inventoryLotId: string; materialId: string; warehouseId: string; locationId: string;
@@ -77,6 +78,7 @@ export interface InventoryMovementDoc {
   _id: string; handlingUnitId?: string; materialId: string; type: "RECEIPT" | "PUTAWAY" | "MOVE" | "PICK" | "ISSUE" | "HOLD" | "RELEASE" | "QUARANTINE";
   fromLocationId?: string | null; toLocationId?: string | null; quantity: number;
   reason?: string; userId: string; createdAt: Date;
+  lotId?: string; processCode?: string;
 }
 export interface FacilityTelemetryDoc {
   _id: string; warehouseId: string; metric: "LEVEL" | "TEMPERATURE" | "HUMIDITY" | "PRESSURE" | "GAS_ALARM" | "UPW_RESISTIVITY" | "FLOW";
