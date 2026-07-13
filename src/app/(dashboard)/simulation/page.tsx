@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { getInventoryRows, getProcessUsagesWithMaterial, getWarehouseCapacity } from "@/lib/queries";
 import OperationalScenarioClient from "./OperationalScenarioClient";
+import SimControlPanel from "./SimControlPanel";
 import type { ScenarioMaterial } from "@/lib/scenario-engine";
 import { materialFactor } from "@/lib/capacity";
 
@@ -28,5 +29,12 @@ export default async function ScenarioPage() {
   }
   const processUsages = usages.map((usage) => ({ materialId: usage.materialId, materialName: usage.material.name, processCode: usage.processCode, product: usage.product, monthlyQty: usage.monthlyQty }));
   const warehouseData = warehouses.map((warehouse) => ({ code: warehouse.code, name: warehouse.name, occupancy: warehouse.occupancy, totalCapacity: warehouse.totalCapacity, utilization: warehouse.utilization }));
-  return <OperationalScenarioClient materials={materials} processUsages={processUsages} warehouses={warehouseData} snapshotAt={new Date().toISOString()} />;
+  return (
+    <>
+      <div className="mb-6">
+        <SimControlPanel />
+      </div>
+      <OperationalScenarioClient materials={materials} processUsages={processUsages} warehouses={warehouseData} snapshotAt={new Date().toISOString()} />
+    </>
+  );
 }
