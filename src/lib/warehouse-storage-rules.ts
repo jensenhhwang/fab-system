@@ -9,14 +9,14 @@ export type SupplyProfile = {
 };
 
 export const FACILITY_MASTER = [
-  { _id: "WH-A", code: "WH-A", name: "A동 — 자동화 창고 (AS/RS)", type: "AS_RS", capacityMode: "SPACE", totalCapacity: 2000, unit: "pallet", temperature: "20~25°C / 습도 45~55%", notes: "표준 팔레트 일반 소모품·슬러리·포장 자재 자동보관" },
-  { _id: "WH-B", code: "WH-B", name: "B동 — 평치·항온 창고", type: "FLAT", capacityMode: "SPACE", totalCapacity: 2600, unit: "pallet", temperature: "항온 Zone 5~25°C", notes: "포토레지스트·필름·온도민감 자재 보관" },
-  { _id: "WH-C", code: "WH-C", name: "C동 — 특수가스 안전창고", type: "HAZMAT", capacityMode: "SPACE", totalCapacity: 7500, unit: "cylinder-slot", temperature: "15~20°C / 방폭·강제배기", notes: "독성·부식성·자연발화성 특수가스 예비 실린더 보관 · 허가상한은 사업장 설정값", legalLimit: 6750 },
-  { _id: "WH-D", code: "WH-D", name: "D동 — 공구·MRO 창고", type: "MRO", capacityMode: "SPACE", totalCapacity: 2200, unit: "slot", temperature: "실온", notes: "Probe Card·PVD Target·Quartz Kit 등 개체관리" },
-  { _id: "YD-GAS", code: "YD-GAS", name: "벌크가스 야드", type: "BULK_GAS", capacityMode: "TANK_LEVEL", totalCapacity: 100, unit: "%", temperature: "옥외 탱크·기화기·정제기", notes: "N₂·Ar·O₂·H₂·He·CO₂ 중앙공급" },
-  { _id: "YD-CHEM", code: "YD-CHEM", name: "벌크 케미컬 야드", type: "BULK_CHEM", capacityMode: "TANK_LEVEL", totalCapacity: 100, unit: "%", temperature: "물질별 탱크·방유 구획", notes: "HF·H₂O₂·H₂SO₄·NH₄OH·HCl·H₃PO₄·TMAH BCDS" },
-  { _id: "SUP-PREC", code: "SUP-PREC", name: "전구체 항온 공급실", type: "PRECURSOR", capacityMode: "SPACE", totalCapacity: 500, unit: "canister-slot", temperature: "물질별 항온·건조", notes: "TEOS·BDEAS·TiCl₄·TDMAT·TEMAHf·DIPAS 캐니스터" },
-  { _id: "FAC-UPW", code: "FAC-UPW", name: "초순수 생산시설", type: "ON_SITE", capacityMode: "CONTINUOUS", totalCapacity: 100, unit: "%", temperature: "연속 수질 모니터링", notes: "UPW 현장 생산·순환 Loop 공급" },
+  { _id: "MWH-01", code: "MWH-01", name: "자동화 자재창고 (AS/RS)", type: "AS_RS", capacityMode: "SPACE", totalCapacity: 2000, unit: "pallet", temperature: "20~25°C / 습도 45~55%", notes: "표준 팔레트 일반 소모품·슬러리·포장 자재 자동보관" },
+  { _id: "MWH-02", code: "MWH-02", name: "항온 자재창고", type: "FLAT", capacityMode: "SPACE", totalCapacity: 2600, unit: "pallet", temperature: "항온 Zone 5~25°C", notes: "포토레지스트·필름·온도민감 자재 보관" },
+  { _id: "HZW-01", code: "HZW-01", name: "특수가스 위험물창고", type: "HAZMAT", capacityMode: "SPACE", totalCapacity: 7500, unit: "cylinder-slot", temperature: "15~20°C / 방폭·강제배기", notes: "독성·부식성·자연발화성 특수가스 예비 실린더 보관", legalLimit: 6750 },
+  { _id: "MRO-01", code: "MRO-01", name: "공구·MRO 창고", type: "MRO", capacityMode: "SPACE", totalCapacity: 2200, unit: "slot", temperature: "실온", notes: "Probe Card·PVD Target·Quartz Kit 등 개체관리" },
+  { _id: "BGY-01", code: "BGY-01", name: "벌크가스 야드", type: "BULK_GAS", capacityMode: "TANK_LEVEL", totalCapacity: 100, unit: "%", temperature: "옥외 탱크·기화기·정제기", notes: "N₂·Ar·O₂·H₂·He·CO₂ 중앙공급" },
+  { _id: "BCY-01", code: "BCY-01", name: "벌크케미컬 야드", type: "BULK_CHEM", capacityMode: "TANK_LEVEL", totalCapacity: 100, unit: "%", temperature: "물질별 탱크·방유 구획", notes: "HF·H₂O₂·H₂SO₄·NH₄OH·HCl·H₃PO₄·TMAH BCDS" },
+  { _id: "PRS-01", code: "PRS-01", name: "전구체 공급실", type: "PRECURSOR", capacityMode: "SPACE", totalCapacity: 500, unit: "canister-slot", temperature: "물질별 항온·건조", notes: "TEOS·BDEAS·TiCl₄·TDMAT·TEMAHf·DIPAS 캐니스터" },
+  { _id: "UPW-01", code: "UPW-01", name: "초순수 생산시설", type: "ON_SITE", capacityMode: "CONTINUOUS", totalCapacity: 100, unit: "%", temperature: "연속 수질 모니터링", notes: "UPW 현장 생산·순환 Loop 공급" },
 ] as const;
 
 export type StorageRule = {
@@ -73,20 +73,20 @@ export function getSupplyProfile(materialCode: string): SupplyProfile {
   if (PRECURSORS.has(materialCode)) return { mode: "PRECURSOR_CANISTER", label: "전구체 캐니스터", targetFacility: "Precursor Supply Room", flow: "항온 보관 → 캐니스터 장착 → 가열·기화 → VMB → CVD/ALD" };
   if (BULK_CHEMICALS.has(materialCode)) return { mode: "BULK_CHEMICAL", label: "벌크 습식 케미컬", targetFacility: "Bulk Chemical Yard", flow: "탱크로리/ISO Container → 벌크탱크 → BCDS → 이중배관 → 공정" };
   if (DRUM_CHEMICALS.has(materialCode)) return { mode: "DRUM_CHEMICAL", label: "드럼·소량 케미컬", targetFacility: "Chemical Supply Room", flow: "창고 → 출고검사 → Chemical Supply Room → 펌프·필터 → VMB → 공정" };
-  if (materialCode.startsWith("GAS-")) return { mode: "SPECIALTY_CYLINDER", label: "특수가스 실린더", targetFacility: "Gas Supply Room", flow: "WH-C → 전용카트·출고검사 → 가스 캐비닛 → 자동전환·퍼지 → VMB/VMP → 공정" };
+  if (materialCode.startsWith("GAS-")) return { mode: "SPECIALTY_CYLINDER", label: "특수가스 실린더", targetFacility: "Gas Supply Room", flow: "HZW-01 → 전용카트·출고검사 → 가스 캐비닛 → 자동전환·퍼지 → VMB/VMP → 공정" };
   return { mode: "GENERAL_STORAGE", label: "일반 창고 출고", targetFacility: "Material Staging", flow: "창고 → 피킹·검수 → 출고 스테이징 → 공정 물류" };
 }
 
 export function getCanonicalFacility(materialCode: string): string {
   const mode = getSupplyProfile(materialCode).mode;
-  if (mode === "ON_SITE") return "FAC-UPW";
-  if (mode === "BULK_GAS") return "YD-GAS";
-  if (mode === "BULK_CHEMICAL") return "YD-CHEM";
-  if (mode === "PRECURSOR_CANISTER") return "SUP-PREC";
-  if (mode === "SPECIALTY_CYLINDER") return "WH-C";
-  if (["CHM-007", "CHM-008", "CHM-009", "CHM-012", "CHM-013", "PKG-001", "PKG-002", "CSM-014"].includes(materialCode)) return "WH-B";
-  if (["CSM-006", "CSM-007", "CSM-008", "CSM-009", "CSM-010", "CSM-015"].includes(materialCode)) return "WH-D";
-  return "WH-A";
+  if (mode === "ON_SITE") return "UPW-01";
+  if (mode === "BULK_GAS") return "BGY-01";
+  if (mode === "BULK_CHEMICAL") return "BCY-01";
+  if (mode === "PRECURSOR_CANISTER") return "PRS-01";
+  if (mode === "SPECIALTY_CYLINDER") return "HZW-01";
+  if (["CHM-007","CHM-008","CHM-009","CHM-012","CHM-013","PKG-001","PKG-002","CSM-014"].includes(materialCode)) return "MWH-02";
+  if (["CSM-006","CSM-007","CSM-008","CSM-009","CSM-010","CSM-015"].includes(materialCode)) return "MRO-01";
+  return "MWH-01";
 }
 
 export function getGeneralStorageRationale(warehouseType: string): string {

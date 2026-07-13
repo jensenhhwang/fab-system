@@ -223,7 +223,7 @@ export async function getWarehouseCapacity(): Promise<WarehouseCapacity[]> {
       materialCount: items.length,
     };
   }).sort((a, b) => {
-    const order = ["WH-A", "WH-B", "WH-C", "WH-D", "YD-GAS", "YD-CHEM", "SUP-PREC", "FAC-UPW"];
+    const order = ["MWH-01", "MWH-02", "HZW-01", "MRO-01", "BGY-01", "BCY-01", "PRS-01", "UPW-01"];
     return order.indexOf(a.code) - order.indexOf(b.code);
   });
 }

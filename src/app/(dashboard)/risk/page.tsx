@@ -2,7 +2,7 @@ import { getWarehouseCapacity, getWarehouses } from "@/lib/queries";
 import Link from "next/link";
 
 const WH_CAPACITY_PALLET: Record<string, number> = {
-  "WH-A": 7000, "WH-B": 2600, "WH-C": 800, "WH-D": 2200,
+  "MWH-01": 7000, "MWH-02": 2600, "HZW-01": 800, "MRO-01": 2200,
 };
 
 export const dynamic = "force-dynamic";

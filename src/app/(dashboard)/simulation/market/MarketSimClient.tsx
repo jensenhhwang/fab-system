@@ -13,10 +13,10 @@ const PRODUCT_COLOR: Record<string, string> = {
 };
 
 const WH_CAPACITY_PALLET: Record<string, number> = {
-  "WH-A": 7000,
-  "WH-B": 2600,
-  "WH-C": 800,
-  "WH-D": 2200,
+  "MWH-01": 7000,
+  "MWH-02": 2600,
+  "HZW-01": 800,
+  "MRO-01": 2200,
 };
 
 function clamp(v: number, min: number, max: number) { return Math.min(max, Math.max(min, v)); }

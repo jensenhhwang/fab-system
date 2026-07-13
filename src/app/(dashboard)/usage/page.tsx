@@ -106,7 +106,7 @@ async function getWarehouseGraph() {
   });
 
   // ProcessFlow3D.tsx의 WH_META와 동일한 실물 창고 코드
-  const WH_PHYSICAL = new Set(["WH-A", "WH-B", "WH-C", "WH-D"]);
+  const WH_PHYSICAL = new Set(["MWH-01", "MWH-02", "HZW-01", "MRO-01"]);
 
   // 창고 요약: 총 공급량 + 취급 카테고리 + 연결 공정 수
   const whSummary = warehouses.map((w) => {
@@ -136,7 +136,7 @@ async function getWarehouseGraph() {
       utilization: cap?.utilization ?? 0,
       byCategory,
     };
-  // 실물 창고(WH-A/B/C/D)는 항상 포함, 나머지는 공정 연결이 있을 때만
+  // 실물 창고(MWH-01/02/HZW-01/MRO-01)는 항상 포함, 나머지는 공정 연결이 있을 때만
   }).filter((w) => w.totalQty > 0 || WH_PHYSICAL.has(w.code));
 
   return { links, warehouses: whSummary };

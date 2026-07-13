@@ -45,7 +45,7 @@ async function main() {
   }
   for (const item of inventory) {
     const target = getCanonicalFacility(item.materialId);
-    const isTank = target === "YD-GAS" || target === "YD-CHEM";
+    const isTank = target === "BGY-01" || target === "BCY-01";
     await inventoryCollection.updateOne(
       { _id: item._id },
       { $set: { warehouseId: target, ...(isTank && item.quantity > 0 ? { capacityLimit: Math.ceil(item.quantity / 0.68) } : {}) } },

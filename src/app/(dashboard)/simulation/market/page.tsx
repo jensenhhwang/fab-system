@@ -24,7 +24,7 @@ async function getSimData() {
     product: u.product,
     monthlyQty: u.monthlyQty,
     category: u.material.category,
-    whCode: matToWh.get(u.materialId) ?? "WH-A",
+    whCode: matToWh.get(u.materialId) ?? "MWH-01",
   }));
 
   // 창고별 현황 (capacity 기준)

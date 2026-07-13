@@ -48,20 +48,20 @@ const WH_META: Record<string, {
   kind: "asrs" | "hazmat" | "flat" | "mro";
   w: number; d: number; h: number;
 }> = {
-  "WH-A": { z: -9.5, short: "A동 AS/RS 자동화창고", lane: 0, kind: "asrs",   w: 3.4, d: 6.0, h: 7.2 }, // 고층 자동화
-  "WH-C": { z: -2.0, short: "C동 위험물 별동",       lane: 1, kind: "hazmat", w: 3.0, d: 3.4, h: 2.3 }, // 방폭 저층
-  "WH-B": { z:  6.0, short: "B동 평치창고",          lane: 2, kind: "flat",   w: 3.2, d: 4.4, h: 3.6 }, // 중층
-  "WH-D": { z: 11.6, short: "D동 공구·MRO",         lane: 3, kind: "mro",    w: 2.6, d: 3.0, h: 2.8 }, // 소형
+  "MWH-01": { z: -9.5, short: "자동화 자재창고 (AS/RS)", lane: 0, kind: "asrs",   w: 3.4, d: 6.0, h: 7.2 }, // 고층 자동화
+  "HZW-01": { z: -2.0, short: "특수가스 위험물창고",       lane: 1, kind: "hazmat", w: 3.0, d: 3.4, h: 2.3 }, // 방폭 저층
+  "MWH-02": { z:  6.0, short: "항온 자재창고",            lane: 2, kind: "flat",   w: 3.2, d: 4.4, h: 3.6 }, // 중층
+  "MRO-01": { z: 11.6, short: "공구·MRO 창고",           lane: 3, kind: "mro",    w: 2.6, d: 3.0, h: 2.8 }, // 소형
 };
 const WH_HEADER_X = -(FAB_W / 2 + 0.5); // 벽면 서플라이 헤더 X
 
 // 가스야드 (벌크가스 ISO 탱크 — 창고 아님, 배관으로 팹 공급)
 const GAS_YARD = { x: WH_X - 0.7, z: -15.0 };
 const SUPPLY_ORIGIN: Record<string, { x: number; z: number; lane: number }> = {
-  "YD-GAS":  { x: GAS_YARD.x, z: GAS_YARD.z, lane: 0 },
-  "YD-CHEM": { x: GAS_YARD.x, z: -12.8, lane: 1 },
-  "SUP-PREC":{ x: GAS_YARD.x, z: -5.8,  lane: 2 },
-  "FAC-UPW": { x: GAS_YARD.x, z:  3.0,  lane: 3 },
+  "BGY-01": { x: GAS_YARD.x, z: GAS_YARD.z, lane: 0 },
+  "BCY-01": { x: GAS_YARD.x, z: -12.8, lane: 1 },
+  "PRS-01": { x: GAS_YARD.x, z: -5.8,  lane: 2 },
+  "UPW-01": { x: GAS_YARD.x, z:  3.0,  lane: 3 },
 };
 
 const FEOL_ORDER = ["P01", "P02", "P03", "P04", "P05"] as const;
