@@ -69,6 +69,7 @@ export interface InventoryLotDoc {
   receivedAt: Date; manufactureDate?: Date; expiryDate?: Date;
   qualityStatus: InventoryStatus; holdReason?: string; updatedAt: Date;
   warehouseId?: string; slotId?: string;
+  simulated?: true;
 }
 export interface HandlingUnitDoc {
   _id: string; inventoryLotId: string; materialId: string; warehouseId: string; locationId: string;
@@ -79,6 +80,7 @@ export interface InventoryMovementDoc {
   fromLocationId?: string | null; toLocationId?: string | null; quantity: number;
   reason?: string; userId: string; createdAt: Date;
   lotId?: string; processCode?: string;
+  simulated?: true;
 }
 export interface FacilityTelemetryDoc {
   _id: string; warehouseId: string; metric: "LEVEL" | "TEMPERATURE" | "HUMIDITY" | "PRESSURE" | "GAS_ALARM" | "UPW_RESISTIVITY" | "FLOW";
@@ -121,6 +123,39 @@ export interface BenefitCaseDoc {
   validatedAt?: Date | null; createdAt: Date; updatedAt: Date;
 }
 
+export interface SimStateDoc {
+  _id: "singleton";
+  status: "IDLE" | "RUNNING" | "PAUSED";
+  simDate: Date;
+  simStartDate: Date;
+  realStartedAt: Date;
+  speedMultiplier: number;
+}
+
+export interface SimPurchaseOrderDoc {
+  _id: string;
+  materialId: string;
+  qty: number;
+  status: "PENDING" | "IN_TRANSIT" | "RECEIVED" | "CANCELLED";
+  createdSimDate: Date;
+  expectedArrival: Date;
+  actualArrival?: Date;
+  leadTimeDays: number;
+  delayDays: number;
+  simulated?: true;
+}
+
+export interface SimEventDoc {
+  _id: string;
+  simDate: Date;
+  type: "CONSUMPTION" | "PO_CREATED" | "GR_ARRIVED" | "STOCKOUT_RISK" | "DELAY" | "PARTIAL_GR" | "PO_CANCELLED" | "MANUAL";
+  materialId?: string;
+  qty?: number;
+  poId?: string;
+  note: string;
+  simulated?: true;
+}
+
 // ─── 컬렉션 접근자 ─────────────────────────────────────────
 export async function collections(): Promise<{
   users: Collection<UserDoc>;
@@ -141,6 +176,9 @@ export async function collections(): Promise<{
   inventoryMovements: Collection<InventoryMovementDoc>;
   facilityTelemetry: Collection<FacilityTelemetryDoc>;
   benefitCases: Collection<BenefitCaseDoc>;
+  simState: Collection<SimStateDoc>;
+  simPurchaseOrders: Collection<SimPurchaseOrderDoc>;
+  simEvents: Collection<SimEventDoc>;
 }> {
   const db = await getDb();
   return {
@@ -162,5 +200,8 @@ export async function collections(): Promise<{
     inventoryMovements: db.collection<InventoryMovementDoc>("inventoryMovements"),
     facilityTelemetry: db.collection<FacilityTelemetryDoc>("facilityTelemetry"),
     benefitCases: db.collection<BenefitCaseDoc>("benefitCases"),
+    simState: db.collection<SimStateDoc>("simState"),
+    simPurchaseOrders: db.collection<SimPurchaseOrderDoc>("simPurchaseOrders"),
+    simEvents: db.collection<SimEventDoc>("simEvents"),
   };
 }
