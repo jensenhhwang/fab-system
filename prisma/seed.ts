@@ -431,7 +431,38 @@ async function main() {
   );
   console.log(`✅ ProcessUsage: ${processUsageData.length}건`);
 
-  // ─── 7. 공급업체 매핑 ───────────────────────────────────────
+  // ─── 7. Lot 초기 데이터 ────────────────────────────────────
+  await db.collection("inventoryLots").deleteMany({});
+
+  const now = new Date("2026-07-13");
+  const d = (daysOffset: number) => new Date(now.getTime() + daysOffset * 86400000);
+
+  const lotsData = [
+    // CHM-007 ArF PR — 유효기간 촉박한 Lot 먼저 (FEFO 시연)
+    { _id: "LOT-CHM007-001", materialId: "CHM-007", lotNo: "LOT-CHM007-001", warehouseId: "MWH-01", quantity: 60, availableQuantity: 60, receivedAt: d(-30), manufactureDate: d(-45), expiryDate: d(25), qualityStatus: "AVAILABLE", updatedAt: now },
+    { _id: "LOT-CHM007-002", materialId: "CHM-007", lotNo: "LOT-CHM007-002", warehouseId: "MWH-01", quantity: 48, availableQuantity: 48, receivedAt: d(-10), manufactureDate: d(-20), expiryDate: d(55), qualityStatus: "AVAILABLE", updatedAt: now },
+    { _id: "LOT-CHM007-003", materialId: "CHM-007", lotNo: "LOT-CHM007-003", warehouseId: "MWH-01", quantity: 36, availableQuantity: 36, receivedAt: d(0),   manufactureDate: d(-5),  expiryDate: d(88), qualityStatus: "AVAILABLE", updatedAt: now },
+    // CHM-009 EUV PR — 유효기간 짧음
+    { _id: "LOT-CHM009-001", materialId: "CHM-009", lotNo: "LOT-CHM009-001", warehouseId: "MWH-01", quantity: 12, availableQuantity: 12, receivedAt: d(-20), manufactureDate: d(-30), expiryDate: d(18), qualityStatus: "AVAILABLE", updatedAt: now },
+    { _id: "LOT-CHM009-002", materialId: "CHM-009", lotNo: "LOT-CHM009-002", warehouseId: "MWH-01", quantity: 18, availableQuantity: 18, receivedAt: d(-5),  manufactureDate: d(-10), expiryDate: d(45), qualityStatus: "AVAILABLE", updatedAt: now },
+    // CHM-001 HF
+    { _id: "LOT-CHM001-001", materialId: "CHM-001", lotNo: "LOT-CHM001-001", warehouseId: "HZW-01", quantity: 70, availableQuantity: 70, receivedAt: d(-15), expiryDate: d(90),  qualityStatus: "AVAILABLE", updatedAt: now },
+    { _id: "LOT-CHM001-002", materialId: "CHM-001", lotNo: "LOT-CHM001-002", warehouseId: "HZW-01", quantity: 58, availableQuantity: 58, receivedAt: d(-5),  expiryDate: d(120), qualityStatus: "AVAILABLE", updatedAt: now },
+    // GAS-019 TEMAHf 전구체 — 리드타임 45일
+    { _id: "LOT-GAS019-001", materialId: "GAS-019", lotNo: "LOT-GAS019-001", warehouseId: "PRS-01", quantity: 10, availableQuantity: 10, receivedAt: d(-40), expiryDate: d(30),  qualityStatus: "AVAILABLE", updatedAt: now },
+    { _id: "LOT-GAS019-002", materialId: "GAS-019", lotNo: "LOT-GAS019-002", warehouseId: "PRS-01", quantity: 8,  availableQuantity: 8,  receivedAt: d(-10), expiryDate: d(80),  qualityStatus: "AVAILABLE", updatedAt: now },
+    // GAS-016 BDEAS
+    { _id: "LOT-GAS016-001", materialId: "GAS-016", lotNo: "LOT-GAS016-001", warehouseId: "PRS-01", quantity: 18, availableQuantity: 18, receivedAt: d(-20), expiryDate: d(40),  qualityStatus: "AVAILABLE", updatedAt: now },
+    { _id: "LOT-GAS016-002", materialId: "GAS-016", lotNo: "LOT-GAS016-002", warehouseId: "PRS-01", quantity: 14, availableQuantity: 14, receivedAt: d(-5),  expiryDate: d(95),  qualityStatus: "AVAILABLE", updatedAt: now },
+    // PKG-001 EMC — 유효기간 없음 (FIFO)
+    { _id: "LOT-PKG001-001", materialId: "PKG-001", lotNo: "LOT-PKG001-001", warehouseId: "MWH-02", quantity: 3000, availableQuantity: 3000, receivedAt: d(-60), qualityStatus: "AVAILABLE", updatedAt: now },
+    { _id: "LOT-PKG001-002", materialId: "PKG-001", lotNo: "LOT-PKG001-002", warehouseId: "MWH-02", quantity: 7660, availableQuantity: 7660, receivedAt: d(-20), qualityStatus: "AVAILABLE", updatedAt: now },
+  ];
+
+  await db.collection("inventoryLots").insertMany(lotsData as never[]);
+  console.log(`✅ InventoryLots: ${lotsData.length}건`);
+
+  // ─── 8. 공급업체 매핑 ───────────────────────────────────────
   const supplyLinks = [
     { matCode: "GAS-001", supId: "sup-airproducts", days: 3,  primary: true  },
     { matCode: "GAS-001", supId: "sup-skg",         days: 5,  primary: false },
@@ -478,7 +509,7 @@ async function main() {
   );
   console.log(`✅ SupplyLinks: ${supplyLinks.length}건`);
 
-  // ─── 8. 인프라 교체주기 ─────────────────────────────────────
+  // ─── 9. 인프라 교체주기 ─────────────────────────────────────
   const infraItems = [
     { name: "CMP 패드 (IC1000) — P07 라인 A", processCode: "P07", unit: "run", replacementCriteria: 1500, currentUsage: 1120, lastReplacedAt: new Date("2026-05-02"), notes: "잔여 380 run, 약 8일 후 교체 예상" },
     { name: "CMP 패드 (IC1000) — P07 라인 B", processCode: "P07", unit: "run", replacementCriteria: 1500, currentUsage: 240,  lastReplacedAt: new Date("2026-06-18"), notes: "교체 후 정상 운영 중" },
@@ -497,7 +528,7 @@ async function main() {
   );
   console.log(`✅ InfraEquipment: ${infraItems.length}건`);
 
-  // ─── 9. 리스크 ──────────────────────────────────────────────
+  // ─── 10. 리스크 ──────────────────────────────────────────────
   const risks = [
     { title: "EUV 포토레지스트 수급 불안 (JSR — 일본 수출 규제)", level: "HIGH" as const, category: "공급망", owner: "황지훈", status: "Active", description: "CHM-009 EUV PR: 단일 공급사(JSR) 의존도 100%, 리드타임 45일. 수출 규제 재발 시 즉시 생산 차질", mitigation: "국산 PR 대체 테스트 착수(덕산 3세대), 안전재고 2개월분 확보 계획" },
     { title: "C동 위험물창고 Capacity 초과 임박 (91%)", level: "HIGH" as const, category: "창고 운영", owner: "박민준", status: "Active", description: "HF·NH₃ 추가 입고 시 법적 허용 한도 초과 위험. 7월 말 HF 정기 입고 예정과 충돌", mitigation: "HF 입고 분할 (2차 분납), C동 소분 창고 임시 지정 협의 중" },
@@ -510,7 +541,7 @@ async function main() {
   );
   console.log(`✅ Risks: ${risks.length}건`);
 
-  // ─── 10. 업무 일지 ──────────────────────────────────────────
+  // ─── 11. 업무 일지 ──────────────────────────────────────────
   await col("wikiEntries").insertOne({
     _id: randomUUID(),
     date: new Date("2026-07-08"),
