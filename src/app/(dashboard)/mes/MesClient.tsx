@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import type { WorkOrderDoc } from "@/lib/db";
+import { useState, useCallback } from "react";
+import type { WorkOrderDoc, WorkOrderStatus } from "@/lib/db";
 import ProcessReadinessMatrix from "./ProcessReadinessMatrix";
+import WorkOrderTable from "./WorkOrderTable";
+import WorkOrderCreateModal from "./WorkOrderCreateModal";
 
 type Tab = "readiness" | "workorders" | "log";
 
@@ -13,12 +15,27 @@ export default function MesClient({
 }) {
   const [tab, setTab] = useState<Tab>("readiness");
   const [workOrders, setWorkOrders] = useState<WorkOrderDoc[]>(initialWorkOrders);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const TAB_LABELS: { key: Tab; label: string }[] = [
     { key: "readiness", label: "공정 준비 현황" },
     { key: "workorders", label: "작업지시 목록" },
     { key: "log", label: "실행 로그" },
   ];
+
+  const refreshWorkOrders = useCallback(async () => {
+    const r = await fetch("/api/mes/workorders");
+    if (r.ok) setWorkOrders(await r.json());
+  }, []);
+
+  const handleStatusChange = useCallback(async (id: string, status: WorkOrderStatus) => {
+    await fetch(`/api/mes/workorders/${id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    await refreshWorkOrders();
+  }, [refreshWorkOrders]);
 
   return (
     <div className="space-y-4">
@@ -28,7 +45,7 @@ export default function MesClient({
         </h1>
         <button
           className="px-4 py-2 bg-[#0078D4] text-white text-sm font-medium rounded-lg hover:bg-blue-700"
-          onClick={() => {}}
+          onClick={() => setShowCreateModal(true)}
         >
           + 작업지시 생성
         </button>
@@ -40,9 +57,7 @@ export default function MesClient({
             key={key}
             onClick={() => setTab(key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === key
-                ? "border-[#0078D4] text-[#0078D4]"
-                : "border-transparent hover:text-[#0078D4]"
+              tab === key ? "border-[#0078D4] text-[#0078D4]" : "border-transparent"
             }`}
             style={{ color: tab === key ? "#0078D4" : "var(--text-2)" }}
           >
@@ -54,15 +69,20 @@ export default function MesClient({
       <div>
         {tab === "readiness" && (
           <ProcessReadinessMatrix
-            onCellClick={(processCode, product, materialId) => {
-              console.log("셀 클릭:", processCode, product, materialId);
+            onCellClick={(_processCode, _product, _materialId) => {
+              setTab("workorders");
             }}
           />
         )}
         {tab === "workorders" && (
-          <div className="text-sm text-center py-16" style={{ color: "var(--text-3)" }}>
-            작업지시 목록 ({workOrders.length}개) — Task 8에서 구현
-          </div>
+          <WorkOrderTable
+            workOrders={workOrders}
+            onStatusChange={handleStatusChange}
+            onPickClick={(wo) => {
+              console.log("피킹 클릭:", wo._id);
+              // Task 9에서 PickingDrawer 연결
+            }}
+          />
         )}
         {tab === "log" && (
           <div className="text-sm text-center py-16" style={{ color: "var(--text-3)" }}>
@@ -70,6 +90,13 @@ export default function MesClient({
           </div>
         )}
       </div>
+
+      {showCreateModal && (
+        <WorkOrderCreateModal
+          onClose={() => setShowCreateModal(false)}
+          onCreated={refreshWorkOrders}
+        />
+      )}
     </div>
   );
 }
