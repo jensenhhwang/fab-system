@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import { Suspense } from "react";
 import { getProcessUsagesWithMaterial, getInventoryRows, getWarehouses, getWarehouseCapacity } from "@/lib/queries";
 import UsageClient from "./UsageClient";
 
@@ -144,5 +145,9 @@ async function getWarehouseGraph() {
 
 export default async function UsagePage() {
   const [materials, graph] = await Promise.all([getUsageData(), getWarehouseGraph()]);
-  return <UsageClient materials={materials} warehouseLinks={graph.links} warehouses={graph.warehouses} />;
+  return (
+    <Suspense fallback={<div className="p-8 text-sm text-gray-400">로딩 중...</div>}>
+      <UsageClient materials={materials} warehouseLinks={graph.links} warehouses={graph.warehouses} />
+    </Suspense>
+  );
 }

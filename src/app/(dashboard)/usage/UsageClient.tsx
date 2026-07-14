@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, Suspense } from "react";
-import { useRouter } from "next/navigation";
+import { useState, Suspense, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { PROCESSES } from "@/lib/processes";
 
@@ -59,8 +59,14 @@ export default function UsageClient({
   warehouses?: WarehouseInfo[];
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [hoveredMat, setHoveredMat] = useState<Material | null>(null);
   const [selectedProc, setSelectedProc] = useState<string | null>(null);
+
+  useEffect(() => {
+    const proc = searchParams.get("process");
+    if (proc) setSelectedProc(proc);
+  }, [searchParams]);
   const [filterProduct, setFilterProduct] = useState<"ALL" | "HBM" | "DRAM" | "NAND">("ALL");
   const [filterCat, setFilterCat] = useState<string>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("code");
@@ -238,6 +244,12 @@ export default function UsageClient({
             <span className="text-xs text-[#EA002C] font-semibold">
               {PROCESSES.find((p) => p.code === selectedProc)?.name} — {filteredMaterials.length}종 자재 사용
             </span>
+            <button
+              onClick={() => router.push(`/mes?process=${selectedProc}`)}
+              className="px-3 py-1 text-[10px] font-bold bg-[#EA002C] text-white rounded-full hover:bg-red-700 transition-colors"
+            >
+              MES 공정 준비 보기 →
+            </button>
             <button
               onClick={() => setSelectedProc(null)}
               className="ml-auto text-[10px] text-[#EA002C] hover:underline"
