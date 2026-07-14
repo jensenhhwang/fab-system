@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { WorkOrderDoc } from "@/lib/db";
+import ProcessReadinessMatrix from "./ProcessReadinessMatrix";
 
 type Tab = "readiness" | "workorders" | "log";
 
@@ -50,10 +51,24 @@ export default function MesClient({
         ))}
       </div>
 
-      <div className="min-h-64 flex items-center justify-center text-sm" style={{ color: "var(--text-3)" }}>
-        {tab === "readiness" && <span>공정 준비 현황 (Task 7에서 구현)</span>}
-        {tab === "workorders" && <span>작업지시 목록 ({workOrders.length}개) (Task 8에서 구현)</span>}
-        {tab === "log" && <span>실행 로그 (Task 10에서 구현)</span>}
+      <div>
+        {tab === "readiness" && (
+          <ProcessReadinessMatrix
+            onCellClick={(processCode, product, materialId) => {
+              console.log("셀 클릭:", processCode, product, materialId);
+            }}
+          />
+        )}
+        {tab === "workorders" && (
+          <div className="text-sm text-center py-16" style={{ color: "var(--text-3)" }}>
+            작업지시 목록 ({workOrders.length}개) — Task 8에서 구현
+          </div>
+        )}
+        {tab === "log" && (
+          <div className="text-sm text-center py-16" style={{ color: "var(--text-3)" }}>
+            실행 로그 — Task 10에서 구현
+          </div>
+        )}
       </div>
     </div>
   );
