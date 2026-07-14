@@ -1,6 +1,7 @@
 "use client";
 
 import type { WorkOrderDoc, WorkOrderStatus } from "@/lib/db";
+import { PROCESSES } from "@/lib/processes";
 
 const STATUS_STYLE: Record<WorkOrderStatus, string> = {
   QUEUED:        "bg-gray-100 text-gray-600",
@@ -62,8 +63,11 @@ export default function WorkOrderTable({
               <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--text-3)" }}>
                 {wo._id}
               </td>
-              <td className="px-4 py-3 font-medium" style={{ color: "var(--text-1)" }}>
-                {wo.processCode}
+              <td className="px-4 py-3" style={{ color: "var(--text-1)" }}>
+                <div className="font-medium text-xs leading-tight">
+                  {PROCESSES.find(p => p.code === wo.processCode)?.name ?? wo.processCode}
+                </div>
+                <div className="font-mono text-[10px] text-gray-400">{wo.processCode}</div>
               </td>
               <td className="px-4 py-3" style={{ color: "var(--text-2)" }}>
                 {wo.product}

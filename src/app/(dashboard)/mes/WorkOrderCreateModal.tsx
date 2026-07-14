@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Product } from "@/lib/db";
+import { PROCESSES } from "@/lib/processes";
 
 type BomTemplateLine = { materialId: string; qtyPerRun: number };
 type Template = { _id: string; processCode: string; product: Product; lines: BomTemplateLine[] };
@@ -62,7 +63,14 @@ export default function WorkOrderCreateModal({
                 style={{ borderColor: "var(--border)" }}
               >
                 <option value="">선택</option>
-                {processCodes.map(p => <option key={p} value={p}>{p}</option>)}
+                {processCodes.map(p => {
+                  const proc = PROCESSES.find(pr => pr.code === p);
+                  return (
+                    <option key={p} value={p}>
+                      {proc ? `${proc.name} (${p})` : p}
+                    </option>
+                  );
+                })}
               </select>
             </div>
             <div>
