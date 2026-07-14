@@ -41,15 +41,24 @@ async function getInventoryData() {
 export default async function InventoryPage() {
   const items = await getInventoryData();
 
-  const { inventoryLots } = await collections();
-  const lotAgg = await inventoryLots.aggregate<{ _id: string; count: number }>([
-    { $match: { qualityStatus: "AVAILABLE" } },
-    { $group: { _id: "$materialId", count: { $sum: 1 } } },
-  ]).toArray();
+  const { inventoryLots, simState: simStateColl } = await collections();
+  const [lotAgg, simStateDoc] = await Promise.all([
+    inventoryLots.aggregate<{ _id: string; count: number }>([
+      { $match: { qualityStatus: "AVAILABLE" } },
+      { $group: { _id: "$materialId", count: { $sum: 1 } } },
+    ]).toArray(),
+    simStateColl.findOne({ _id: "singleton" }),
+  ]);
   const lotCounts = Object.fromEntries(lotAgg.map((r) => [r._id, r.count]));
 
   return (
     <>
+      {simStateDoc?.status === "RUNNING" && (
+        <div className="mb-4 flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium w-fit">
+          <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+          시뮬레이션 진행 중 · {new Date(simStateDoc.simDate).toLocaleDateString("ko-KR")}
+        </div>
+      )}
       <div className="mb-1 text-2xl font-extrabold tracking-tight">재고 · 보관일수</div>
       <div className="text-sm text-[#999] mb-6">
         보관일수(DOH) = 현재고 ÷ 일평균사용량 · 일사용량은 공정별 사용량에서 유도 · 기준: {new Date().toLocaleDateString("ko-KR")}

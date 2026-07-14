@@ -37,7 +37,7 @@ export type WarehouseInventoryInput = {
   dailyUsage: number;
   doh: number | null;
   material: { code: string; name: string; category: string; unit: string };
-  status?: "AVAILABLE" | "HOLD" | "QUARANTINE";
+  status?: "AVAILABLE" | "HOLD" | "QUARANTINE" | "CONSUMED";
 };
 
 const ZONES: Record<string, string[]> = {

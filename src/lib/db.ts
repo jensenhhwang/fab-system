@@ -25,7 +25,7 @@ export type Category = "GAS" | "CHM" | "CSM" | "UTL" | "PKG";
 export type Product = "HBM" | "DRAM" | "NAND";
 export type RiskLevel = "HIGH" | "MEDIUM" | "LOW";
 export type TxType = "IN" | "OUT";
-export type InventoryStatus = "AVAILABLE" | "HOLD" | "QUARANTINE";
+export type InventoryStatus = "AVAILABLE" | "HOLD" | "QUARANTINE" | "CONSUMED";
 export type SupplyMode = "ON_SITE" | "BULK_GAS" | "SPECIALTY_CYLINDER" | "BULK_CHEMICAL" | "DRUM_CHEMICAL" | "PRECURSOR_CANISTER" | "GENERAL_STORAGE";
 
 export interface UserDoc {

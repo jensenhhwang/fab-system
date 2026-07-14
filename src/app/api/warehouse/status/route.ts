@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     lotStatusUpdate,
     inventory.updateOne({ materialId: unit.materialId, warehouseId: unit.warehouseId }, { $set: { status: body.status } }),
     inventoryMovements.insertOne({ _id: crypto.randomUUID(), handlingUnitId: unit._id, materialId: unit.materialId,
-      type: body.status === "AVAILABLE" ? "RELEASE" : body.status, fromLocationId: unit.locationId, toLocationId: unit.locationId,
+      type: body.status === "AVAILABLE" ? "RELEASE" : body.status as "HOLD" | "QUARANTINE", fromLocationId: unit.locationId, toLocationId: unit.locationId,
       quantity: unit.quantity, reason: body.reason?.trim(), userId: session.user.id ?? session.user.email ?? "unknown", createdAt: now }),
   ]);
   return NextResponse.json({ ok: true, status: body.status });
