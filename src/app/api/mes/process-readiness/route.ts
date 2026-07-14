@@ -22,11 +22,11 @@ type ProcessReadinessRow = {
 };
 
 export async function GET() {
-  const { processUsage, inventoryLots, materials, processMetadata } = await collections();
+  const { processUsage, inventory, materials, processMetadata } = await collections();
 
-  const [usages, lots, mats, metaDocs] = await Promise.all([
+  const [usages, invRows, mats, metaDocs] = await Promise.all([
     processUsage.find({}).toArray(),
-    inventoryLots.find({ qualityStatus: "AVAILABLE" }).toArray(),
+    inventory.find({}).toArray(),
     materials.find({}).toArray(),
     processMetadata.find({}).toArray(),
   ]);
@@ -35,8 +35,8 @@ export async function GET() {
   const metaMap = new Map(metaDocs.map(m => [m._id, m]));
 
   const availMap = new Map<string, number>();
-  for (const lot of lots) {
-    availMap.set(lot.materialId, (availMap.get(lot.materialId) ?? 0) + lot.availableQuantity);
+  for (const inv of invRows) {
+    availMap.set(inv.materialId, (availMap.get(inv.materialId) ?? 0) + inv.quantity);
   }
 
   const rowMap = new Map<string, ProcessReadinessRow>();
