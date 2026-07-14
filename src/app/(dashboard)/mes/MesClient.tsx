@@ -5,6 +5,7 @@ import type { WorkOrderDoc, WorkOrderStatus } from "@/lib/db";
 import ProcessReadinessMatrix from "./ProcessReadinessMatrix";
 import WorkOrderTable from "./WorkOrderTable";
 import WorkOrderCreateModal from "./WorkOrderCreateModal";
+import PickingDrawer from "./PickingDrawer";
 
 type Tab = "readiness" | "workorders" | "log";
 
@@ -16,6 +17,7 @@ export default function MesClient({
   const [tab, setTab] = useState<Tab>("readiness");
   const [workOrders, setWorkOrders] = useState<WorkOrderDoc[]>(initialWorkOrders);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [pickingWo, setPickingWo] = useState<WorkOrderDoc | null>(null);
 
   const TAB_LABELS: { key: Tab; label: string }[] = [
     { key: "readiness", label: "공정 준비 현황" },
@@ -78,10 +80,7 @@ export default function MesClient({
           <WorkOrderTable
             workOrders={workOrders}
             onStatusChange={handleStatusChange}
-            onPickClick={(wo) => {
-              console.log("피킹 클릭:", wo._id);
-              // Task 9에서 PickingDrawer 연결
-            }}
+            onPickClick={(wo) => setPickingWo(wo)}
           />
         )}
         {tab === "log" && (
@@ -95,6 +94,14 @@ export default function MesClient({
         <WorkOrderCreateModal
           onClose={() => setShowCreateModal(false)}
           onCreated={refreshWorkOrders}
+        />
+      )}
+
+      {pickingWo && (
+        <PickingDrawer
+          wo={pickingWo}
+          onClose={() => setPickingWo(null)}
+          onPicked={refreshWorkOrders}
         />
       )}
     </div>
