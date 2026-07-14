@@ -39,6 +39,13 @@ export async function GET() {
     availMap.set(inv.materialId, (availMap.get(inv.materialId) ?? 0) + inv.quantity);
   }
 
+  // 자재별 전체 공정 합산 일 소비량 (재고는 공정 구분 없이 공유됨)
+  const totalDailyUsageMap = new Map<string, number>();
+  for (const u of usages) {
+    const prev = totalDailyUsageMap.get(u.materialId) ?? 0;
+    totalDailyUsageMap.set(u.materialId, prev + u.monthlyQty / 30);
+  }
+
   const rowMap = new Map<string, ProcessReadinessRow>();
   for (const u of usages) {
     const key = `${u.processCode}-${u.product}`;
@@ -53,13 +60,14 @@ export async function GET() {
       });
     }
     const mat = matMap.get(u.materialId);
-    const dailyUsage = u.monthlyQty / 30;
+    const thisProcessDailyUsage = u.monthlyQty / 30;
+    const totalDailyUsage = totalDailyUsageMap.get(u.materialId) ?? thisProcessDailyUsage;
     const availableQty = availMap.get(u.materialId) ?? 0;
-    const doh = dailyUsage > 0 ? Math.round(availableQty / dailyUsage) : 0;
+    const doh = totalDailyUsage > 0 ? Math.round(availableQty / totalDailyUsage) : 0;
     rowMap.get(key)!.cells.push({
       materialId: u.materialId,
       materialName: mat?.name ?? u.materialId,
-      dailyUsage,
+      dailyUsage: totalDailyUsage,
       availableQty,
       doh,
       ropDays: mat?.ropDays ?? 7,
