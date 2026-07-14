@@ -13,14 +13,14 @@ export async function getOrInitSimState(): Promise<SimStateDoc> {
     simDate: new Date(),
     simStartDate: new Date(),
     realStartedAt: new Date(),
-    speedMultiplier: 10,
+    speedMultiplier: 1,
   };
   await simState.insertOne(initial);
   return initial;
 }
 
 export async function executeTickAndPersist(): Promise<TickResult> {
-  const { simState, inventoryLots, simPurchaseOrders, simEvents, inventoryMovements, processUsage, materials } =
+  const { simState, inventoryLots, simPurchaseOrders, simEvents, inventoryMovements, processUsage, materials, simCheckpoints } =
     await collections();
 
   const state = await simState.findOne({ _id: "singleton" });
@@ -49,6 +49,22 @@ export async function executeTickAndPersist(): Promise<TickResult> {
   }
 
   const lots = await inventoryLots.find({ qualityStatus: "AVAILABLE" }).toArray();
+
+  // 틱 실행 전: 실제 lot 상태를 체크포인트로 저장 (simDate = 이 날의 시작 상태)
+  const realLots = lots.filter(l => !l.simulated);
+  await simCheckpoints.replaceOne(
+    { _id: state.simDate.toISOString() },
+    {
+      simDate: state.simDate,
+      createdAt: new Date(),
+      realLotStates: realLots.map(l => ({ lotId: l._id, availableQuantity: l.availableQuantity, qualityStatus: l.qualityStatus })),
+    } as Parameters<typeof simCheckpoints.replaceOne>[1],
+    { upsert: true }
+  );
+  // 90일 초과 체크포인트 정리
+  const cutoff = new Date(state.simDate);
+  cutoff.setDate(cutoff.getDate() - 90);
+  await simCheckpoints.deleteMany({ simDate: { $lt: cutoff } });
   const activePOs = await simPurchaseOrders
     .find({ status: { $in: ["PENDING", "IN_TRANSIT"] } })
     .toArray();

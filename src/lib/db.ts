@@ -156,6 +156,15 @@ export interface SimEventDoc {
   simulated?: true;
 }
 
+// 체크포인트: 각 sim-day 시작 시점의 실제 lot 수량 스냅샷
+// _id = simDate.toISOString() (하루 1개, upsert로 중복 방지)
+export interface SimCheckpointDoc {
+  _id: string;
+  simDate: Date;
+  createdAt: Date;
+  realLotStates: { lotId: string; availableQuantity: number; qualityStatus: InventoryStatus }[];
+}
+
 // ─── 컬렉션 접근자 ─────────────────────────────────────────
 export async function collections(): Promise<{
   users: Collection<UserDoc>;
@@ -179,6 +188,7 @@ export async function collections(): Promise<{
   simState: Collection<SimStateDoc>;
   simPurchaseOrders: Collection<SimPurchaseOrderDoc>;
   simEvents: Collection<SimEventDoc>;
+  simCheckpoints: Collection<SimCheckpointDoc>;
 }> {
   const db = await getDb();
   return {
@@ -203,5 +213,6 @@ export async function collections(): Promise<{
     simState: db.collection<SimStateDoc>("simState"),
     simPurchaseOrders: db.collection<SimPurchaseOrderDoc>("simPurchaseOrders"),
     simEvents: db.collection<SimEventDoc>("simEvents"),
+    simCheckpoints: db.collection<SimCheckpointDoc>("simCheckpoints"),
   };
 }

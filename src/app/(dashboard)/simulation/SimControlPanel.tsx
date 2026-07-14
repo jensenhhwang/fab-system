@@ -16,6 +16,8 @@ const EVENT_ICON: Record<string, string> = {
 
 const SPEED_OPTIONS = [1, 5, 10, 30, 100];
 
+type CheckpointMeta = { _id: string; simDate: string };
+
 function fmtDate(d: Date | string | undefined) {
   if (!d) return "-";
   return new Date(d).toLocaleDateString("ko-KR");
@@ -30,9 +32,12 @@ export default function SimControlPanel() {
   const [state, setState] = useState<SimStateDoc | null>(null);
   const [events, setEvents] = useState<SimEventDoc[]>([]);
   const [pos, setPos] = useState<SimPurchaseOrderDoc[]>([]);
+  const [checkpoints, setCheckpoints] = useState<CheckpointMeta[]>([]);
   const [jumping, setJumping] = useState(false);
+  const [rewinding, setRewinding] = useState(false);
   const [manualMat, setManualMat] = useState("");
   const [manualQty, setManualQty] = useState("");
+  const [showCheckpoints, setShowCheckpoints] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
   const fetchState = async () => {
@@ -47,11 +52,16 @@ export default function SimControlPanel() {
     const r = await fetch("/api/sim/pos");
     if (r.ok) setPos(await r.json());
   };
+  const fetchCheckpoints = async () => {
+    const r = await fetch("/api/sim/checkpoints");
+    if (r.ok) setCheckpoints(await r.json());
+  };
 
   useEffect(() => {
     fetchState();
     fetchEvents();
     fetchPos();
+    fetchCheckpoints();
   }, []);
 
   // SSE 연결
@@ -71,11 +81,10 @@ export default function SimControlPanel() {
         if (data.newEvents?.length) {
           setEvents(prev => [...data.newEvents.reverse(), ...prev].slice(0, 50));
           fetchPos();
+          fetchCheckpoints();
         }
       };
-      es.onerror = () => {
-        setTimeout(connect, 3000);
-      };
+      es.onerror = () => { setTimeout(connect, 3000); };
     };
     connect();
     return () => esRef.current?.close();
@@ -85,7 +94,7 @@ export default function SimControlPanel() {
     const r = await fetch("/api/sim/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ speedMultiplier: speed ?? state?.speedMultiplier ?? 10 }),
+      body: JSON.stringify({ speedMultiplier: speed ?? state?.speedMultiplier ?? 1 }),
     });
     if (r.ok) { const s = await r.json(); setState(s); }
   };
@@ -96,18 +105,36 @@ export default function SimControlPanel() {
   };
 
   const handleReset = async () => {
-    if (!confirm("시뮬레이션 데이터를 전부 삭제하고 초기화할까요?")) return;
+    if (!confirm("시뮬레이션 데이터를 전부 삭제하고 초기화할까요?\n실제 재고 수량도 시뮬 시작 시점으로 복원됩니다.")) return;
     await fetch("/api/sim/reset", { method: "POST" });
-    await Promise.all([fetchState(), fetchEvents(), fetchPos()]);
+    await Promise.all([fetchState(), fetchEvents(), fetchPos(), fetchCheckpoints()]);
   };
 
   const handleJump = async (days: number) => {
     setJumping(true);
     try {
       await fetch(`/api/sim/jump?days=${days}`, { method: "POST" });
-      await Promise.all([fetchState(), fetchEvents(), fetchPos()]);
+      await Promise.all([fetchState(), fetchEvents(), fetchPos(), fetchCheckpoints()]);
     } finally {
       setJumping(false);
+    }
+  };
+
+  const handleRewind = async (simDate: string) => {
+    if (!confirm(`${fmtDate(simDate)} 시점으로 되돌릴까요?\n그 이후 이벤트·PO·재고입고는 모두 삭제됩니다.`)) return;
+    setRewinding(true);
+    try {
+      const dateParam = new Date(simDate).toISOString().split("T")[0];
+      const r = await fetch(`/api/sim/rewind?date=${dateParam}`, { method: "POST" });
+      if (!r.ok) {
+        const err = await r.json();
+        alert(err.error ?? "되돌리기 실패");
+        return;
+      }
+      setShowCheckpoints(false);
+      await Promise.all([fetchState(), fetchEvents(), fetchPos(), fetchCheckpoints()]);
+    } finally {
+      setRewinding(false);
     }
   };
 
@@ -165,6 +192,12 @@ export default function SimControlPanel() {
             <button onClick={handlePause} className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600">⏸ 멈춤</button>
           )}
           <button onClick={handleReset} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200">⏮ 리셋</button>
+          <button
+            onClick={() => setShowCheckpoints(v => !v)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium ${showCheckpoints ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+          >
+            ⏪ 되돌리기 {checkpoints.length > 0 && <span className="ml-1 text-xs opacity-70">({checkpoints.length})</span>}
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
@@ -189,6 +222,35 @@ export default function SimControlPanel() {
           </button>
         </div>
       </div>
+
+      {/* 체크포인트 타임라인 */}
+      {showCheckpoints && (
+        <div className="bg-white rounded-2xl shadow-sm p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">시점 되돌리기</h3>
+          {checkpoints.length === 0 ? (
+            <p className="text-sm text-gray-400">저장된 체크포인트 없음 — 시뮬레이션을 실행하면 매일 자동 저장됩니다.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {checkpoints.map((cp, i) => (
+                <button
+                  key={cp._id}
+                  onClick={() => handleRewind(cp.simDate)}
+                  disabled={rewinding}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50 ${
+                    i === 0
+                      ? "border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                      : "border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100"
+                  }`}
+                >
+                  {fmtDate(cp.simDate)}
+                  {i === 0 && <span className="ml-1 text-indigo-400">(최신)</span>}
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="mt-2 text-xs text-gray-400">선택한 날짜 이후 이벤트·PO·시뮬 입고가 삭제되고 재고가 해당 시점으로 복원됩니다.</p>
+        </div>
+      )}
 
       {/* 이벤트 피드 + PO 패널 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
