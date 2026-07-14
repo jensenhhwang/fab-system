@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { collections } from "@/lib/db";
 import MesClient from "./MesClient";
 
@@ -13,8 +14,10 @@ export default async function MesPage() {
     .toArray();
 
   return (
-    <MesClient
-      initialWorkOrders={JSON.parse(JSON.stringify(initialWorkOrders))}
-    />
+    <Suspense fallback={<div className="p-8 text-sm text-gray-400">로딩 중...</div>}>
+      <MesClient
+        initialWorkOrders={JSON.parse(JSON.stringify(initialWorkOrders))}
+      />
+    </Suspense>
   );
 }

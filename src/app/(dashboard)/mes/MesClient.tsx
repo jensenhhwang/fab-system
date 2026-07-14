@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import type { WorkOrderDoc, WorkOrderStatus } from "@/lib/db";
 import ProcessReadinessMatrix from "./ProcessReadinessMatrix";
 import WorkOrderTable from "./WorkOrderTable";
@@ -30,12 +31,21 @@ export default function MesClient({
 }: {
   initialWorkOrders: WorkOrderDoc[];
 }) {
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>("readiness");
   const [workOrders, setWorkOrders] = useState<WorkOrderDoc[]>(initialWorkOrders);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [pickingWo, setPickingWo] = useState<WorkOrderDoc | null>(null);
   const [logLoaded, setLogLoaded] = useState(false);
   const [highlightProcess, setHighlightProcess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const proc = searchParams.get("process");
+    if (proc) {
+      setHighlightProcess(proc);
+      setTab("readiness");
+    }
+  }, [searchParams]);
 
   const TAB_LABELS: { key: Tab; label: string }[] = [
     { key: "readiness", label: "공정 준비 현황" },
