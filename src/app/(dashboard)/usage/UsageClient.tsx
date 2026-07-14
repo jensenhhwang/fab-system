@@ -3,7 +3,7 @@
 import { useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { PROCESSES } from "@/components/ProcessFlow3D";
+import { PROCESSES } from "@/lib/processes";
 
 const ProcessFlow3D = dynamic(() => import("@/components/ProcessFlow3D"), { ssr: false });
 
