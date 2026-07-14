@@ -80,6 +80,24 @@ const LOGS = [
       "operationalLayout ↔ 가상레이아웃 자동 전환 로직 (20%p 괴리 기준) — DB 슬롯 데이터 미동기화 방지",
     ],
   },
+  {
+    day: 5,
+    date: "2026-07-14",
+    label: "MES Phase 1 구축 + 공정 현실화",
+    color: "#0891B2",
+    items: [
+      "MES (공정 실행 관리) 신규 구축 — BomTemplateDoc·WorkOrderDoc 스키마 설계, 상태머신 QUEUED→MATERIAL_WAIT→RUNNING→DONE|HOLD",
+      "BOM 템플릿 자동 유도: ProcessUsage.monthlyQty ÷ 30 = qtyPerRun, 26개 템플릿 시드",
+      "자재 피킹 드로어 — FEFO(유효기간 오름차순) 정렬, lot 단위 수량 입력, MATERIALS|ADMIN 권한 게이트",
+      "공정 준비 현황 매트릭스 — DOH 색상 셀(위험·경고·정상), 셀 클릭 → 피킹 드로어 or 작업지시 탭 이동",
+      "src/lib/processes.ts 분리 — PROCESSES 배열을 단일 진실 원천으로 추출 (ProcessFlow3D·UsageClient·MES 공유)",
+      "ProcessMetadataDoc 신규 컬렉션 — 공정 한국어명·영문명·사이트·순서·병목위험도 (P01 산화막 ~ P10 패키징)",
+      "공정 준비 현황: '식각 P04 [이천] HBM' 형식으로 공정명·사이트 배지 표시, 사이트 필터(이천/청주/ALL)",
+      "양방향 링크 구현 — /usage 공정 선택 시 'MES 공정 준비 보기 →' 버튼, /mes 행 hover 시 '→ 사용량' 버튼",
+      "URL 쿼리 파라미터 동기화 — /mes?process=P04 → 해당 행 자동 하이라이트, /usage?process=P04 → 필터 자동 적용",
+      "버그 수정: DOH 계산 inventoryLots → inventory.quantity 사용, 다중 공정 자재는 전체 합산 소비량 기준으로 수정",
+    ],
+  },
 ];
 
 
@@ -135,17 +153,17 @@ export default function DevlogPage() {
           <div className="flex gap-6">
             <div className="flex-shrink-0 w-[52px] flex flex-col items-center pt-1">
               <div className="w-9 h-9 rounded-full flex items-center justify-center text-[#999] text-xs font-black border-2 border-dashed border-[#CCC] bg-white z-10">
-                D4
+                D6
               </div>
             </div>
             <div className="flex-1 bg-[#FAFAFA] rounded-2xl border border-dashed border-[#E0E0E0] px-5 py-4 mb-1">
               <div className="text-xs font-semibold text-[#999] mb-2">다음 세션 예정</div>
               <ul className="space-y-1.5">
                 {[
-                  "SCM 페이지 — 발주·납기·협력사 관리 연동",
-                  "리스크 알람 고도화 — 임계치 설정, 에스컬레이션 플로우",
-                  "제품별 사용량 (/product) — HBM·DRAM·NAND 제품 단위 집계",
-                  "Vercel 배포 최신화 — Day 4 변경분 반영",
+                  "M14/M16 팹 분리 — DRAM(이천 M14) / NAND(청주 M16) 사이트별 공정·자재 구분",
+                  "MES ↔ ERP 시뮬레이션 연동 — 작업지시 실행 시 시뮬 소비 이벤트 자동 발생",
+                  "디지털 트윈 루프 완성 — ERP 시뮬 → WMS 입고 → MES 소비 실시간 순환",
+                  "공정 준비 현황 알람 — DOH 임계치 알림, 자동 발주 추천 연동",
                 ].map((item, i) => (
                   <li key={i} className="flex items-start gap-2 text-[13px] text-[#999]">
                     <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#CCC] flex-shrink-0" />

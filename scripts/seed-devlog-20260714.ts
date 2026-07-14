@@ -1,8 +1,9 @@
 import { getDb } from "../src/lib/db";
+import type { WikiDoc } from "../src/lib/db";
 
 async function main() {
   const db = await getDb();
-  const wiki = db.collection("wikiEntries");
+  const wiki = db.collection<WikiDoc>("wikiEntries");
   const now = new Date("2026-07-14T18:00:00+09:00");
 
   const content = [
