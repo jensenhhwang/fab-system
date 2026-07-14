@@ -15,20 +15,24 @@ type ProcessReadinessCell = {
 
 type ProcessReadinessRow = {
   processCode: string;
+  processName: string;
+  site: string[];
   product: Product;
   cells: ProcessReadinessCell[];
 };
 
 export async function GET() {
-  const { processUsage, inventoryLots, materials } = await collections();
+  const { processUsage, inventoryLots, materials, processMetadata } = await collections();
 
-  const [usages, lots, mats] = await Promise.all([
+  const [usages, lots, mats, metaDocs] = await Promise.all([
     processUsage.find({}).toArray(),
     inventoryLots.find({ qualityStatus: "AVAILABLE" }).toArray(),
     materials.find({}).toArray(),
+    processMetadata.find({}).toArray(),
   ]);
 
   const matMap = new Map(mats.map(m => [m._id, m]));
+  const metaMap = new Map(metaDocs.map(m => [m._id, m]));
 
   const availMap = new Map<string, number>();
   for (const lot of lots) {
@@ -39,7 +43,14 @@ export async function GET() {
   for (const u of usages) {
     const key = `${u.processCode}-${u.product}`;
     if (!rowMap.has(key)) {
-      rowMap.set(key, { processCode: u.processCode, product: u.product as Product, cells: [] });
+      const meta = metaMap.get(u.processCode);
+      rowMap.set(key, {
+        processCode: u.processCode,
+        processName: meta?.name ?? u.processCode,
+        site: meta?.site ?? [],
+        product: u.product as Product,
+        cells: [],
+      });
     }
     const mat = matMap.get(u.materialId);
     const dailyUsage = u.monthlyQty / 30;
