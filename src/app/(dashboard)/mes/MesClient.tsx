@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { WorkOrderDoc, WorkOrderStatus } from "@/lib/db";
 import ProcessReadinessMatrix from "./ProcessReadinessMatrix";
 import WorkOrderTable from "./WorkOrderTable";
@@ -8,6 +8,22 @@ import WorkOrderCreateModal from "./WorkOrderCreateModal";
 import PickingDrawer from "./PickingDrawer";
 
 type Tab = "readiness" | "workorders" | "log";
+
+const STATUS_DOT: Record<WorkOrderStatus, string> = {
+  QUEUED:        "bg-gray-400",
+  MATERIAL_WAIT: "bg-amber-500",
+  RUNNING:       "bg-blue-500",
+  DONE:          "bg-green-500",
+  HOLD:          "bg-red-500",
+};
+
+const STATUS_LABEL: Record<WorkOrderStatus, string> = {
+  QUEUED:        "대기",
+  MATERIAL_WAIT: "자재 대기",
+  RUNNING:       "실행 중",
+  DONE:          "완료",
+  HOLD:          "홀드",
+};
 
 export default function MesClient({
   initialWorkOrders,
@@ -18,6 +34,7 @@ export default function MesClient({
   const [workOrders, setWorkOrders] = useState<WorkOrderDoc[]>(initialWorkOrders);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [pickingWo, setPickingWo] = useState<WorkOrderDoc | null>(null);
+  const [logLoaded, setLogLoaded] = useState(false);
 
   const TAB_LABELS: { key: Tab; label: string }[] = [
     { key: "readiness", label: "공정 준비 현황" },
@@ -30,6 +47,12 @@ export default function MesClient({
     if (r.ok) setWorkOrders(await r.json());
   }, []);
 
+  useEffect(() => {
+    if (tab === "log" && !logLoaded) {
+      refreshWorkOrders().then(() => setLogLoaded(true));
+    }
+  }, [tab, logLoaded, refreshWorkOrders]);
+
   const handleStatusChange = useCallback(async (id: string, status: WorkOrderStatus) => {
     await fetch(`/api/mes/workorders/${id}/status`, {
       method: "PATCH",
@@ -38,6 +61,10 @@ export default function MesClient({
     });
     await refreshWorkOrders();
   }, [refreshWorkOrders]);
+
+  const sortedLog = [...workOrders].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
 
   return (
     <div className="space-y-4">
@@ -71,8 +98,15 @@ export default function MesClient({
       <div>
         {tab === "readiness" && (
           <ProcessReadinessMatrix
-            onCellClick={(_processCode, _product, _materialId) => {
-              setTab("workorders");
+            onCellClick={(processCode, product, _materialId) => {
+              const existingWo = workOrders.find(
+                w => w.processCode === processCode && w.product === product && w.status === "MATERIAL_WAIT"
+              );
+              if (existingWo) {
+                setPickingWo(existingWo);
+              } else {
+                setTab("workorders");
+              }
             }}
           />
         )}
@@ -84,8 +118,38 @@ export default function MesClient({
           />
         )}
         {tab === "log" && (
-          <div className="text-sm text-center py-16" style={{ color: "var(--text-3)" }}>
-            실행 로그 — Task 10에서 구현
+          <div className="bg-white rounded-2xl shadow-sm p-4">
+            <h3 className="text-sm font-semibold mb-3" style={{ color: "var(--text-1)" }}>
+              작업지시 실행 이력 ({sortedLog.length}건)
+            </h3>
+            <div className="space-y-0 max-h-[600px] overflow-y-auto">
+              {sortedLog.length === 0 ? (
+                <p className="text-sm text-center py-12" style={{ color: "var(--text-3)" }}>이력 없음</p>
+              ) : (
+                sortedLog.map(wo => (
+                  <div
+                    key={wo._id}
+                    className="flex items-start gap-3 py-3 border-b last:border-0 text-xs"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    <div className={`w-2 h-2 rounded-full mt-1 shrink-0 ${STATUS_DOT[wo.status]}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium font-mono" style={{ color: "var(--text-1)" }}>{wo._id}</div>
+                      <div className="mt-0.5" style={{ color: "var(--text-3)" }}>
+                        {wo.processCode} · {wo.product} · {wo.plannedQty}런 ·{" "}
+                        <span className="font-medium" style={{ color: "var(--text-2)" }}>
+                          {STATUS_LABEL[wo.status]}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right" style={{ color: "var(--text-3)" }}>
+                      <div>{new Date(wo.updatedAt).toLocaleDateString("ko-KR")}</div>
+                      <div>{new Date(wo.updatedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         )}
       </div>
