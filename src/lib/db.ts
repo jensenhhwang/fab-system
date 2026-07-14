@@ -88,6 +88,7 @@ export interface FacilityTelemetryDoc {
 }
 export interface ProcessUsageDoc {
   _id: string; materialId: string; processCode: string; product: Product; monthlyQty: number;
+  site?: "이천" | "청주";
 }
 export interface TransactionDoc {
   _id: string; materialId: string; type: TxType; quantity: number; date: Date;
@@ -203,6 +204,17 @@ export interface WorkOrderDoc {
   note?: string;
 }
 
+export type BottleneckRisk = "HIGH" | "MEDIUM" | "LOW";
+
+export interface ProcessMetadataDoc {
+  _id: string;        // processCode (예: "P01")
+  name: string;       // 한국어 이름 (예: "산화막")
+  nameEn: string;     // 영문 이름 (예: "Oxidation")
+  site: ("이천" | "청주")[];  // 해당 공정이 있는 사이트
+  sequence: number;   // 공정 순서 (P01=1, P10=10)
+  bottleneckRisk: BottleneckRisk;
+}
+
 // ─── 컬렉션 접근자 ─────────────────────────────────────────
 export async function collections(): Promise<{
   users: Collection<UserDoc>;
@@ -229,6 +241,7 @@ export async function collections(): Promise<{
   simCheckpoints: Collection<SimCheckpointDoc>;
   bomTemplates: Collection<BomTemplateDoc>;
   workOrders: Collection<WorkOrderDoc>;
+  processMetadata: Collection<ProcessMetadataDoc>;
 }> {
   const db = await getDb();
   return {
@@ -256,5 +269,6 @@ export async function collections(): Promise<{
     simCheckpoints: db.collection<SimCheckpointDoc>("simCheckpoints"),
     bomTemplates: db.collection<BomTemplateDoc>("bomTemplates"),
     workOrders: db.collection<WorkOrderDoc>("workOrders"),
+    processMetadata: db.collection<ProcessMetadataDoc>("processMetadata"),
   };
 }
