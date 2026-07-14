@@ -28,15 +28,15 @@ export async function POST() {
     simCheckpoints.deleteMany({}),
   ]);
 
-  const resetDate = baseline?.simDate ?? new Date();
+  const today = new Date();
   await simState.updateOne(
     { _id: "singleton" },
     {
       $set: {
         status: "IDLE",
-        simDate: resetDate,
-        simStartDate: resetDate,
-        realStartedAt: new Date(),
+        simDate: today,
+        simStartDate: today,
+        realStartedAt: today,
         speedMultiplier: 1,
       },
     },
