@@ -41,6 +41,12 @@ const NAV = [
     ],
   },
   {
+    group: "생산 실행",
+    items: [
+      { href: "/mes", label: "공정 실행 (MES)" },
+    ],
+  },
+  {
     group: "의사결정",
     items: [
       { href: "/simulation", label: "운영 시나리오" },
