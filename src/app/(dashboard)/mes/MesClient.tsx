@@ -35,6 +35,7 @@ export default function MesClient({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [pickingWo, setPickingWo] = useState<WorkOrderDoc | null>(null);
   const [logLoaded, setLogLoaded] = useState(false);
+  const [highlightProcess, setHighlightProcess] = useState<string | null>(null);
 
   const TAB_LABELS: { key: Tab; label: string }[] = [
     { key: "readiness", label: "공정 준비 현황" },
@@ -108,6 +109,7 @@ export default function MesClient({
                 setTab("workorders");
               }
             }}
+            highlightProcess={highlightProcess}
           />
         )}
         {tab === "workorders" && (
