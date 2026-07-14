@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { runMaterialScenario, type ProductDemand, type ScenarioMaterial, type ScenarioResult } from "@/lib/scenario-engine";
+import TimelineScenarioSection from "./TimelineScenarioSection";
 
 type View = "summary" | "material" | "warehouse" | "process" | "value";
 type ProcessUsage = { materialId: string; materialName: string; processCode: string; product: keyof ProductDemand; monthlyQty: number };
@@ -133,6 +134,7 @@ export default function OperationalScenarioClient({ materials, processUsages, wa
         </div>
       </div>
     </div>
+    <TimelineScenarioSection materials={materials} />
   </div>;
 }
 
