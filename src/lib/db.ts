@@ -165,6 +165,44 @@ export interface SimCheckpointDoc {
   realLotStates: { lotId: string; availableQuantity: number; qualityStatus: InventoryStatus }[];
 }
 
+export interface PickedLot {
+  lotId: string;
+  qty: number;
+}
+
+export interface BomLine {
+  materialId: string;
+  plannedQty: number;
+  actualQty?: number;
+  pickedLots: PickedLot[];
+}
+
+export interface BomTemplateDoc {
+  _id: string; // "{processCode}-{product}"
+  processCode: string;
+  product: Product;
+  lines: { materialId: string; qtyPerRun: number }[];
+  updatedAt: Date;
+}
+
+export type WorkOrderStatus = "QUEUED" | "MATERIAL_WAIT" | "RUNNING" | "DONE" | "HOLD";
+
+export interface WorkOrderDoc {
+  _id: string; // "WO-{Date.now()}"
+  processCode: string;
+  product: Product;
+  plannedQty: number;
+  status: WorkOrderStatus;
+  bomLines: BomLine[];
+  plannedStart?: Date;
+  actualStart?: Date;
+  actualEnd?: Date;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+  note?: string;
+}
+
 // ─── 컬렉션 접근자 ─────────────────────────────────────────
 export async function collections(): Promise<{
   users: Collection<UserDoc>;
@@ -189,6 +227,8 @@ export async function collections(): Promise<{
   simPurchaseOrders: Collection<SimPurchaseOrderDoc>;
   simEvents: Collection<SimEventDoc>;
   simCheckpoints: Collection<SimCheckpointDoc>;
+  bomTemplates: Collection<BomTemplateDoc>;
+  workOrders: Collection<WorkOrderDoc>;
 }> {
   const db = await getDb();
   return {
@@ -214,5 +254,7 @@ export async function collections(): Promise<{
     simPurchaseOrders: db.collection<SimPurchaseOrderDoc>("simPurchaseOrders"),
     simEvents: db.collection<SimEventDoc>("simEvents"),
     simCheckpoints: db.collection<SimCheckpointDoc>("simCheckpoints"),
+    bomTemplates: db.collection<BomTemplateDoc>("bomTemplates"),
+    workOrders: db.collection<WorkOrderDoc>("workOrders"),
   };
 }
