@@ -7,9 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "test:planner": "tsx scripts/test-production-plan.ts",
+    "test:procurement": "tsx scripts/test-procurement.ts",
+    "check": "npm run typecheck && npm run lint",
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate-storage": "tsx prisma/migrate-storage-layout.ts",
     "db:migrate-warehouse-ops": "tsx prisma/migrate-warehouse-operations.ts",
+    "db:migrate-procurement": "tsx scripts/migrate-procurement-master.ts",
     "db:validate": "tsx prisma/validate-data-consistency.ts"
   },
   "dependencies": {

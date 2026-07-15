@@ -220,7 +220,7 @@ export default async function DashboardPage() {
                 </tr>
               </thead>
               <tbody>
-                {alertItems.slice(0, 6).map((inv, i) => (
+                {alertItems.slice(0, 6).map((inv) => (
                   <tr
                     key={inv.id}
                     style={{ borderBottom: "1px solid var(--border)" }}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { collections } from "@/lib/db";
 import { getOrInitSimState } from "@/lib/sim-runner";
 import { getBaseLeadTime } from "@/lib/sim-engine";
+import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await requireRole(WRITE_ROLES.simulation);
+  if (access.error) return access.error;
   const body = await req.json();
   const { materialId, qty } = body as { materialId: string; qty: number };
   if (!materialId || !qty || qty <= 0)

@@ -3,7 +3,172 @@ export type ScenarioMaterial = {
   id: string; code: string; name: string; category: string; unit: string; currentQuantity: number;
   baseDailyUsage: number; ropDays: number; productDailyUsage: ProductDemand;
   warehouseCode: string; warehouseName: string; occupancyFactor: number;
+  leadTimeDays?: number | null; supplierName?: string | null;
+  safeLeadTimeDays?: number | null; leadTimeSource?: "CURRENT" | "STANDARD" | "LEGACY" | "MISSING";
+  procurementAlternatives?: { supplierName: string; standardDays: number | null; emergencyOrderAllowed: boolean }[];
 };
+
+export type ProductionIncreaseInput = {
+  product: keyof ProductDemand;
+  startDay: number;
+  increasePct: number;
+  durationDays: number;
+  horizonDays: number;
+  replenishmentMode: "ROP" | "STOCKOUT";
+  coverageDays: number;
+};
+
+export type ProductionPlanEvent = {
+  id: string;
+  product: keyof ProductDemand;
+  startDay: number;
+  changePct: number;
+  durationDays: number;
+};
+
+export type ProductionPlanInput = {
+  events: ProductionPlanEvent[];
+  horizonDays: number;
+  replenishmentMode: "ROP" | "STOCKOUT";
+  coverageDays: number;
+};
+
+export type DemandDriver = { product: keyof ProductDemand; changePct: number; dailyDelta: number };
+
+export type InboundAction = {
+  materialId: string; code: string; name: string; unit: string;
+  inboundDay: number; orderDay: number | null; quantity: number;
+  leadTimeDays: number | null; supplierName: string | null;
+  priority: "OVERDUE" | "NOW" | "PLANNED" | "LEAD_TIME_MISSING";
+  reason: "EXISTING_RISK" | "PRODUCTION_CHANGE";
+  projectedBeforeInbound: number; targetQuantity: number;
+  drivers: DemandDriver[];
+  safeOrderDay: number | null;
+  leadTimeSource: ScenarioMaterial["leadTimeSource"];
+  procurementAlternatives: NonNullable<ScenarioMaterial["procurementAlternatives"]>;
+};
+
+export type ProductionMaterialPlan = {
+  material: ScenarioMaterial;
+  basePoints: TimelinePoint[];
+  scenarioPoints: TimelinePoint[];
+  actions: InboundAction[];
+  additionalDailyUsage: number;
+};
+
+export type ProductionIncreasePlan = {
+  input: ProductionPlanInput;
+  actions: InboundAction[];
+  materials: ProductionMaterialPlan[];
+  status: "FEASIBLE" | "URGENT" | "LEAD_TIME_MISSING";
+};
+
+function normalizeEvent(event: ProductionPlanEvent): ProductionPlanEvent {
+  return {
+    ...event,
+    startDay: Math.max(0, Math.round(event.startDay)),
+    changePct: Math.max(-100, Math.min(300, event.changePct)),
+    durationDays: Math.max(1, Math.round(event.durationDays)),
+  };
+}
+
+function activeProductChanges(events: ProductionPlanEvent[], day: number): ProductDemand {
+  const changes: ProductDemand = { HBM: 0, DRAM: 0, NAND: 0 };
+  for (const event of events) {
+    if (day >= event.startDay && day < event.startDay + event.durationDays) {
+      changes[event.product] += event.changePct;
+    }
+  }
+  for (const product of Object.keys(changes) as (keyof ProductDemand)[]) {
+    changes[product] = Math.max(-100, changes[product]);
+  }
+  return changes;
+}
+
+function dailyUsageForPlan(material: ScenarioMaterial, events: ProductionPlanEvent[], day: number) {
+  const productTotal = Object.values(material.productDailyUsage).reduce((sum, value) => sum + value, 0);
+  const nonProductUsage = Math.max(0, material.baseDailyUsage - productTotal);
+  const changes = activeProductChanges(events, day);
+  return nonProductUsage + (Object.keys(material.productDailyUsage) as (keyof ProductDemand)[]).reduce(
+    (sum, product) => sum + material.productDailyUsage[product] * (1 + changes[product] / 100),
+    0,
+  );
+}
+
+export function planProductionChanges(
+  sourceMaterials: ScenarioMaterial[],
+  rawInput: ProductionPlanInput,
+): ProductionIncreasePlan {
+  const input: ProductionPlanInput = {
+    ...rawInput,
+    events: rawInput.events.map(normalizeEvent),
+    horizonDays: Math.max(1, Math.round(rawInput.horizonDays)),
+    coverageDays: Math.max(1, Math.round(rawInput.coverageDays)),
+  };
+  const products = new Set(input.events.map(event => event.product));
+  const relevant = sourceMaterials.filter(material =>
+    [...products].some(product => material.productDailyUsage[product] > 0),
+  );
+  const materials = relevant.map<ProductionMaterialPlan>(material => {
+    let baseQty = material.currentQuantity;
+    let scenarioQty = material.currentQuantity;
+    const basePoints: TimelinePoint[] = [];
+    const scenarioPoints: TimelinePoint[] = [];
+    const actions: InboundAction[] = [];
+    for (let day = 0; day <= input.horizonDays; day++) {
+      const baseUsage = dailyUsageForPlan(material, [], day);
+      const scenarioUsage = dailyUsageForPlan(material, input.events, day);
+      baseQty -= baseUsage;
+      scenarioQty -= scenarioUsage;
+      const target = input.replenishmentMode === "ROP" ? scenarioUsage * material.ropDays : 0;
+      if (scenarioQty < target) {
+        const quantity = Math.max(0, target + scenarioUsage * input.coverageDays - scenarioQty);
+        const roundedQuantity = Math.ceil(quantity * 100) / 100;
+        const leadTime = material.leadTimeDays ?? null;
+        const orderDay = leadTime === null ? null : day - leadTime;
+        const safeOrderDay = material.safeLeadTimeDays == null ? null : day - material.safeLeadTimeDays;
+        const baseTarget = input.replenishmentMode === "ROP" ? baseUsage * material.ropDays : 0;
+        const changes = activeProductChanges(input.events, day);
+        const drivers = (Object.keys(changes) as (keyof ProductDemand)[])
+          .filter(product => changes[product] !== 0 && material.productDailyUsage[product] > 0)
+          .map(product => ({ product, changePct: changes[product], dailyDelta: material.productDailyUsage[product] * changes[product] / 100 }));
+        actions.push({
+          materialId: material.id, code: material.code, name: material.name, unit: material.unit,
+          inboundDay: day, orderDay, quantity: roundedQuantity, leadTimeDays: leadTime,
+          supplierName: material.supplierName ?? null,
+          priority: orderDay === null ? "LEAD_TIME_MISSING" : orderDay < 0 ? "OVERDUE" : orderDay === 0 ? "NOW" : "PLANNED",
+          reason: baseQty < baseTarget ? "EXISTING_RISK" : "PRODUCTION_CHANGE",
+          projectedBeforeInbound: Math.max(0, scenarioQty), targetQuantity: target,
+          drivers, safeOrderDay, leadTimeSource: material.leadTimeSource ?? "MISSING",
+          procurementAlternatives: material.procurementAlternatives ?? [],
+        });
+        scenarioQty += roundedQuantity;
+      }
+      baseQty = Math.max(0, baseQty);
+      scenarioQty = Math.max(0, scenarioQty);
+      basePoints.push({ day, closing: baseQty, doh: baseUsage > 0 ? baseQty / baseUsage : 999 });
+      scenarioPoints.push({ day, closing: scenarioQty, doh: scenarioUsage > 0 ? scenarioQty / scenarioUsage : 999 });
+    }
+    return {
+      material, basePoints, scenarioPoints, actions,
+      additionalDailyUsage: Math.max(0, ...Array.from({ length: input.horizonDays + 1 }, (_, day) => dailyUsageForPlan(material, input.events, day) - dailyUsageForPlan(material, [], day))),
+    };
+  });
+  const actions = materials.flatMap(item => item.actions).sort((a, b) =>
+    (a.orderDay ?? -999) - (b.orderDay ?? -999) || a.inboundDay - b.inboundDay || a.code.localeCompare(b.code),
+  );
+  const status = actions.some(action => action.leadTimeDays === null)
+    ? "LEAD_TIME_MISSING"
+    : actions.some(action => action.priority === "OVERDUE" || action.priority === "NOW") ? "URGENT" : "FEASIBLE";
+  return { input, actions, materials, status };
+}
+
+export function planProductionIncrease(sourceMaterials: ScenarioMaterial[], input: ProductionIncreaseInput) {
+  return planProductionChanges(sourceMaterials, {
+    events: [{ id: "legacy", product: input.product, startDay: input.startDay, changePct: input.increasePct, durationDays: input.durationDays }],
+    horizonDays: input.horizonDays, replenishmentMode: input.replenishmentMode, coverageDays: input.coverageDays,
+  });
+}
 export type ScenarioPlan = { name: string; inboundQuantity: number; inboundDay: number; demand: ProductDemand };
 export type DailyScenarioPoint = { day: number; opening: number; inbound: number; usage: number; closing: number; shortage: number };
 export type ScenarioResult = {
@@ -82,13 +247,6 @@ export function runTimelineScenario(
   }
 
   const productBase = Object.values(material.productDailyUsage).reduce((s, v) => s + v, 0);
-
-  const getUsage = () => {
-    if (productBase === 0) return material.baseDailyUsage;
-    return (Object.keys(material.productDailyUsage) as (keyof ProductDemand)[]).reduce(
-      (sum, p) => sum + material.productDailyUsage[p] * (1 + (demandPct[p] ?? 0) / 100), 0
-    );
-  };
 
   // 이 자재에 해당하는 발주 계획만 필터링
   const materialPlans = plans.filter(p => p.materialId === material.id);

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collections } from "@/lib/db";
 import { randomUUID } from "crypto";
+import { getMongoClient } from "@/lib/db";
+import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -22,6 +24,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await requireRole(WRITE_ROLES.inventoryReceipt);
+  if (access.error) return access.error;
   const body = await req.json();
   const { materialId, warehouseId, slotId, qty, mfgDate, expiresAt, lotNo } = body as {
     materialId: string; warehouseId: string; slotId?: string;
@@ -37,7 +41,11 @@ export async function POST(req: NextRequest) {
   const id = randomUUID();
   const resolvedLotNo = lotNo ?? `LOT-${materialId}-${Date.now()}`;
 
-  await inventoryLots.insertOne({
+  const client = await getMongoClient();
+  const session = client.startSession();
+  try {
+    await session.withTransaction(async () => {
+      await inventoryLots.insertOne({
     _id: id,
     materialId,
     lotNo: resolvedLotNo,
@@ -50,18 +58,22 @@ export async function POST(req: NextRequest) {
     warehouseId,
     slotId,
     updatedAt: now,
-  } as never);
+      }, { session });
 
-  await inventoryMovements.insertOne({
+      await inventoryMovements.insertOne({
     _id: randomUUID(),
     materialId,
     type: "RECEIPT",
     quantity: qty,
     lotId: id,
     reason: "입고 등록",
-    userId: "system",
+        userId: access.user.id,
     createdAt: now,
-  } as never);
+      }, { session });
+    });
+  } finally {
+    await session.endSession();
+  }
 
   return NextResponse.json({ id, lotNo: resolvedLotNo }, { status: 201 });
 }

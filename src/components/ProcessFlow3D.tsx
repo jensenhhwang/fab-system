@@ -13,7 +13,6 @@ export { PROCESSES };
 const PITCH     = 1.3;
 const MACHINE_H = 1.75;
 const MACHINE_W = 0.72;
-const MACHINE_D = 0.65;
 const BAY_HALF  = 1.6;
 const CORR_HALF = 1.55;
 
@@ -294,12 +293,12 @@ function ProcessBay({ proc, isHL, isDimmed, activeFoupCount, onClick }: {
       {/* Floor tint */}
       <mesh position={[0, 0.003, bayZ]}>
         <boxGeometry args={[bayW, 0.005, BAY_HALF * 2]} />
-        <meshStandardMaterial color={(proc as any).yellowBay ? "#ffd700" : proc.color} transparent
-          opacity={isDimmed ? 0.03 : isHL ? 0.18 : hov ? 0.1 : (proc as any).yellowBay ? 0.06 : 0.05} />
+        <meshStandardMaterial color={proc.yellowBay ? "#ffd700" : proc.color} transparent
+          opacity={isDimmed ? 0.03 : isHL ? 0.18 : hov ? 0.1 : proc.yellowBay ? 0.06 : 0.05} />
       </mesh>
 
       {/* Photo bay subtle ambient — static intensity, no flash */}
-      {(proc as any).yellowBay && (
+      {proc.yellowBay && (
         <pointLight position={[0, 3.5, bayZ]} color="#ffd000" intensity={0.8} distance={5} decay={2} />
       )}
 
@@ -602,7 +601,7 @@ function HazmatStructure({ w, d, h, color, opacity, dim, utilization = 0, byCate
         <meshStandardMaterial color={dim ? "#d8dce0" : "#cbd3da"} roughness={0.7} metalness={0.05} transparent opacity={opacity} />
       </mesh>
       {/* 카테고리별 내부 채움 볼륨 */}
-      {zones.map(({ category, pct }, i) => {
+      {zones.map(({ category }, i) => {
         const cx = -w / 2 + 0.15 + i * zoneW + zoneW / 2;
         const zoneColor = CATEGORY_COLOR[category] ?? color;
         return (
@@ -1173,10 +1172,8 @@ function Scene({
 // ─────────────────────────────────────────────
 export default function ProcessFlow3D({
   highlightedProcesses = [],
-  activeProcesses = [],
   onProcessClick,
   onWarehouseClick,
-  materialCounts = {},
   warehouses = [],
   warehouseLinks = [],
 }: {

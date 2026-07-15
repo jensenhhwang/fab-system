@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collections } from "@/lib/db";
+import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  const access = await requireRole(WRITE_ROLES.simulation);
+  if (access.error) return access.error;
   const { searchParams } = req.nextUrl;
   const dateStr = searchParams.get("date");
   if (!dateStr) return NextResponse.json({ error: "date 파라미터 필수 (YYYY-MM-DD)" }, { status: 400 });

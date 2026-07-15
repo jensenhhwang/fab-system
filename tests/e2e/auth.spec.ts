@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-const BASE = "https://fab-system-phi.vercel.app";
+const BASE = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 
 const DEMO_ACCOUNTS = [
   { label: "ADMIN", email: "admin@fab.skh", name: "황지훈" },

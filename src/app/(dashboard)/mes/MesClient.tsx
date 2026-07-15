@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import type { WorkOrderDoc, WorkOrderStatus } from "@/lib/db";
 import ProcessReadinessMatrix from "./ProcessReadinessMatrix";
@@ -32,20 +32,12 @@ export default function MesClient({
   initialWorkOrders: WorkOrderDoc[];
 }) {
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<Tab>("readiness");
+  const processParam = searchParams.get("process");
+  const [tab, setTab] = useState<Tab>(processParam ? "readiness" : "readiness");
   const [workOrders, setWorkOrders] = useState<WorkOrderDoc[]>(initialWorkOrders);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [pickingWo, setPickingWo] = useState<WorkOrderDoc | null>(null);
   const [logLoaded, setLogLoaded] = useState(false);
-  const [highlightProcess, setHighlightProcess] = useState<string | null>(null);
-
-  useEffect(() => {
-    const proc = searchParams.get("process");
-    if (proc) {
-      setHighlightProcess(proc);
-      setTab("readiness");
-    }
-  }, [searchParams]);
 
   const TAB_LABELS: { key: Tab; label: string }[] = [
     { key: "readiness", label: "공정 준비 현황" },
@@ -58,11 +50,13 @@ export default function MesClient({
     if (r.ok) setWorkOrders(await r.json());
   }, []);
 
-  useEffect(() => {
-    if (tab === "log" && !logLoaded) {
-      refreshWorkOrders().then(() => setLogLoaded(true));
+  const selectTab = useCallback(async (nextTab: Tab) => {
+    setTab(nextTab);
+    if (nextTab === "log" && !logLoaded) {
+      await refreshWorkOrders();
+      setLogLoaded(true);
     }
-  }, [tab, logLoaded, refreshWorkOrders]);
+  }, [logLoaded, refreshWorkOrders]);
 
   const handleStatusChange = useCallback(async (id: string, status: WorkOrderStatus) => {
     await fetch(`/api/mes/workorders/${id}/status`, {
@@ -95,7 +89,7 @@ export default function MesClient({
         {TAB_LABELS.map(({ key, label }) => (
           <button
             key={key}
-            onClick={() => setTab(key)}
+            onClick={() => void selectTab(key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
               tab === key ? "border-[#0078D4] text-[#0078D4]" : "border-transparent"
             }`}
@@ -109,7 +103,7 @@ export default function MesClient({
       <div>
         {tab === "readiness" && (
           <ProcessReadinessMatrix
-            onCellClick={(processCode, product, _materialId) => {
+            onCellClick={(processCode, product) => {
               const existingWo = workOrders.find(
                 w => w.processCode === processCode && w.product === product && w.status === "MATERIAL_WAIT"
               );
@@ -119,7 +113,7 @@ export default function MesClient({
                 setTab("workorders");
               }
             }}
-            highlightProcess={highlightProcess}
+            highlightProcess={processParam}
           />
         )}
         {tab === "workorders" && (

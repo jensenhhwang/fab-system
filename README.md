@@ -1,36 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FAB System
 
-## Getting Started
+ERP의 자재 계획, WMS의 위치·로트 재고, MES의 작업지시·피킹을 하나의 데이터 흐름으로 연결하는 제조 운영 플랫폼입니다.
 
-First, run the development server:
+## 현재 구현 범위
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- 운영 현황: 재고 DOH, 창고 용량, 리스크, 최근 입출고
+- WMS: 입고, 위치·로트·용기, FEFO 출고, Hold·격리
+- MES: BOM 기반 작업지시, 공정 준비도, 자재 피킹, 상태 전이
+- 계획: 여러 제품의 증·감산 이벤트를 합산해 자재 입고일·수량과 통상/안전 발주일을 계산하는 결정론적 What-if
+- SCM: 승인 공급사, 주/보조 역할, 리드타임 범위와 현재 예상값을 관리하는 조달 기준 마스터
+- 자재 운영 허브: 재고·Lot·사용 공정·BOM·공급사·리드타임을 자재 ID 하나로 연결
+- 분석: 공정별 사용량, 시장 정보, 효과·성과 기록
+
+```text
+공정별 사용량 → 일사용량·DOH → 재고/ROP
+                                ↓
+ERP 계획 → WMS 로트·위치 → MES 작업지시·BOM → FEFO 피킹 → 재고 이동
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 데이터 상태
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `DATA CONNECTED`: MongoDB의 운영 또는 시드 데이터
+- `SIMULATION`: 사용자가 입력한 조건으로 계산한 What-if 결과
+- 시장 데이터는 외부 소스 장애 시 시드 fallback을 사용할 수 있습니다.
+- 과거의 랜덤 공급 이벤트와 타임 액셀러레이터는 현행 제품 흐름에서 종료되었습니다.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 역할과 쓰기 권한
 
-## Learn More
+| 작업 | ADMIN | MATERIALS | PRODUCTION | LOGISTICS |
+|---|---:|---:|---:|---:|
+| 입고 | ✓ |  |  | ✓ |
+| 수동 출고·MES 피킹 | ✓ | ✓ |  |  |
+| 작업지시 생성·상태 변경 | ✓ |  | ✓ |  |
+| 창고 Hold·격리 | ✓ | ✓ |  | ✓ |
+| 조달 기준 등록·수정·삭제 | ✓ | ✓ |  |  |
+| 시뮬레이션 데이터 정리 | ✓ |  |  |  |
 
-To learn more about Next.js, take a look at the following resources:
+모든 쓰기 권한은 Route Handler에서 검증합니다. 재고와 movement를 함께 변경하는 작업은 MongoDB 트랜잭션을 사용하므로 배포 DB는 트랜잭션을 지원하는 replica set 또는 MongoDB Atlas여야 합니다.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+자재 운영 허브(`/inventory/materials/[materialId]`)는 모든 역할이 조회할 수 있습니다. 허브 안의 조달 기준 편집은 별도 규칙을 만들지 않고 위 표의 `ADMIN·MATERIALS` 권한과 기존 조달 API를 그대로 사용합니다.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 로컬 실행
 
-## Deploy on Vercel
+```dotenv
+DATABASE_URL=mongodb+srv://.../fab
+AUTH_SECRET=...
+GROQ_API_KEY=... # AI 브리핑 사용 시
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm install
+npm run db:seed
+npm run dev
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+필요하면 `db:migrate-storage`, `db:migrate-warehouse-ops`, `db:migrate-procurement`, `db:validate` 스크립트로 운영 구조를 준비하고 검증합니다.
+
+## 조달 및 What-if 규칙
+
+- 생산 변경 이벤트는 시작일 포함·종료일 제외 구간에 적용합니다.
+- 같은 제품의 중첩 변화율은 합산하며 감산은 최대 `-100%`로 제한합니다.
+- 서로 다른 제품의 변화는 공유 자재의 날짜별 순수요에서 상쇄됩니다.
+- 승인 상태가 `APPROVED`인 공급사만 What-if 조달 후보로 사용합니다.
+- 주공급사를 우선하며, 없으면 승인된 보조공급사 중 유효 리드타임이 짧은 곳을 사용합니다.
+- 통상 발주일은 유효한 현재 예상 리드타임, 기준 리드타임 순으로 계산합니다.
+- 안전 발주일은 최대 리드타임이 등록된 경우에만 계산하며 범위를 임의 추정하지 않습니다.
+- 리드타임이 없어도 입고 필요일과 수량은 계산하고, 발주일만 미등록으로 표시합니다.
+- 계획 배정 비율은 참고 정보이며 MOQ·Capacity가 연결되기 전에는 자동 분할 발주에 사용하지 않습니다.
+
+## 검증
+
+```bash
+npm run check
+npm run build
+npm run test:e2e
+```
+
+Playwright는 기본적으로 로컬 서버를 실행합니다. 배포 환경은 `PLAYWRIGHT_BASE_URL=https://example.com npm run test:e2e`로 검사합니다.
+
+## 현재 한계
+
+- ERP 승인·실입고 확인 워크플로우는 아직 완성되지 않았습니다.
+- MES 실적·수율·원가 반영은 다음 단계입니다.
+- 일부 화면은 시드 데이터에 의존하므로 실제 연동 전에 출처와 기준 시각을 계속 명확히 표시해야 합니다.
+- 최소·최대 리드타임은 실제 계약·실적 근거가 있는 자재부터 등록해야 합니다.
+
+## 자재 중심 데이터 연결 규칙
+
+- `materialId`를 재고, Lot, 공정 사용량, BOM, 공급사 연결의 공통 식별자로 사용합니다. 표시용 품번으로 다시 조인하지 않습니다.
+- 전체 재고는 자재·창고별 재고 행을 한 번씩 합산하고, 공정 사용량은 창고 수만큼 반복 합산하지 않습니다.
+- 월소요량과 DOH는 `processUsage`를 우선 기준으로 사용하고, 데이터가 없는 비공정 자재만 재고의 일사용량을 fallback으로 사용합니다.
+- BOM은 생산 연결과 단위 소요량을 설명하는 용도이며 공정 사용량과 중복 합산하지 않습니다.
+- 조달 기준을 자재 허브에서 변경해도 SCM과 운영 What-if는 동일한 `materialSuppliers` 데이터를 사용합니다.
+- 과거 자동 시뮬레이션 컬렉션은 초기화 API를 통한 정리 경로만 유지합니다.
+
+제품 방향은 [docs/vision.md](docs/vision.md)를 참고하세요.

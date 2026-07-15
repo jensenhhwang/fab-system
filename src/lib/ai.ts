@@ -28,7 +28,7 @@ export type AIBriefing = {
   generatedAt: string;
 };
 
-async function getContextData(role: string) {
+async function getContextData() {
   // 재고 경보 (DOH 기준 — 일사용량은 ProcessUsage 마스터에서 유도)
   const inventories = await getInventoryRows();
   const dohAlerts = inventories
@@ -76,7 +76,7 @@ export async function generateAIBriefing(
 ): Promise<AIBriefing> {
   const now = new Date();
   const dateStr = now.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "long" });
-  const data = await getContextData(role);
+  const data = await getContextData();
   const roleDesc = ROLE_CONTEXT[role] ?? "담당자";
 
   const systemPrompt = `당신은 SK하이닉스 이천 FAB 자재관리 시스템의 AI 브리핑 어시스턴트입니다.

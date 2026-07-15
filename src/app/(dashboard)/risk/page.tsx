@@ -80,7 +80,7 @@ export default async function RiskPage() {
               {highRisk.map((h) => h.code).join(", ")} 창고 점유율이 80% 이상입니다.
               수요 시나리오 시뮬레이터에서 증가 시나리오를 적용하면 더 빠른 포화가 예상됩니다.
             </div>
-            <Link href="/simulation/market"
+            <Link href="/simulation"
               className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#EA002C] text-white text-xs font-bold rounded-lg hover:bg-[#C8001F] transition-colors">
               수요 시나리오 시뮬레이터 →
             </Link>

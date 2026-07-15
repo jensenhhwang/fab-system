@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { collections } from "@/lib/db";
-import { getOrInitSimState } from "@/lib/sim-runner";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  void req;
+  return NextResponse.json({ error: "랜덤 자동운전은 종료되었습니다. 운영 What-if에서 조건을 직접 입력하세요." }, { status: 410 });
+  /* legacy cleanup path retained until simulated documents are migrated
   const body = await req.json().catch(() => ({}));
   const speedMultiplier = body.speedMultiplier ?? 1;
   const { simState, inventoryLots, simCheckpoints } = await collections();
@@ -30,5 +31,5 @@ export async function POST(req: NextRequest) {
     { $set: { status: "RUNNING", speedMultiplier, realStartedAt: now } }
   );
   const updated = await simState.findOne({ _id: "singleton" });
-  return NextResponse.json(updated);
+  return NextResponse.json(updated); */
 }

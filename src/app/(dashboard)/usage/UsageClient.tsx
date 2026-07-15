@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense, useEffect } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { PROCESSES } from "@/lib/processes";
@@ -61,12 +61,7 @@ export default function UsageClient({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [hoveredMat, setHoveredMat] = useState<Material | null>(null);
-  const [selectedProc, setSelectedProc] = useState<string | null>(null);
-
-  useEffect(() => {
-    const proc = searchParams.get("process");
-    if (proc) setSelectedProc(proc);
-  }, [searchParams]);
+  const [selectedProc, setSelectedProc] = useState<string | null>(() => searchParams.get("process"));
   const [filterProduct, setFilterProduct] = useState<"ALL" | "HBM" | "DRAM" | "NAND">("ALL");
   const [filterCat, setFilterCat] = useState<string>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("code");

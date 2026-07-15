@@ -20,60 +20,27 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const NAV = [
-  { group: "Dashboard",   items: [{ href: "/",           label: "종합 현황" }] },
-  { group: "운영 관제",   items: [{ href: "/daily-control", label: "생산·자재 연동" }] },
-  { group: "창고 관리",   items: [
-    { href: "/warehouse",  label: "창고 Capacity" },
-    { href: "/wms",        label: "창고관리 (WMS)" },
-  ]},
-  {
-    group: "시장 인텔리전스",
-    items: [
-      { href: "/market",            label: "시장 가격·생산능력" },
-    ],
-  },
-  {
-    group: "자재 분석",
-    items: [
-      { href: "/inventory", label: "재고·보관일수",   badge: "alert" },
-      { href: "/usage",     label: "공정별 사용량" },
-      { href: "/product",   label: "제품별 사용량" },
-    ],
-  },
-  {
-    group: "생산 실행",
-    items: [
-      { href: "/mes", label: "공정 실행 (MES)" },
-    ],
-  },
-  {
-    group: "의사결정",
-    items: [
-      { href: "/simulation", label: "운영 시나리오" },
-      { href: "/simulation/market", label: "수요예측 시나리오" },
-      { href: "/value",      label: "성과 관리" },
-    ],
-  },
-  {
-    group: "인프라·SCM",
-    items: [
-      { href: "/infra",  label: "교체주기 관리",   badge: "infra" },
-      { href: "/scm",    label: "공급망 가시성" },
-    ],
-  },
-  {
-    group: "리스크·협업",
-    items: [
-      { href: "/risk",   label: "리스크 관리",   badge: "risk" },
-      { href: "/collab", label: "유관부서 이슈" },
-    ],
-  },
-  {
-    group: "기록",
-    items: [
-      { href: "/devlog",  label: "개발 이력" },
-    ],
-  },
+  { group: "오늘의 운영", items: [
+    { href: "/", label: "종합 현황" },
+    { href: "/daily-control", label: "생산·자재 연동" },
+  ] },
+  { group: "자재·창고", items: [
+    { href: "/inventory", label: "재고·보관일수" },
+    { href: "/wms", label: "창고관리 (WMS)" },
+  ] },
+  { group: "생산 실행", items: [
+    { href: "/mes", label: "공정 실행 (MES)" },
+    { href: "/usage", label: "공정별 사용량" },
+  ] },
+  { group: "계획·시뮬레이션", items: [
+    { href: "/simulation", label: "운영 What-if" },
+    { href: "/market", label: "시장·수요 정보" },
+  ] },
+  { group: "분석·관리", items: [
+    { href: "/value", label: "성과 관리" },
+    { href: "/scm", label: "조달 기준" },
+    { href: "/devlog", label: "개발 이력" },
+  ] },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -172,7 +139,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="ml-auto flex items-center gap-4">
             <div className="flex items-center gap-1.5 bg-[#E6FAF1] text-[#00875A] text-xs font-semibold px-2.5 py-1 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-[#00B96B] animate-pulse" />
-              LIVE
+              DATA CONNECTED
             </div>
             <span className="text-xs" style={{ color: "var(--text-3)" }}>이천 M14 / M16</span>
             <div
@@ -201,7 +168,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         >
           <span className="text-[#00B96B] font-semibold">● 시스템 정상</span>
           <span style={{ color: "var(--border)" }}>|</span>
-          <span>DB: SQLite (로컬)</span>
+          <span>DB: MongoDB</span>
           <span style={{ color: "var(--border)" }}>|</span>
           <span>{new Date().toLocaleDateString("ko-KR")} 기준</span>
         </div>

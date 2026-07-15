@@ -85,7 +85,7 @@ export default function MarketClient({ market, fab }: { market: MarketData; fab:
         <div className="flex items-center gap-3">
           <span className="text-xs text-[#999]">데이터 기준: {updatedAt}</span>
           <button
-            onClick={() => router.push("/simulation/market")}
+            onClick={() => router.push("/simulation")}
             className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#EA002C] text-white hover:bg-[#C8001F] transition-colors"
           >
             수요 시나리오 시뮬 →

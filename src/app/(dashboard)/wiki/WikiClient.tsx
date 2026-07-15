@@ -23,11 +23,6 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   기타:   { bg: "#F1F5F9", text: "#475569" },
 };
 
-function formatDate(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" });
-}
-
 function EntryCard({ entry, isOpen, onToggle }: { entry: Entry; isOpen: boolean; onToggle: () => void }) {
   const cat = CATEGORY_COLORS[entry.category] ?? CATEGORY_COLORS["기타"];
   return (

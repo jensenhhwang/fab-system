@@ -36,13 +36,9 @@ const LEAD_TIME_RANGE: Record<string, [number, number]> = {
   PKG: [5, 10],
 };
 
-function randInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
 export function getBaseLeadTime(category: string): number {
   const [lo, hi] = LEAD_TIME_RANGE[category] ?? [7, 7];
-  return randInt(lo, hi);
+  return Math.round((lo + hi) / 2);
 }
 
 function addDays(date: Date, days: number): Date {
@@ -130,8 +126,7 @@ export function processTick(input: TickInput): TickResult {
     );
     if (totalAvail < rop && !hasPending) {
       const baseLead = getBaseLeadTime(mat.category);
-      const jitter = 0.8 + Math.random() * 0.4;
-      const leadDays = Math.round(baseLead * jitter);
+      const leadDays = baseLead;
       const orderQty = Math.round(Math.max(mat.dailyQty * mat.ropDays * 3, 10));
       const poId = `PO-${Date.now()}-${mat.materialId}`;
       const expectedArrival = addDays(simDate, leadDays);
@@ -199,38 +194,6 @@ export function processTick(input: TickInput): TickResult {
       note: `GR 도착 ${po.qty} (${po._id})`,
       simulated: true,
     });
-  }
-
-  // ④ 랜덤 이벤트 — 아직 도착 안 한 IN_TRANSIT PO
-  const pendingPos = activePOs.filter(po => po.status === "IN_TRANSIT" && !duePoIds.has(po._id));
-  for (const po of pendingPos) {
-    const r = Math.random();
-    if (r < 0.01) {
-      // 1% PO 취소 + 재발주
-      updatedPOs.push({ id: po._id, status: "CANCELLED" });
-      newEvents.push({ _id: randomUUID(), simDate, type: "PO_CANCELLED", materialId: po.materialId, poId: po._id, note: `PO 취소 → 재발주`, simulated: true });
-      const leadDays = getBaseLeadTime(materials.find(m => m.materialId === po.materialId)?.category ?? "");
-      const retryId = `PO-RETRY-${Date.now()}-${po.materialId}`;
-      newPOs.push({ _id: retryId, materialId: po.materialId, qty: po.qty, status: "IN_TRANSIT", createdSimDate: simDate, expectedArrival: addDays(simDate, leadDays), leadTimeDays: leadDays, delayDays: 0, simulated: true });
-    } else if (r < 0.03) {
-      // 2% 부분 입고
-      const ratio = 0.6 + Math.random() * 0.2;
-      const partQty = Math.round(po.qty * ratio);
-      const remQty = po.qty - partQty;
-      const lotId = randomUUID();
-      newLots.push({ _id: lotId, materialId: po.materialId, lotNo: `SIM-PARTIAL-${Date.now()}`, quantity: partQty, availableQuantity: partQty, receivedAt: simDate, qualityStatus: "AVAILABLE", updatedAt: now, simulated: true });
-      newMovements.push({ _id: randomUUID(), materialId: po.materialId, type: "RECEIPT", quantity: partQty, lotId, reason: `부분 GR: ${po._id}`, userId: "simulator", createdAt: now, simulated: true });
-      updatedPOs.push({ id: po._id, status: "RECEIVED", actualArrival: simDate });
-      const remLeadDays = getBaseLeadTime(materials.find(m => m.materialId === po.materialId)?.category ?? "");
-      const remId = `PO-REM-${Date.now()}-${po.materialId}`;
-      newPOs.push({ _id: remId, materialId: po.materialId, qty: remQty, status: "IN_TRANSIT", createdSimDate: simDate, expectedArrival: addDays(simDate, remLeadDays), leadTimeDays: remLeadDays, delayDays: 0, simulated: true });
-      newEvents.push({ _id: randomUUID(), simDate, type: "PARTIAL_GR", materialId: po.materialId, qty: partQty, poId: po._id, note: `부분 입고 ${partQty}/${po.qty} (${Math.round(ratio * 100)}%)`, simulated: true });
-    } else if (r < 0.08) {
-      // 5% 공급 지연
-      const delayAdd = randInt(2, 5);
-      updatedPOs.push({ id: po._id, delayDays: (po.delayDays || 0) + delayAdd });
-      newEvents.push({ _id: randomUUID(), simDate, type: "DELAY", materialId: po.materialId, poId: po._id, note: `공급 지연 +${delayAdd}일`, simulated: true });
-    }
   }
 
   return { lotUpdates, newLots, newMovements, newPOs, updatedPOs, newEvents };

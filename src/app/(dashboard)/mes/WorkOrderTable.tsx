@@ -36,7 +36,7 @@ export default function WorkOrderTable({
   if (workOrders.length === 0) {
     return (
       <div className="bg-white rounded-2xl shadow-sm p-12 text-center text-sm" style={{ color: "var(--text-3)" }}>
-        작업지시가 없습니다. 상단 "+ 작업지시 생성" 버튼으로 추가하세요.
+        작업지시가 없습니다. 상단 &quot;+ 작업지시 생성&quot; 버튼으로 추가하세요.
       </div>
     );
   }

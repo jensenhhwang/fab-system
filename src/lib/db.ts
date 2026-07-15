@@ -6,7 +6,7 @@ const uri = process.env.DATABASE_URL;
 
 const g = globalThis as unknown as { _mongoClientPromise?: Promise<MongoClient> };
 
-function clientPromise(): Promise<MongoClient> {
+export function getMongoClient(): Promise<MongoClient> {
   if (!uri) throw new Error("DATABASE_URL 환경변수가 설정되지 않았습니다 (MongoDB 연결 문자열).");
   if (!g._mongoClientPromise) {
     g._mongoClientPromise = new MongoClient(uri).connect();
@@ -15,7 +15,7 @@ function clientPromise(): Promise<MongoClient> {
 }
 
 export async function getDb(): Promise<Db> {
-  const client = await clientPromise();
+  const client = await getMongoClient();
   return client.db(); // DB 이름은 연결 문자열의 /fab 에서 결정
 }
 
@@ -99,6 +99,11 @@ export interface SupplierDoc {
 }
 export interface MaterialSupplierDoc {
   _id: string; materialId: string; supplierId: string; leadTimeDays: number; isPrimary: boolean;
+  qualificationStatus?: "APPROVED" | "CONDITIONAL" | "SUSPENDED";
+  sourcingRole?: "PRIMARY" | "SECONDARY";
+  minLeadTimeDays?: number | null; standardLeadTimeDays?: number | null; maxLeadTimeDays?: number | null;
+  currentExpectedLeadTimeDays?: number | null; currentExpectedValidUntil?: Date | null; leadTimeReason?: string | null;
+  emergencyOrderAllowed?: boolean; plannedSharePct?: number | null; updatedAt?: Date;
 }
 export interface InfraDoc {
   _id: string; name: string; processCode: string; unit: string;

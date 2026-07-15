@@ -1,11 +1,13 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
   retries: 1,
   use: {
-    baseURL: "https://fab-system-phi.vercel.app",
+    baseURL,
     screenshot: "only-on-failure",
     trace: "on-first-retry",
   },
@@ -15,4 +17,9 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
+  webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
+    command: "npm run dev",
+    url: baseURL,
+    reuseExistingServer: !process.env.CI,
+  },
 });

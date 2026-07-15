@@ -19,6 +19,7 @@ async function getInventoryData() {
       : "safe";
     return {
       id: inv.id,
+      materialId: inv.materialId,
       quantity: inv.quantity,
       avgDailyUsage: Math.round(inv.dailyUsage * 10) / 10,
       monthlyQty: Math.round(inv.monthlyQty),

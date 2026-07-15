@@ -505,6 +505,8 @@ async function main() {
       .map((sl) => ({
         _id: `${sl.matCode}__${sl.supId}`,
         materialId: sl.matCode, supplierId: sl.supId, leadTimeDays: sl.days, isPrimary: sl.primary,
+        standardLeadTimeDays: sl.days, qualificationStatus: "APPROVED",
+        sourcingRole: sl.primary ? "PRIMARY" : "SECONDARY", emergencyOrderAllowed: false,
       }))
   );
   console.log(`✅ SupplyLinks: ${supplyLinks.length}건`);

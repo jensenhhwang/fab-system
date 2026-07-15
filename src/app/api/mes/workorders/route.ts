@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { collections } from "@/lib/db";
 import type { WorkOrderDoc, BomLine, Product } from "@/lib/db";
+import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -23,14 +24,15 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await requireRole(WRITE_ROLES.workOrderCreate);
+  if (access.error) return access.error;
   const body = await req.json();
-  const { processCode, product, plannedQty, plannedStart, note, createdBy = "system" } = body as {
+  const { processCode, product, plannedQty, plannedStart, note } = body as {
     processCode: string;
     product: Product;
     plannedQty: number;
     plannedStart?: string;
     note?: string;
-    createdBy?: string;
   };
 
   if (!processCode || !product || !plannedQty || plannedQty <= 0) {
@@ -57,7 +59,7 @@ export async function POST(req: NextRequest) {
     status: "QUEUED",
     bomLines,
     plannedStart: plannedStart ? new Date(plannedStart) : undefined,
-    createdBy,
+    createdBy: access.user.id,
     createdAt: now,
     updatedAt: now,
     note,

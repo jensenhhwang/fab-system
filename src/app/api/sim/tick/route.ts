@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { executeTickAndPersist } from "@/lib/sim-runner";
 
 export const dynamic = "force-dynamic";
 
 export async function POST() {
-  const result = await executeTickAndPersist();
-  return NextResponse.json(result);
+  return NextResponse.json({ error: "자동 시뮬레이션 tick은 종료되었습니다. 운영 What-if를 사용하세요." }, { status: 410 });
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 const CATEGORY_STYLES: Record<string, { bg: string; text: string }> = {
   GAS: { bg: "#FEE2E2", text: "#B91C1C" },
@@ -20,6 +21,7 @@ const STATUS_BADGE: Record<string, { label: string; bg: string; text: string; co
 
 type InventoryItem = {
   id: string;
+  materialId: string;
   quantity: number;
   avgDailyUsage: number;
   monthlyQty: number;
@@ -273,13 +275,19 @@ export default function InventoryClient({ items, lotCounts = {} }: { items: Inve
                       className="transition-colors"
                       style={{ borderBottom: "1px solid var(--border)" }}
                     >
-                      <td className="px-5 py-3 font-mono text-[11px]" style={{ color: "var(--text-3)" }}>{inv.material.code}</td>
+                      <td className="px-5 py-3 font-mono text-[11px]">
+                        <Link href={`/inventory/materials/${encodeURIComponent(inv.materialId)}`} className="font-bold text-[#0078D4] hover:underline">
+                          {inv.material.code}
+                        </Link>
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-semibold" style={{ color: "var(--text-1)" }}>{inv.material.name}</span>
-                          {(lotCounts[inv.material.code] ?? 0) > 0 && (
+                          <Link href={`/inventory/materials/${encodeURIComponent(inv.materialId)}`} className="font-semibold hover:text-[#0078D4] hover:underline" style={{ color: "var(--text-1)" }}>
+                            {inv.material.name}
+                          </Link>
+                          {(lotCounts[inv.materialId] ?? 0) > 0 && (
                             <span className="ml-1 text-[10px] font-bold text-[#0078D4] bg-[#E6F0FA] px-1.5 py-0.5 rounded-full">
-                              {lotCounts[inv.material.code]} Lots
+                              전체 {lotCounts[inv.materialId]} Lots
                             </span>
                           )}
                         </div>

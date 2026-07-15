@@ -3,6 +3,7 @@ import { collections } from "@/lib/db";
 import { getOrInitSimState } from "@/lib/sim-runner";
 import { getBaseLeadTime } from "@/lib/sim-engine";
 import { randomUUID } from "crypto";
+import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const access = await requireRole(WRITE_ROLES.simulation);
+  if (access.error) return access.error;
   const { id } = await params;
   const body = await req.json();
   const ratio = Math.min(Math.max(parseFloat(body.ratio ?? "0.7"), 0.1), 0.9);
@@ -31,7 +34,7 @@ export async function POST(
   });
   await inventoryMovements.insertOne({
     _id: randomUUID(), materialId: po.materialId, type: "RECEIPT", quantity: partQty,
-    lotId, reason: `수동 부분 GR: ${id}`, userId: "manual", createdAt: now, simulated: true,
+    lotId, reason: `수동 부분 GR: ${id}`, userId: access.user.id, createdAt: now, simulated: true,
   });
   await simPurchaseOrders.updateOne({ _id: id }, { $set: { status: "RECEIVED", actualArrival: state.simDate } });
 

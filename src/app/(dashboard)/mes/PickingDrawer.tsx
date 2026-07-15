@@ -21,15 +21,15 @@ export default function PickingDrawer({
   const [lots, setLots] = useState<InventoryLotDoc[]>([]);
   const [pickQtys, setPickQtys] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [renderedAt] = useState(() => Date.now());
 
   useEffect(() => {
     if (!selectedLine) return;
-    setPickQtys({});
     fetch(`/api/lots?materialId=${selectedLine.materialId}&status=AVAILABLE`)
       .then(r => r.ok ? r.json() : [])
       .then(setLots)
       .catch(() => setLots([]));
-  }, [selectedLine?.materialId]);
+  }, [selectedLine]);
 
   const handlePick = async () => {
     setSubmitting(true);
@@ -77,7 +77,7 @@ export default function PickingDrawer({
             return (
               <button
                 key={line.materialId}
-                onClick={() => setSelectedLine(line)}
+                onClick={() => { setSelectedLine(line); setPickQtys({}); }}
                 className={`px-3 py-1.5 text-xs rounded-full whitespace-nowrap font-medium border transition-colors shrink-0 ${
                   isSelected
                     ? "bg-[#0078D4] text-white border-[#0078D4]"
@@ -114,7 +114,7 @@ export default function PickingDrawer({
           ) : (
             availableLots.map(lot => {
               const dDay = lot.expiryDate
-                ? Math.round((new Date(lot.expiryDate).getTime() - Date.now()) / 86400000)
+                ? Math.round((new Date(lot.expiryDate).getTime() - renderedAt) / 86400000)
                 : null;
               return (
                 <div key={lot._id} className="flex items-center gap-2 p-2.5 bg-gray-50 rounded-lg text-xs">
