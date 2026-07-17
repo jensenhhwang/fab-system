@@ -16,7 +16,7 @@ export async function POST(_: NextRequest, { params }: { params: Promise<{ workO
   if (access.error) return access.error;
   const { workOrderId } = await params;
   try {
-    return NextResponse.json(await orchestrateM20Agents(workOrderId, access.user.id));
+    return NextResponse.json(await orchestrateM20Agents(workOrderId, access.user.id, { trigger: "MANUAL" }));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "M20 에이전트 실행 실패" }, { status: 409 });
   }

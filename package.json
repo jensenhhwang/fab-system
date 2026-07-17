@@ -29,6 +29,7 @@
     "db:migrate-campus-twin": "tsx scripts/migrate-campus-twin.ts",
     "db:migrate-m20-pilot": "tsx scripts/migrate-m20-pilot.ts",
     "db:migrate-m20-agents": "tsx scripts/migrate-m20-agents.ts",
+    "db:migrate-agent-policies": "tsx scripts/migrate-agent-policies.ts",
     "db:validate": "tsx prisma/validate-data-consistency.ts",
     "db:audit-inventory": "tsx scripts/audit-inventory-doh.ts",
     "db:calibrate-inventory": "tsx scripts/calibrate-inventory-policy.ts"

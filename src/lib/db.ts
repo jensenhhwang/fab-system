@@ -376,7 +376,7 @@ export interface EquipmentMasterDoc {
 }
 
 export type AgentRole = "PROCUREMENT" | "WMS" | "MES" | "PROCESS";
-export type AgentRunStatus = "OPEN" | "WAITING_APPROVAL" | "WAITING_PHYSICAL" | "BLOCKED" | "COMPLETED" | "FAILED";
+export type AgentRunStatus = "OPEN" | "WAITING_APPROVAL" | "WAITING_PHYSICAL" | "HUMAN_MODE_HOLD" | "BLOCKED" | "COMPLETED" | "FAILED";
 export type AgentRunStage = "CREATED" | "RESERVED" | "PICKED" | "STAGED" | "IN_TRANSIT" | "RECEIVED" | "LINE_SIDE" | "RELEASED" | "CONSUMED";
 export interface AgentRunDoc {
   _id: string;
@@ -386,8 +386,10 @@ export interface AgentRunDoc {
   status: AgentRunStatus;
   stage: AgentRunStage;
   policyVersion: string;
-  nextHumanAction?: "PICK_CONFIRM" | "STAGE_CONFIRM" | "DEPART_CONFIRM" | "RECEIVE_CONFIRM" | "DELIVER_CONFIRM" | "CONSUME_CONFIRM" | "PO_APPROVAL";
+  nextHumanAction?: "PICK_CONFIRM" | "STAGE_CONFIRM" | "DEPART_CONFIRM" | "RECEIVE_CONFIRM" | "DELIVER_CONFIRM" | "CONSUME_CONFIRM" | "PO_APPROVAL"
+    | "PROCUREMENT_MANUAL_RUN" | "WMS_MANUAL_RUN" | "MES_MANUAL_RUN";
   blockedReason?: string | null;
+  lastTrigger?: "AUTO" | "MANUAL";
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -403,9 +405,33 @@ export interface AgentDecisionDoc {
   inputSnapshot: Record<string, unknown>;
   reasonCodes: string[];
   proposedAction: string;
-  result: "AUTO_EXECUTED" | "WAITING_APPROVAL" | "WAITING_PHYSICAL" | "NO_ACTION" | "BLOCKED";
+  result: "AUTO_EXECUTED" | "WAITING_APPROVAL" | "WAITING_PHYSICAL" | "NO_ACTION" | "BLOCKED" | "HUMAN_MODE_HOLD";
   idempotencyKey: string;
   createdAt: Date;
+}
+
+export type AgentRoleMode = "AGENT" | "HUMAN";
+export interface AgentRoleModeDoc {
+  _id: AgentRole;
+  mode: AgentRoleMode;
+  updatedBy: string;
+  updatedAt: Date;
+}
+
+export interface AgentPolicyDoc {
+  _id: string; // `${fabId}:${materialId}`
+  fabId: FabId;
+  materialId: string;
+  supplierId: string;
+  supplierName: string;
+  moq: number;
+  orderMultiple: number;
+  leadTimeDays: number;
+  unitPrice: number;
+  currency: "KRW";
+  effectiveFrom: string;
+  updatedBy: string;
+  updatedAt: Date;
 }
 
 export type PurchaseOrderDraftStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "OUTBOXED" | "CANCELLED";
@@ -518,6 +544,8 @@ export async function collections(): Promise<{
   equipmentMaster: Collection<EquipmentMasterDoc>;
   agentRuns: Collection<AgentRunDoc>;
   agentDecisions: Collection<AgentDecisionDoc>;
+  agentPolicies: Collection<AgentPolicyDoc>;
+  agentRoleModes: Collection<AgentRoleModeDoc>;
   purchaseOrderDrafts: Collection<PurchaseOrderDraftDoc>;
   integrationOutbox: Collection<IntegrationOutboxDoc>;
   equipmentAssignments: Collection<EquipmentAssignmentDoc>;
@@ -560,6 +588,8 @@ export async function collections(): Promise<{
     equipmentMaster: db.collection<EquipmentMasterDoc>("equipmentMaster"),
     agentRuns: db.collection<AgentRunDoc>("agentRuns"),
     agentDecisions: db.collection<AgentDecisionDoc>("agentDecisions"),
+    agentPolicies: db.collection<AgentPolicyDoc>("agentPolicies"),
+    agentRoleModes: db.collection<AgentRoleModeDoc>("agentRoleModes"),
     purchaseOrderDrafts: db.collection<PurchaseOrderDraftDoc>("purchaseOrderDrafts"),
     integrationOutbox: db.collection<IntegrationOutboxDoc>("integrationOutbox"),
     equipmentAssignments: db.collection<EquipmentAssignmentDoc>("equipmentAssignments"),

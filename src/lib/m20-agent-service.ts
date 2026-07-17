@@ -2,6 +2,8 @@ import { randomUUID } from "crypto";
 import { collections, getMongoClient } from "@/lib/db";
 import type {
   AgentDecisionDoc,
+  AgentRole,
+  AgentRoleMode,
   AgentRunDoc,
   EquipmentAssignmentDoc,
   PurchaseOrderDraftDoc,
@@ -10,7 +12,6 @@ import type {
 import {
   calculateM20Procurement,
   M20_AGENT_POLICY_VERSION,
-  M20_PROCUREMENT_POLICY_V1,
 } from "@/lib/m20-agent-policy";
 
 const runIdFor = (workOrderId: string) => `M20:${workOrderId}`;
@@ -24,6 +25,34 @@ async function recordDecision(input: Omit<AgentDecisionDoc, "_id" | "createdAt">
     { $setOnInsert: doc },
     { upsert: true },
   );
+}
+
+async function getRoleModes(): Promise<Record<AgentRole, AgentRoleMode>> {
+  const { agentRoleModes } = await collections();
+  const docs = await agentRoleModes.find({}).toArray();
+  const modes: Record<AgentRole, AgentRoleMode> = { PROCUREMENT: "AGENT", WMS: "AGENT", MES: "AGENT", PROCESS: "AGENT" };
+  for (const doc of docs) modes[doc._id] = doc.mode;
+  return modes;
+}
+
+export async function getAgentRoleModes() {
+  return getRoleModes();
+}
+
+export async function setAgentRoleMode(role: AgentRole, mode: AgentRoleMode, actorId: string) {
+  const { agentRoleModes } = await collections();
+  const now = new Date();
+  await agentRoleModes.updateOne(
+    { _id: role },
+    { $set: { mode, updatedBy: actorId, updatedAt: now }, $setOnInsert: { _id: role } },
+    { upsert: true },
+  );
+  return agentRoleModes.findOne({ _id: role });
+}
+
+async function getProcurementPolicy(fabId: WorkOrderDoc["fabId"], materialId: string) {
+  const { agentPolicies } = await collections();
+  return agentPolicies.findOne({ _id: `${fabId}:${materialId}` });
 }
 
 export async function reserveM20PilotMaterial(input: {
@@ -136,12 +165,36 @@ export async function reserveM20PilotMaterial(input: {
   return { ok: true as const, transferOrderId: transfer._id, lotId: lot._id, handlingUnitId: handlingUnit._id };
 }
 
+async function holdProcurementAgent(wo: WorkOrderDoc, traceId: string) {
+  const { purchaseOrderDrafts } = await collections();
+  const line = wo.bomLines[0];
+  const existingPo = await purchaseOrderDrafts.findOne({ sourceWorkOrderId: wo._id, materialId: line.materialId, policyVersion: M20_AGENT_POLICY_VERSION });
+  await recordDecision({
+    runId: runIdFor(wo._id), workOrderId: wo._id, traceId, agentRole: "PROCUREMENT",
+    policyVersion: M20_AGENT_POLICY_VERSION, inputSnapshot: { materialId: line.materialId, fabId: wo.fabId },
+    reasonCodes: ["HUMAN_MODE_ACTIVE"], proposedAction: "MANUAL_PROCUREMENT_REQUIRED",
+    result: "HUMAN_MODE_HOLD", idempotencyKey: `${runIdFor(wo._id)}:PROCUREMENT:HOLD`,
+  });
+  return existingPo;
+}
+
 async function runProcurementAgent(wo: WorkOrderDoc, traceId: string, actorId: string) {
   const {
     materials, inventory, materialAllocations, inboundPlans, materialSuppliers,
     purchaseOrderDrafts,
   } = await collections();
   const line = wo.bomLines[0];
+  const key = `${runIdFor(wo._id)}:PROCUREMENT:${M20_AGENT_POLICY_VERSION}`;
+  const policy = await getProcurementPolicy(wo.fabId, line.materialId);
+  if (!policy) {
+    await recordDecision({
+      runId: runIdFor(wo._id), workOrderId: wo._id, traceId, agentRole: "PROCUREMENT",
+      policyVersion: M20_AGENT_POLICY_VERSION, inputSnapshot: { materialId: line.materialId, fabId: wo.fabId },
+      reasonCodes: ["POLICY_NOT_CONFIGURED"], proposedAction: "BLOCK_PURCHASE_DRAFT",
+      result: "BLOCKED", idempotencyKey: key,
+    });
+    return null;
+  }
   const [material, inventoryRows, reservations, confirmedInbound, approvedSupplier, existingPo] = await Promise.all([
     materials.findOne({ _id: line.materialId }),
     inventory.find({ materialId: line.materialId, status: { $nin: ["HOLD", "QUARANTINE", "CONSUMED"] } }).toArray(),
@@ -155,7 +208,7 @@ async function runProcurementAgent(wo: WorkOrderDoc, traceId: string, actorId: s
     ]).next(),
     materialSuppliers.findOne({
       materialId: line.materialId,
-      supplierId: M20_PROCUREMENT_POLICY_V1.supplierId,
+      supplierId: policy.supplierId,
       qualificationStatus: "APPROVED",
     }),
     purchaseOrderDrafts.findOne({ sourceWorkOrderId: wo._id, materialId: line.materialId, policyVersion: M20_AGENT_POLICY_VERSION }),
@@ -168,15 +221,14 @@ async function runProcurementAgent(wo: WorkOrderDoc, traceId: string, actorId: s
     confirmedInbound: confirmedInbound?.quantity ?? 0,
     safetyStock: material?.safetyStock ?? 0,
     dailyUsage,
-    leadTimeDays: M20_PROCUREMENT_POLICY_V1.leadTimeDays,
-    moq: M20_PROCUREMENT_POLICY_V1.moq,
-    orderMultiple: M20_PROCUREMENT_POLICY_V1.orderMultiple,
+    leadTimeDays: policy.leadTimeDays,
+    moq: policy.moq,
+    orderMultiple: policy.orderMultiple,
   });
-  const key = `${runIdFor(wo._id)}:PROCUREMENT:${M20_AGENT_POLICY_VERSION}`;
   if (!approvedSupplier) {
     await recordDecision({
       runId: runIdFor(wo._id), workOrderId: wo._id, traceId, agentRole: "PROCUREMENT",
-      policyVersion: M20_AGENT_POLICY_VERSION, inputSnapshot: { ...calculation, supplierId: M20_PROCUREMENT_POLICY_V1.supplierId },
+      policyVersion: M20_AGENT_POLICY_VERSION, inputSnapshot: { ...calculation, supplierId: policy.supplierId },
       reasonCodes: ["APPROVED_SUPPLIER_MASTER_MISSING"], proposedAction: "BLOCK_PURCHASE_DRAFT",
       result: "BLOCKED", idempotencyKey: key,
     });
@@ -194,19 +246,19 @@ async function runProcurementAgent(wo: WorkOrderDoc, traceId: string, actorId: s
   const now = new Date();
   const po: PurchaseOrderDraftDoc = existingPo ?? {
     _id: `PO:${wo._id}:${line.materialId}`,
-    poNo: `PO-M20-${now.toISOString().slice(0, 10).replaceAll("-", "")}-${wo._id.slice(-8).toUpperCase()}`,
+    poNo: `PO-${wo.fabId}-${now.toISOString().slice(0, 10).replaceAll("-", "")}-${wo._id.slice(-8).toUpperCase()}`,
     sourceWorkOrderId: wo._id,
     agentRunId: runIdFor(wo._id),
     materialId: line.materialId,
     supplierId: approvedSupplier.supplierId,
     quantity: calculation.quantity,
     unit: material?.unit ?? "kg",
-    unitPrice: M20_PROCUREMENT_POLICY_V1.unitPrice,
-    currency: M20_PROCUREMENT_POLICY_V1.currency,
-    moq: M20_PROCUREMENT_POLICY_V1.moq,
-    orderMultiple: M20_PROCUREMENT_POLICY_V1.orderMultiple,
-    leadTimeDays: M20_PROCUREMENT_POLICY_V1.leadTimeDays,
-    expectedDate: new Date(now.getTime() + M20_PROCUREMENT_POLICY_V1.leadTimeDays * 86_400_000),
+    unitPrice: policy.unitPrice,
+    currency: policy.currency,
+    moq: policy.moq,
+    orderMultiple: policy.orderMultiple,
+    leadTimeDays: policy.leadTimeDays,
+    expectedDate: new Date(now.getTime() + policy.leadTimeDays * 86_400_000),
     status: "PENDING_APPROVAL",
     policyVersion: M20_AGENT_POLICY_VERSION,
     calculation: {
@@ -305,7 +357,12 @@ async function releaseMesAndAssignEquipment(wo: WorkOrderDoc, traceId: string) {
   return assignment;
 }
 
-export async function orchestrateM20Agents(workOrderId: string, actorId: string) {
+export async function orchestrateM20Agents(
+  workOrderId: string,
+  actorId: string,
+  options: { trigger?: "AUTO" | "MANUAL" } = {},
+) {
+  const trigger = options.trigger ?? "AUTO";
   const {
     workOrders, transferOrders, materialFlowEvents, agentRuns,
     materialAllocations, equipmentAssignments,
@@ -326,8 +383,28 @@ export async function orchestrateM20Agents(workOrderId: string, actorId: string)
     { upsert: true },
   );
 
-  const purchaseOrder = await runProcurementAgent(wo, transfer._id, actorId);
+  const roleModes = await getRoleModes();
+
+  const purchaseOrder = roleModes.PROCUREMENT === "HUMAN" && trigger === "AUTO"
+    ? await holdProcurementAgent(wo, transfer._id)
+    : await runProcurementAgent(wo, transfer._id, actorId);
+
   if (transfer.status === "CREATED") {
+    if (roleModes.WMS === "HUMAN" && trigger === "AUTO") {
+      await recordDecision({
+        runId, workOrderId: wo._id, traceId: transfer._id, agentRole: "WMS",
+        policyVersion: M20_AGENT_POLICY_VERSION,
+        inputSnapshot: { materialId: transfer.materialId, quantity: transfer.quantity },
+        reasonCodes: ["HUMAN_MODE_ACTIVE"], proposedAction: "MANUAL_RESERVE_REQUIRED",
+        result: "HUMAN_MODE_HOLD", idempotencyKey: `${runId}:WMS:HOLD`,
+      });
+      await agentRuns.updateOne({ _id: runId }, { $set: {
+        status: "HUMAN_MODE_HOLD", stage: "CREATED", nextHumanAction: "WMS_MANUAL_RUN",
+        blockedReason: "WMS 담당이 HUMAN 모드입니다. 담당자가 직접 재고를 예약해야 합니다.",
+        lastTrigger: trigger, updatedAt: new Date(),
+      } });
+      return getM20AgentSnapshot(workOrderId);
+    }
     try {
       const reservation = await reserveM20PilotMaterial({ workOrderId: wo._id, actorId });
       await recordDecision({
@@ -348,7 +425,8 @@ export async function orchestrateM20Agents(workOrderId: string, actorId: string)
       await agentRuns.updateOne({ _id: runId }, { $set: {
         status: purchaseOrder?.status === "PENDING_APPROVAL" ? "WAITING_APPROVAL" : "BLOCKED",
         stage: "CREATED", nextHumanAction: purchaseOrder?.status === "PENDING_APPROVAL" ? "PO_APPROVAL" : undefined,
-        blockedReason: error instanceof Error ? error.message : "WMS 예약 실패", updatedAt: new Date(),
+        blockedReason: error instanceof Error ? error.message : "WMS 예약 실패",
+        lastTrigger: trigger, updatedAt: new Date(),
       } });
       return getM20AgentSnapshot(workOrderId);
     }
@@ -362,6 +440,21 @@ export async function orchestrateM20Agents(workOrderId: string, actorId: string)
   const allocation = await materialAllocations.findOne({ _id: transfer.allocationId });
 
   if (transfer.status === "DELIVERED" && allocation?.status === "RELEASED" && wo.status === "MATERIAL_WAIT") {
+    if (roleModes.MES === "HUMAN" && trigger === "AUTO") {
+      await recordDecision({
+        runId, workOrderId: wo._id, traceId: transfer._id, agentRole: "MES",
+        policyVersion: M20_AGENT_POLICY_VERSION,
+        inputSnapshot: { transferStatus: transfer.status, allocationStatus: allocation.status },
+        reasonCodes: ["HUMAN_MODE_ACTIVE"], proposedAction: "MANUAL_RELEASE_REQUIRED",
+        result: "HUMAN_MODE_HOLD", idempotencyKey: `${runId}:MES:HOLD`,
+      });
+      await agentRuns.updateOne({ _id: runId }, { $set: {
+        status: "HUMAN_MODE_HOLD", stage: "RELEASED", nextHumanAction: "MES_MANUAL_RUN",
+        blockedReason: "MES 담당이 HUMAN 모드입니다. 담당자가 직접 설비 배정을 실행해야 합니다.",
+        lastTrigger: trigger, updatedAt: new Date(),
+      } });
+      return getM20AgentSnapshot(workOrderId);
+    }
     await releaseMesAndAssignEquipment(wo, transfer._id);
     wo = await workOrders.findOne({ _id: wo._id }) ?? wo;
   } else if (wo.status === "MATERIAL_WAIT") {
@@ -390,7 +483,7 @@ export async function orchestrateM20Agents(workOrderId: string, actorId: string)
                 : transfer.status === "DELIVERED" && wo.status === "QUEUED"
                   ? { status: "WAITING_PHYSICAL", stage: "RELEASED", nextHumanAction: "CONSUME_CONFIRM", blockedReason: null }
                   : { status: "OPEN", stage: "CREATED", nextHumanAction: undefined, blockedReason: null };
-  await agentRuns.updateOne({ _id: runId }, { $set: { ...next, updatedAt: new Date() } });
+  await agentRuns.updateOne({ _id: runId }, { $set: { ...next, lastTrigger: trigger, updatedAt: new Date() } });
   if (wo.status === "DONE") {
     await equipmentAssignments.updateMany({ workOrderId: wo._id, status: { $in: ["RESERVED", "ACTIVE"] } }, { $set: { status: "COMPLETED", updatedAt: new Date() } });
   }
@@ -400,14 +493,15 @@ export async function orchestrateM20Agents(workOrderId: string, actorId: string)
 export async function getM20AgentSnapshot(workOrderId: string) {
   const { agentRuns, agentDecisions, purchaseOrderDrafts, integrationOutbox, equipmentAssignments } = await collections();
   const runId = runIdFor(workOrderId);
-  const [run, decisions, purchaseOrder, assignment] = await Promise.all([
+  const [run, decisions, purchaseOrder, assignment, roleModes] = await Promise.all([
     agentRuns.findOne({ _id: runId }),
     agentDecisions.find({ runId }).sort({ createdAt: 1 }).toArray(),
     purchaseOrderDrafts.findOne({ sourceWorkOrderId: workOrderId }, { sort: { createdAt: -1 } }),
     equipmentAssignments.findOne({ workOrderId }, { sort: { createdAt: -1 } }),
+    getRoleModes(),
   ]);
   const outbox = purchaseOrder ? await integrationOutbox.findOne({ aggregateId: purchaseOrder._id }) : null;
-  return { run, decisions, purchaseOrder, outbox, assignment };
+  return { run, decisions, purchaseOrder, outbox, assignment, roleModes };
 }
 
 export async function decidePurchaseOrder(input: {
