@@ -50,12 +50,26 @@ test.describe("대시보드", () => {
     await expect(page.getByText("조달 기준 관리", { exact: true })).toBeVisible();
   });
 
-  test("공정별 사용량 학습 화면을 독립적으로 유지한다", async ({ page }) => {
+  test("공정별 사용량에서 3FAB 전체 비교와 Fab별 3D를 전환한다", async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto(`${BASE}/usage`);
     await expect(page).toHaveURL(`${BASE}/usage`);
     await expect(page.getByRole("main").getByText("공정별 사용량", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("3FAB USAGE COMPARISON", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "전체 3FAB", exact: true })).toBeVisible();
+    await expect(page.getByLabel("공정별 사용량 Fab 범위").getByRole("button")).toHaveText(["M20 · HBM", "M21 · DRAM", "M22 · NAND", "전체 3FAB"]);
+    await expect(page.getByText("P01–P10 PROCESS DICTIONARY", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: /P01 산화막 Oxidation/ }).click();
+    await expect(page.getByText(/실리콘 표면에 균일한 절연막/)).toBeVisible();
+    await expect(page.locator("canvas")).toHaveCount(0);
+    await page.getByRole("button", { name: "M21 · DRAM", exact: true }).click();
+    await expect(page.getByTestId("fab-daily-materials")).toContainText("M21 · DRAM");
+    await expect(page.getByTestId("fab-daily-materials")).toContainText("계획 일사용량");
     await expect(page.locator("canvas")).toHaveCount(1);
+    await expect(page.getByText("M21 · DRAM 공정 3D", { exact: true })).toBeVisible();
+    await expect(page.getByRole("main")).not.toContainText("학습");
+    await page.goto(`${BASE}/usage?fab=M22`);
+    await expect(page.getByText("M22 · NAND 공정 3D", { exact: true })).toBeVisible({ timeout: 15_000 });
   });
 
   test("M20 규칙형 에이전트가 발주·WMS·MES·공정을 조율하고 물리 확인으로 완주한다", async ({ page }) => {
@@ -114,19 +128,58 @@ test.describe("대시보드", () => {
   test("Campus Twin에서 전체 창고와 실제 TransferOrder 피드를 표시한다", async ({ page }) => {
     const runtimeErrors: string[] = [];
     page.on("pageerror", (error) => runtimeErrors.push(error.message));
-    page.on("console", (message) => { if (message.type() === "error") runtimeErrors.push(message.text()); });
+    page.on("console", (message) => {
+      if (message.type() === "error") runtimeErrors.push(message.text());
+    });
     await loginAsAdmin(page);
     await page.goto(`${BASE}/campus`);
     await expect(page.getByRole("heading", { name: "Campus Material Twin" })).toBeVisible({ timeout: 15_000 });
     const campusCanvas = page.locator("canvas").first();
     await expect(campusCanvas).toBeVisible();
+    const campusFallback = page.getByTestId("campus-scene-fallback");
+    const isCampusContextLost = () => campusCanvas.evaluate((canvas) => {
+      const campusWebGlCanvas = canvas as HTMLCanvasElement;
+      const gl = campusWebGlCanvas.getContext("webgl2") ?? campusWebGlCanvas.getContext("webgl");
+      return gl?.isContextLost() ?? true;
+    });
+    const hasUsableCampusScene = async () => !(await isCampusContextLost()) || await campusFallback.isVisible().catch(() => false);
     await page.waitForTimeout(3_000);
     expect(runtimeErrors, runtimeErrors.join("\n")).toEqual([]);
+    await expect.poll(hasUsableCampusScene).toBe(true);
     await expect(page.getByText("ALL WAREHOUSES", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: /MWH-01 · 자동화 자재창고/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /MWH-02 · 항온 자재창고/ })).toBeVisible();
     await expect(page.getByText(/TRANSFER FEED ·/)).toBeVisible();
     await expect(page.getByText("모든 자재 동시 표시 · 완료 후 재순환 없음", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "전체 자재", exact: true })).toHaveClass(/bg-\[#20262D\]/);
+    await expect(page.getByLabel("Campus 추적 자재")).toHaveValue("");
+    await expect(page).not.toHaveURL(/material=/);
+    await expect(page.getByText("ALL MATERIALS SUMMARY", { exact: true })).toBeVisible();
+    await expect(page.getByText("수량 단위 혼합 없이 건수와 종류로 집계", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "일시정지", exact: true }).click();
+    await expect(page.getByText("PAUSED", { exact: true })).toBeVisible();
+    const sceneTime = page.getByTestId("scene-reference-time");
+    const pausedTime = await sceneTime.textContent();
+    await page.waitForTimeout(1_200);
+    await expect(sceneTime).toHaveText(pausedTime ?? "");
+    expect(runtimeErrors, runtimeErrors.join("\n")).toEqual([]);
+    await expect.poll(hasUsableCampusScene).toBe(true);
+    await page.getByRole("button", { name: "현재로 복귀", exact: true }).click();
+    await expect(page.getByText("LIVE", { exact: true })).toBeVisible();
+    await page.waitForTimeout(1_000);
+    expect(runtimeErrors, runtimeErrors.join("\n")).toEqual([]);
+    await expect.poll(hasUsableCampusScene).toBe(true);
+
+    const materialSelect = page.getByLabel("Campus 추적 자재");
+    await materialSelect.selectOption({ index: 1 });
+    await expect(materialSelect).not.toHaveValue("");
+    await expect(page.getByText("SELECTED MATERIAL", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/material=/);
+    await expect(campusCanvas).toBeVisible();
+    await page.waitForTimeout(2_000);
+    expect(runtimeErrors, runtimeErrors.join("\n")).toEqual([]);
+    await expect.poll(hasUsableCampusScene).toBe(true);
   });
 
   test("창고 Capacity와 표준 시설 순서가 표시된다", async ({ page }) => {
@@ -195,6 +248,9 @@ test.describe("대시보드", () => {
     await expect(page.getByText("Day 8", { exact: true })).toBeVisible();
     await expect(page.getByText("M20 규칙형 운영 에이전트 1차", { exact: true })).toBeVisible();
     await expect(page.getByText("Day 9", { exact: true })).toBeVisible();
+    await expect(page.getByText("Campus 전체 자재·Scene Clock", { exact: true })).toBeVisible();
+    await expect(page.getByText("Day 10", { exact: true })).toBeVisible();
+    await expect(page.getByText("M20=HBM, M21=DRAM, M22=NAND를 운영 매핑으로 명시하고 제품은 Fab의 하위 속성으로 정리", { exact: true })).toBeVisible();
     await expect(page.getByText("운영 데이터 통합과 자재 허브", { exact: true })).toBeVisible();
     await expect(page.getByText("Day 6", { exact: true })).toBeVisible();
   });

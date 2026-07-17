@@ -1,23 +1,41 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { ContactShadows, Environment, Lightformer, Line, OrbitControls, Text } from "@react-three/drei";
+import { Line, OrbitControls, Text } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import type { CampusMaterialFlow, CampusFacility, MaterialFlowFab } from "@/lib/material-flow";
 import type { FabScope } from "@/components/ControlContext";
-import { CampusFabProcessModel, CATEGORY_COLOR } from "@/components/ProcessFlow3D";
 import type { FabId } from "@/lib/fab-domain";
 import type { UsageWarehouse } from "@/lib/usage-twin-data";
 import { positionForTransfer, POSITION_MODE_LABEL, type LiveTransfer } from "@/lib/live-transfer";
+import type { SceneClockMode } from "@/lib/scene-clock";
+
+const CATEGORY_COLOR: Record<string, string> = {
+  GAS: "#B91C1C",
+  CHM: "#1D4ED8",
+  CSM: "#7C3AED",
+  UTL: "#059669",
+  PKG: "#64748B",
+};
+
+const CAMPUS_EQUIPMENT_FALLBACK: Record<FabId, Record<string, number>> = {
+  M20: { P01: 4, P02: 6, P03: 10, P04: 8, P05: 4, P06: 6, P07: 6, P08: 10, P09: 6, P10: 8 },
+  M21: { P01: 6, P02: 8, P03: 8, P04: 10, P05: 6, P06: 10, P07: 8, P08: 4, P09: 8, P10: 4 },
+  M22: { P01: 6, P02: 12, P03: 6, P04: 12, P05: 4, P06: 10, P07: 6, P08: 4, P09: 6, P10: 4 },
+};
 
 type SceneProps = {
-  material: CampusMaterialFlow;
+  material: CampusMaterialFlow | null;
+  materials: CampusMaterialFlow[];
   fabScope: FabScope;
   facilities: CampusFacility[];
   warehouses: UsageWarehouse[];
   transfers: LiveTransfer[];
+  clockMode: SceneClockMode;
+  serverOffsetMs: number;
+  pausedAtMs: number | null;
   equipmentCounts: Partial<Record<FabId, Record<string, number>>>;
   onFacilitySelect: (facilityId: string) => void;
   onWarehouseSelect: (warehouseCode: string) => void;
@@ -33,10 +51,11 @@ function warehousePosition(index: number, count: number): [number, number, numbe
 
 function MovingCrane({ width = 2.3, operating }: { width?: number; operating: boolean }) {
   const ref = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
+  useFrame(({ clock, invalidate }) => {
     if (!ref.current || !operating) return;
     ref.current.position.x = Math.sin(clock.elapsedTime * 0.72) * width;
     ref.current.position.y = 0.48 + (Math.sin(clock.elapsedTime * 1.15) + 1) * 0.34;
+    invalidate();
   });
   return (
     <group ref={ref}>
@@ -108,7 +127,7 @@ function WarehouseStructure({ warehouse, active, operating, color }: { warehouse
   </group>)}</group>;
 }
 
-function CampusWarehouse({ warehouse, position, active, operating, quantity, unit, color, onClick }: {
+function CampusWarehouse({ warehouse, position, active, operating, quantity, unit, color, allMaterialsMode, materialCount, onClick }: {
   warehouse: UsageWarehouse;
   position: [number, number, number];
   active: boolean;
@@ -116,6 +135,8 @@ function CampusWarehouse({ warehouse, position, active, operating, quantity, uni
   quantity: number;
   unit: string;
   color: string;
+  allMaterialsMode: boolean;
+  materialCount: number;
   onClick: () => void;
 }) {
   return (
@@ -124,9 +145,54 @@ function CampusWarehouse({ warehouse, position, active, operating, quantity, uni
       <WarehouseStructure warehouse={warehouse} active={active} operating={operating} color={color} />
       <Text position={[0, 2.65, 0]} fontSize={0.34} color={active ? color : "#53606B"} anchorX="center">{warehouse.code}</Text>
       <Text position={[0, 2.35, 0]} fontSize={0.13} color="#66727D" anchorX="center">{warehouse.name}</Text>
-      <Text position={[0, 2.12, 0]} fontSize={0.12} color={active ? color : "#8A949D"} anchorX="center">{active ? `SELECTED SKU · ${quantity.toLocaleString()} ${unit}` : `ALL MATERIALS · ${warehouse.utilization}%`}</Text>
+      <Text position={[0, 2.12, 0]} fontSize={0.12} color={active ? color : "#8A949D"} anchorX="center">{allMaterialsMode ? `ALL MATERIALS · ${materialCount} SKU · ${warehouse.utilization}%` : active ? `SELECTED SKU · ${quantity.toLocaleString()} ${unit}` : `ALL MATERIALS · ${warehouse.utilization}%`}</Text>
     </group>
   );
+}
+
+function CampusFabEquipment({ fabId, activeProcesses, equipmentCounts, color, onProcessClick }: {
+  fabId: FabId;
+  activeProcesses: string[];
+  equipmentCounts?: Record<string, number>;
+  color: string;
+  onProcessClick: (processCode: string) => void;
+}) {
+  const processCodes = ["P01", "P02", "P03", "P04", "P05", "P06", "P07", "P08", "P09", "P10"];
+  return <group>
+    {processCodes.map((processCode, index) => {
+      const column = index % 2;
+      const row = Math.floor(index / 2);
+      const x = column === 0 ? -1.55 : 1.55;
+      const z = (row - 2) * 1.65;
+      const actualCount = equipmentCounts?.[processCode] ?? CAMPUS_EQUIPMENT_FALLBACK[fabId][processCode];
+      const representativeCount = Math.min(3, Math.max(1, Math.ceil(actualCount / 12)));
+      const highlighted = activeProcesses.includes(processCode);
+      return <group key={processCode} position={[x, 0, z]} onClick={(event: ThreeEvent<MouseEvent>) => { event.stopPropagation(); onProcessClick(processCode); }}>
+        <mesh position={[0, 0.025, 0]}>
+          <boxGeometry args={[2.55, 0.05, 1.25]} />
+          <meshStandardMaterial color={highlighted ? color : "#9EABB6"} transparent opacity={highlighted ? 0.24 : 0.1} />
+        </mesh>
+        {Array.from({ length: representativeCount }, (_, toolIndex) => {
+          const toolX = (toolIndex - (representativeCount - 1) / 2) * 0.72;
+          if (fabId === "M21") return <mesh key={toolIndex} position={[toolX, 0.48, 0]}>
+            <cylinderGeometry args={[0.27, 0.32, 0.9, 8]} />
+            <meshStandardMaterial color={highlighted ? color : "#B9C4CD"} metalness={0.24} roughness={0.36} emissive={highlighted ? color : "#000000"} emissiveIntensity={highlighted ? 0.15 : 0} />
+          </mesh>;
+          if (fabId === "M22") return <group key={toolIndex} position={[toolX, 0, 0]}>
+            {[0.22, 0.52, 0.82].map((y) => <mesh key={y} position={[0, y, 0]}>
+              <boxGeometry args={[0.5, 0.22, 0.66]} />
+              <meshStandardMaterial color={highlighted ? color : "#AEB9C4"} metalness={0.18} roughness={0.42} />
+            </mesh>)}
+          </group>;
+          return <group key={toolIndex} position={[toolX, 0, 0]}>
+            <mesh position={[0, 0.48, 0]}><boxGeometry args={[0.52, 0.92, 0.64]} /><meshStandardMaterial color={highlighted ? color : "#BCC6CF"} metalness={0.28} roughness={0.34} /></mesh>
+            <mesh position={[0, 1.0, 0]}><boxGeometry args={[0.34, 0.12, 0.4]} /><meshStandardMaterial color={highlighted ? "#EA002C" : "#83909C"} emissive={highlighted ? "#EA002C" : "#000000"} emissiveIntensity={highlighted ? 0.35 : 0} /></mesh>
+          </group>;
+        })}
+        <Text position={[0, 1.34, 0]} fontSize={0.22} color={highlighted ? color : "#596672"} anchorX="center">{`${processCode} · ×${actualCount}`}</Text>
+      </group>;
+    })}
+  </group>;
 }
 
 function CampusFab({ facility, flow, active, equipmentCounts, onFacilityClick, onProcessClick }: {
@@ -141,22 +207,29 @@ function CampusFab({ facility, flow, active, equipmentCounts, onFacilityClick, o
   return (
     <group position={facility.position} onClick={(event: ThreeEvent<MouseEvent>) => { event.stopPropagation(); onFacilityClick(); }} onPointerEnter={() => { document.body.style.cursor = "pointer"; }} onPointerLeave={() => { document.body.style.cursor = ""; }}>
       <mesh position={[0, 0.035, 0]}><boxGeometry args={[6.2, 0.07, 9.4]} /><meshStandardMaterial color={active ? facility.color : "#AEB6BF"} transparent opacity={active ? 0.16 : 0.06} /></mesh>
-      <group scale={[0.31, 0.31, 0.24]} position={[0, 0.08, 0]}>
-        <CampusFabProcessModel fabId={fabId} highlightedProcesses={active ? flow.processCodes : []} equipmentCounts={equipmentCounts} onProcessClick={onProcessClick} showFoup />
-      </group>
+      <CampusFabEquipment fabId={fabId} activeProcesses={active ? flow.processCodes : []} equipmentCounts={equipmentCounts} color={facility.color} onProcessClick={onProcessClick} />
       <Line points={[[-3.1, 0.09, -4.7], [3.1, 0.09, -4.7], [3.1, 0.09, 4.7], [-3.1, 0.09, 4.7], [-3.1, 0.09, -4.7]]} color={facility.color} lineWidth={active ? 2 : 1} transparent opacity={active ? 0.65 : 0.2} />
       <Text position={[0, 0.11, -5.2]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.5} color={active ? facility.color : "#727A82"} anchorX="center">{facility.code} · {fabId === "M20" ? "HBM / TSV" : fabId === "M21" ? "DRAM CELL" : "3D NAND STACK"}</Text>
     </group>
   );
 }
 
-function TransferCarrier({ points, transfer, selected }: { points: [number, number, number][]; transfer: LiveTransfer; selected: boolean }) {
+function TransferCarrier({ points, transfer, emphasized, showLabel, clockMode, serverOffsetMs, pausedAtMs }: {
+  points: [number, number, number][];
+  transfer: LiveTransfer;
+  emphasized: boolean;
+  showLabel: boolean;
+  clockMode: SceneClockMode;
+  serverOffsetMs: number;
+  pausedAtMs: number | null;
+}) {
   const ref = useRef<THREE.Group>(null);
   const curve = useMemo(() => new THREE.CatmullRomCurve3(points.map((point) => new THREE.Vector3(...point)), false, "catmullrom", 0.08), [points]);
   const color = CATEGORY_COLOR[transfer.category] ?? "#64748B";
-  useFrame(() => {
+  useFrame(({ invalidate }) => {
     if (!ref.current) return;
-    const position = positionForTransfer(transfer, Date.now());
+    const nowMs = clockMode === "PAUSED" && pausedAtMs !== null ? pausedAtMs : Date.now() + serverOffsetMs;
+    const position = positionForTransfer(transfer, nowMs);
     if (position.mode === "TELEMETRY_LIVE" && position.telemetryPosition) {
       ref.current.position.set(position.telemetryPosition.x, position.telemetryPosition.y, position.telemetryPosition.z);
     } else {
@@ -164,48 +237,80 @@ function TransferCarrier({ points, transfer, selected }: { points: [number, numb
     }
     const tangent = curve.getTangent(position.progress);
     ref.current.rotation.y = Math.atan2(tangent.x, tangent.z);
+    if (clockMode === "LIVE") invalidate();
   });
-  const verifiedPosition = positionForTransfer(transfer, new Date(transfer.updatedAt).getTime());
+  const verifiedPosition = positionForTransfer(transfer, clockMode === "PAUSED" && pausedAtMs !== null ? pausedAtMs : Date.parse(transfer.updatedAt));
   const stateColor = verifiedPosition.mode === "TELEMETRY_LIVE" ? "#00B96B" : verifiedPosition.mode === "ETA_ESTIMATE" ? "#2563EB" : verifiedPosition.mode === "DELAYED" ? "#DC2626" : color;
   return <group ref={ref}>
-    <mesh castShadow><boxGeometry args={[0.3, 0.2, 0.42]} /><meshStandardMaterial color={color} emissive={stateColor} emissiveIntensity={selected ? 0.85 : 0.38} metalness={0.24} roughness={0.22} transparent opacity={selected ? 1 : 0.78} /></mesh>
+    <mesh castShadow><boxGeometry args={[0.3, 0.2, 0.42]} /><meshStandardMaterial color={color} emissive={stateColor} emissiveIntensity={emphasized ? 0.85 : 0.38} metalness={0.24} roughness={0.22} transparent opacity={emphasized ? 1 : 0.78} /></mesh>
     <mesh position={[0, 0.01, 0]} rotation={[Math.PI / 2, 0, 0]}><torusGeometry args={[0.24, 0.018, 8, 20]} /><meshStandardMaterial color={stateColor} emissive={stateColor} emissiveIntensity={2} /></mesh>
-    <Text position={[0, 0.34, 0]} fontSize={0.09} color={stateColor} anchorX="center">{transfer.materialCode} · {transfer.status}</Text>
-    <Text position={[0, 0.23, 0]} fontSize={0.065} color="#58636D" anchorX="center">{POSITION_MODE_LABEL[verifiedPosition.mode]}</Text>
+    {showLabel && <Text position={[0, 0.34, 0]} fontSize={0.09} color={stateColor} anchorX="center">{transfer.materialCode} · {transfer.status}</Text>}
+    {showLabel && <Text position={[0, 0.23, 0]} fontSize={0.065} color="#58636D" anchorX="center">{POSITION_MODE_LABEL[verifiedPosition.mode]}</Text>}
   </group>;
 }
 
-function CampusSceneContent({ material, fabScope, facilities, warehouses, transfers, equipmentCounts, onFacilitySelect, onWarehouseSelect, onProcessSelect }: SceneProps) {
+function StaticTransferMarker({ position, color, label, count }: { position: [number, number, number]; color: string; label: string; count: number }) {
+  return <group position={position}>
+    <mesh><boxGeometry args={[0.42, 0.22, 0.42]} /><meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.35} transparent opacity={0.86} /></mesh>
+    <Text position={[0, 0.3, 0]} fontSize={0.08} color={color} anchorX="center">{label} · {count}</Text>
+  </group>;
+}
+
+function CampusSceneContent({ material, materials, fabScope, facilities, warehouses, transfers, clockMode, serverOffsetMs, pausedAtMs, equipmentCounts, onFacilitySelect, onWarehouseSelect, onProcessSelect }: SceneProps) {
   const fabFacilities = facilities.filter((facility) => facility.role === "FAB");
-  const materialColor = CATEGORY_COLOR[material.category] ?? "#2563EB";
-  const sourceQuantity = new Map(material.sourceLocations.map((source) => [source.facilityId, source.quantity]));
+  const allMaterialsMode = material === null;
+  const displayMaterial = material ?? materials[0];
+  if (!displayMaterial) return null;
+  const materialColor = allMaterialsMode ? "#2563EB" : CATEGORY_COLOR[displayMaterial.category] ?? "#2563EB";
+  const sourceQuantity = new Map(displayMaterial.sourceLocations.map((source) => [source.facilityId, source.quantity]));
+  const warehouseMaterialCounts = new Map(warehouses.map((warehouse) => [
+    warehouse.code,
+    new Set(materials.filter((item) => item.sourceLocations.some((source) => source.facilityId === warehouse.code)).map((item) => item.materialId)).size,
+  ]));
   const warehousePositions = new Map(warehouses.map((warehouse, index) => [warehouse.code, warehousePosition(index, warehouses.length)]));
   const operatingWarehouses = new Set(transfers.filter((transfer) => transfer.status === "PICKING" || transfer.status === "STAGED").map((transfer) => transfer.fromFacilityId));
+  const movingTransfers = transfers.filter((transfer) => transfer.status === "IN_TRANSIT");
+  const staticGroups = [...transfers.filter((transfer) => transfer.status !== "IN_TRANSIT" && transfer.status !== "CANCELLED").reduce((groups, transfer) => {
+    const key = `${transfer.fromFacilityId}:${transfer.fabId}:${transfer.status}`;
+    const current = groups.get(key) ?? { transfer, count: 0 };
+    current.count += 1;
+    groups.set(key, current);
+    return groups;
+  }, new Map<string, { transfer: LiveTransfer; count: number }>()).values()];
+  const aggregateFlow = (fabId: FabId) => {
+    const base = displayMaterial.fabs.find((item) => item.fabId === fabId)!;
+    if (!allMaterialsMode) return base;
+    return {
+      ...base,
+      dailyUsage: materials.some((item) => (item.fabs.find((fab) => fab.fabId === fabId)?.dailyUsage ?? 0) > 0) ? 1 : 0,
+      processCodes: [...new Set(materials.flatMap((item) => item.fabs.find((fab) => fab.fabId === fabId)?.processCodes ?? []))],
+    };
+  };
 
   return (
     <>
       <color attach="background" args={["#E8EDF2"]} />
       <ambientLight intensity={0.55} color="#EDF4FF" />
-      <directionalLight position={[9, 18, -5]} intensity={1.8} color="#FFF7EA" castShadow shadow-mapSize={[2048, 2048]} />
-      <Environment resolution={128}><Lightformer intensity={2.4} form="rect" position={[0, 16, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[42, 34, 1]} /><Lightformer intensity={1.1} form="rect" position={[-20, 8, 0]} rotation={[0, Math.PI / 2, 0]} scale={[18, 12, 1]} color="#DDEBFF" /></Environment>
+      <hemisphereLight intensity={1.15} color="#F6FAFF" groundColor="#AEB8C2" />
+      <directionalLight position={[9, 18, -5]} intensity={1.8} color="#FFF7EA" />
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, -1]}><planeGeometry args={[44, 42]} /><meshStandardMaterial color="#DDE3E8" roughness={0.72} metalness={0.05} /></mesh>
       <gridHelper args={[44, 44, "#AAB4BE", "#CDD4DB"]} position={[0, 0, -1]} />
-      <ContactShadows position={[0, 0.01, -1]} scale={46} blur={2.2} opacity={0.28} far={14} resolution={512} />
 
       {warehouses.map((warehouse) => {
         const position = warehousePositions.get(warehouse.code)!;
         const quantity = sourceQuantity.get(warehouse.code) ?? 0;
-        const activeSource = quantity > 0;
+        const materialCount = warehouseMaterialCounts.get(warehouse.code) ?? 0;
+        const activeSource = allMaterialsMode ? materialCount > 0 : quantity > 0;
         const feed: [number, number, number][] = [[position[0], 0.12, position[2] + 1.8], [position[0], 0.12, -3], [0, 0.12, -2]];
         return <group key={warehouse.code}>
           <Line points={feed} color={activeSource ? materialColor : "#8D99A4"} lineWidth={activeSource ? 2.5 : 0.7} transparent opacity={activeSource ? 0.8 : 0.15} />
-          <CampusWarehouse warehouse={warehouse} position={position} active={activeSource} operating={operatingWarehouses.has(warehouse.code)} quantity={quantity} unit={material.unit} color={materialColor} onClick={() => onWarehouseSelect(warehouse.code)} />
+          <CampusWarehouse warehouse={warehouse} position={position} active={activeSource} operating={clockMode === "LIVE" && operatingWarehouses.has(warehouse.code)} quantity={quantity} unit={displayMaterial.unit} color={materialColor} allMaterialsMode={allMaterialsMode} materialCount={materialCount} onClick={() => onWarehouseSelect(warehouse.code)} />
         </group>;
       })}
 
       {fabFacilities.map((facility) => {
         const x = facility.position[0];
-        const flow = material.fabs.find((item) => item.fabId === facility.fabId)!;
+        const flow = aggregateFlow(facility.fabId!);
         const activeFab = fabScope === "CAMPUS" || fabScope === facility.fabId;
         const branch: [number, number, number][] = [[0, 0.13, -2], [x, 0.13, -1], [x, 0.13, 2.3]];
         return <group key={facility.id}>
@@ -213,7 +318,7 @@ function CampusSceneContent({ material, fabScope, facilities, warehouses, transf
         </group>;
       })}
 
-      {transfers.map((transfer, index) => {
+      {movingTransfers.map((transfer, index) => {
         const origin = warehousePositions.get(transfer.fromFacilityId);
         const destination = fabFacilities.find((facility) => facility.fabId === transfer.fabId);
         if (!origin || !destination || transfer.status === "CANCELLED") return null;
@@ -226,21 +331,118 @@ function CampusSceneContent({ material, fabScope, facilities, warehouses, transf
           [destination.position[0] + laneOffset, laneY, -1],
           [destination.position[0] + laneOffset, laneY, 2.4],
         ];
-        return <TransferCarrier key={transfer.id} points={route} transfer={transfer} selected={transfer.materialId === material.materialId} />;
+        return <TransferCarrier key={transfer.id} points={route} transfer={transfer} emphasized={allMaterialsMode || transfer.materialId === displayMaterial.materialId} showLabel={!allMaterialsMode} clockMode={clockMode} serverOffsetMs={serverOffsetMs} pausedAtMs={pausedAtMs} />;
+      })}
+
+      {staticGroups.map(({ transfer, count }, index) => {
+        const origin = warehousePositions.get(transfer.fromFacilityId);
+        const destination = fabFacilities.find((facility) => facility.fabId === transfer.fabId);
+        if (!origin || !destination) return null;
+        const atDestination = transfer.status === "RECEIVED" || transfer.status === "DELIVERED";
+        const position: [number, number, number] = atDestination
+          ? [destination.position[0] + ((index % 5) - 2) * 0.3, 0.45, 2.3]
+          : [origin[0] + ((index % 5) - 2) * 0.3, 0.45, origin[2] + 2.1];
+        return <StaticTransferMarker key={`${transfer.fromFacilityId}-${transfer.fabId}-${transfer.status}`} position={position} color={CATEGORY_COLOR[transfer.category] ?? "#64748B"} label={transfer.status} count={count} />;
       })}
 
       {fabFacilities.map((facility) => {
-        const flow = material.fabs.find((item) => item.fabId === facility.fabId)!;
+        const flow = aggregateFlow(facility.fabId!);
         const active = fabScope === "CAMPUS" || fabScope === facility.fabId;
         return <CampusFab key={facility.id} facility={facility} flow={flow} active={active} equipmentCounts={facility.fabId ? equipmentCounts[facility.fabId] : undefined} onFacilityClick={() => onFacilitySelect(facility.id)} onProcessClick={(processCode) => facility.fabId && onProcessSelect(facility.fabId, processCode)} />;
       })}
 
-      <Text position={[0, 0.04, -2.65]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.24} color="#53606B">SELECTED SKU MATERIAL LOGISTICS TRUNK</Text>
+      <Text position={[0, 0.04, -2.65]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.24} color="#53606B">{allMaterialsMode ? "ALL MATERIALS LOGISTICS TRUNK" : "SELECTED SKU MATERIAL LOGISTICS TRUNK"}</Text>
       <OrbitControls makeDefault enableDamping dampingFactor={0.08} minDistance={10} maxDistance={58} maxPolarAngle={Math.PI / 2.08} />
     </>
   );
 }
 
+function CampusSceneFallback({ material, materials, warehouses, transfers, equipmentCounts, onRetry }: SceneProps & { onRetry: () => void }) {
+  const selectedLabel = material ? `${material.code} · ${material.name}` : `전체 자재 ${materials.length}종`;
+  return <div className="flex h-full flex-col bg-[#E8EDF2] p-5" data-testid="campus-scene-fallback">
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <div className="text-[10px] font-black uppercase tracking-[0.12em] text-[#596672]">Campus operational scene</div>
+        <div className="mt-1 text-sm font-black text-[#20262D]">{selectedLabel}</div>
+        <div className="mt-1 text-[10px] text-[#6D7882]">WebGL 자동 복구 대기 중 · 운영 데이터 장면은 계속 표시</div>
+      </div>
+      <button type="button" onClick={onRetry} className="border border-[#8DA0B2] bg-white px-3 py-2 text-[10px] font-black text-[#40505E]">3D 다시 시도</button>
+    </div>
+
+    <div className="mt-5 rounded border border-[#91A1AE] bg-white/80 p-4">
+      <div className="text-center text-[10px] font-black tracking-[0.1em] text-[#485765]">1WMS · ALL MATERIAL WAREHOUSES</div>
+      <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+        {warehouses.map((warehouse) => {
+          const materialCount = materials.filter((item) => item.sourceLocations.some((location) => location.facilityId === warehouse.code)).length;
+          return <div key={warehouse.code} className="border border-[#C8D1D9] bg-[#F7F9FB] px-3 py-2">
+            <div className="text-[10px] font-black text-[#33414E]">{warehouse.code}</div>
+            <div className="mt-1 truncate text-[9px] text-[#6C7883]">{warehouse.name}</div>
+            <div className="mt-1 font-mono text-[9px] font-bold text-[#1D5FBF]">{materialCount} SKU · {warehouse.utilization}%</div>
+          </div>;
+        })}
+      </div>
+    </div>
+
+    <div className="mx-auto h-8 w-px bg-[#667785]" />
+    <div className="grid flex-1 grid-cols-3 gap-3">
+      {(["M20", "M21", "M22"] as FabId[]).map((fabId) => {
+        const processCount = new Set(materials.flatMap((item) => item.fabs.find((fab) => fab.fabId === fabId)?.processCodes ?? [])).size;
+        const equipmentTotal = Object.values(equipmentCounts[fabId] ?? CAMPUS_EQUIPMENT_FALLBACK[fabId]).reduce((sum, count) => sum + count, 0);
+        const transferCount = transfers.filter((transfer) => transfer.fabId === fabId).length;
+        return <div key={fabId} className="relative border-2 bg-white/85 p-4" style={{ borderColor: fabId === "M20" ? "#EA002C" : fabId === "M21" ? "#2F75C9" : "#8B3FD6" }}>
+          <div className="text-base font-black text-[#20262D]">{fabId}</div>
+          <div className="mt-1 text-[9px] font-bold text-[#6D7882]">{fabId === "M20" ? "HBM / TSV" : fabId === "M21" ? "DRAM CELL" : "3D NAND STACK"}</div>
+          <div className="mt-4 grid gap-2 text-[10px]">
+            <div className="flex justify-between"><span>연결 공정</span><strong>{processCount}개</strong></div>
+            <div className="flex justify-between"><span>장비 원장</span><strong>{equipmentTotal}대</strong></div>
+            <div className="flex justify-between"><span>TransferOrder</span><strong>{transferCount}건</strong></div>
+          </div>
+        </div>;
+      })}
+    </div>
+  </div>;
+}
+
 export default function CampusScene3D(props: SceneProps) {
-  return <Canvas frameloop="always" shadows dpr={[1, 1.6]} camera={{ position: [23, 25, 29], fov: 43, near: 0.1, far: 150 }} gl={{ antialias: true, powerPreference: "high-performance", toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.06 }}><CampusSceneContent {...props} /></Canvas>;
+  const [rendererVersion, setRendererVersion] = useState(0);
+  const [contextLost, setContextLost] = useState(false);
+  const recoveryAttempts = useRef(0);
+
+  const retry = () => {
+    recoveryAttempts.current = 0;
+    setContextLost(false);
+    setRendererVersion((version) => version + 1);
+  };
+
+  return <div className="relative h-full overflow-hidden bg-[#E8EDF2]">
+    {contextLost && <div className="absolute inset-0 z-10"><CampusSceneFallback {...props} onRetry={retry} /></div>}
+    <Canvas
+      key={rendererVersion}
+      frameloop="demand"
+      dpr={1}
+      camera={{ position: [23, 25, 29], fov: 43, near: 0.1, far: 150 }}
+      gl={{ antialias: true, alpha: false, powerPreference: "default", toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.06 }}
+      style={{ opacity: contextLost ? 0 : 1, pointerEvents: contextLost ? "none" : "auto" }}
+      onCreated={({ gl, invalidate }) => {
+        const canvas = gl.domElement;
+        canvas.addEventListener("webglcontextlost", (event) => {
+          event.preventDefault();
+          setContextLost(true);
+          if (recoveryAttempts.current === 0) {
+            recoveryAttempts.current = 1;
+            window.setTimeout(() => {
+              setRendererVersion((version) => version + 1);
+              setContextLost(false);
+            }, 250);
+          }
+        });
+        canvas.addEventListener("webglcontextrestored", () => {
+          setContextLost(false);
+          invalidate();
+        });
+      }}
+    >
+      <CampusSceneContent {...props} />
+    </Canvas>
+  </div>;
 }

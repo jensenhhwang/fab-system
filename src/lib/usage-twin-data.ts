@@ -5,6 +5,7 @@ export type UsageTwinMaterial = {
   id: string;
   code: string;
   name: string;
+  unit: string;
   category: string;
   processes: string[];
   products: string[];
@@ -61,6 +62,7 @@ export async function getUsageTwinData(): Promise<UsageTwinData> {
         id: usage.materialId,
         code: usage.material.code,
         name: usage.material.name,
+        unit: usage.material.unit,
         category: usage.material.category,
         processes: [],
         products: [],
@@ -85,6 +87,7 @@ export async function getUsageTwinData(): Promise<UsageTwinData> {
       id: inventory.materialId,
       code: inventory.material.code,
       name: inventory.material.name,
+      unit: inventory.material.unit,
       category: inventory.material.category,
       processes: [],
       products: [],

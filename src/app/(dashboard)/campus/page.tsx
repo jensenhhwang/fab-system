@@ -24,5 +24,5 @@ export default async function CampusPage() {
   ]);
   const controlTower = buildControlTowerSnapshot(inventories, usages);
   const snapshot = buildCampusMaterialFlowSnapshot(controlTower, inventories, usages, lots, units, allocations, events);
-  return <CampusClient snapshot={snapshot} usageTwin={usageTwin} initialTransfers={liveTransfers} equipmentCounts={{ M20: Object.fromEntries(m20Equipment.map((process) => [process.processCode, process.total])) }} />;
+  return <CampusClient snapshot={snapshot} usageTwin={usageTwin} initialTransfers={liveTransfers} initialServerTime={new Date().toISOString()} equipmentCounts={{ M20: Object.fromEntries(m20Equipment.map((process) => [process.processCode, process.total])) }} />;
 }

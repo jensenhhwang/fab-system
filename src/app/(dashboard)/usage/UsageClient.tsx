@@ -6,6 +6,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { PROCESSES } from "@/lib/processes";
 import { FAB_IDS, type FabId } from "@/lib/fab-domain";
+import { getProcessGuide } from "@/lib/process-guide";
 import { buildTwinHref, type CameraPreset, type TwinMode } from "@/lib/twin-navigation";
 
 const ProcessFlow3D = dynamic(() => import("@/components/ProcessFlow3D"), { ssr: false });
@@ -28,8 +29,12 @@ const FAB_PRODUCT: Record<FabId, "HBM" | "DRAM" | "NAND"> = {
   M20: "HBM", M21: "DRAM", M22: "NAND",
 };
 
+const PRODUCT_FAB: Record<"HBM" | "DRAM" | "NAND", FabId> = {
+  HBM: "M20", DRAM: "M21", NAND: "M22",
+};
+
 type Material = {
-  id: string; code: string; name: string; category: string;
+  id: string; code: string; name: string; unit: string; category: string;
   processes: string[]; products: string[];
   usages: { proc: string; product: string; qty: number; actualQty: number }[];
   inventory: { quantity: number; dailyUsage: number; doh: number | null; unit: string } | null;
@@ -59,12 +64,12 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 }
 
 export default function UsageClient({
-  materials, warehouseLinks = [], warehouses = [], equipmentCounts = {},
+  materials, warehouseLinks = [], warehouses = [], equipmentByFab,
 }: {
   materials: Material[];
   warehouseLinks?: WarehouseLink[];
   warehouses?: WarehouseInfo[];
-  equipmentCounts?: Record<string, number>;
+  equipmentByFab: Record<FabId, Record<string, number>>;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -76,10 +81,11 @@ export default function UsageClient({
   const [hoveredMat, setHoveredMat] = useState<Material | null>(null);
   const [pinnedMatId, setPinnedMatId] = useState<string | null>(materialParam);
   const [selectedProc, setSelectedProc] = useState<string | null>(() => searchParams.get("process"));
-  const [filterProduct, setFilterProduct] = useState<"ALL" | "HBM" | "DRAM" | "NAND">(() => twinFab ? FAB_PRODUCT[twinFab] : "ALL");
+  const [selectedFab, setSelectedFab] = useState<"ALL" | FabId>(() => twinFab ?? "ALL");
   const [filterCat, setFilterCat] = useState<string>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const filterProduct = selectedFab === "ALL" ? "ALL" : FAB_PRODUCT[selectedFab];
 
   function handleSort(col: SortKey) {
     if (sortKey === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -94,11 +100,50 @@ export default function UsageClient({
     ? [selectedProc]
     : [];
 
-  const activeProcesses = [...new Set(materials.flatMap((m) => m.processes))];
+  const scopedMaterials = selectedFab === "ALL"
+    ? materials
+    : materials.filter((material) => material.products.includes(FAB_PRODUCT[selectedFab]));
+  const activeProcesses = [...new Set(scopedMaterials.flatMap((m) => m.processes))];
 
   const materialCounts = Object.fromEntries(
-    PROCESSES.map((p) => [p.code, materials.filter((m) => m.processes.includes(p.code)).length])
+    PROCESSES.map((p) => [p.code, scopedMaterials.filter((m) => m.processes.includes(p.code)).length])
   );
+
+  const fabSummaries = FAB_IDS.map((fabId) => {
+    const product = FAB_PRODUCT[fabId];
+    const fabMaterials = materials.filter((material) => material.products.includes(product));
+    const usages = fabMaterials.flatMap((material) => material.usages.filter((usage) => usage.product === product));
+    const equipmentTotal = Object.values(equipmentByFab[fabId]).reduce((sum, count) => sum + count, 0);
+    return {
+      fabId,
+      product,
+      materialCount: fabMaterials.length,
+      processCount: new Set(usages.map((usage) => usage.proc)).size,
+      planLinkCount: usages.length,
+      actualLinkCount: usages.filter((usage) => usage.actualQty > 0).length,
+      equipmentTotal,
+    };
+  });
+  const selectedGuide = selectedProc ? getProcessGuide(selectedProc, selectedFab === "ALL" ? null : selectedFab) : null;
+  const guideMaterials = selectedProc ? scopedMaterials.filter((material) => material.usages.some((usage) => (
+    usage.proc === selectedProc && (selectedFab === "ALL" || usage.product === FAB_PRODUCT[selectedFab])
+  ))) : [];
+  const guideEquipment = selectedProc ? (selectedFab === "ALL" ? FAB_IDS : [selectedFab]).map((fabId) => ({
+    fabId,
+    count: equipmentByFab[fabId][selectedProc] ?? null,
+  })) : [];
+  const fabDailyMaterials = selectedFab === "ALL" ? [] : materials
+    .map((material) => {
+      const usages = material.usages.filter((usage) => usage.product === FAB_PRODUCT[selectedFab]);
+      return {
+        material,
+        processCodes: [...new Set(usages.map((usage) => usage.proc))],
+        plannedDaily: usages.reduce((sum, usage) => sum + usage.qty, 0) / 30,
+        actualDaily: usages.reduce((sum, usage) => sum + usage.actualQty, 0) / 30,
+      };
+    })
+    .filter((row) => row.plannedDaily > 0 || row.actualDaily > 0)
+    .sort((a, b) => b.plannedDaily - a.plannedDaily);
 
   const filteredMaterials = materials
     .filter((m) => {
@@ -132,7 +177,22 @@ export default function UsageClient({
         </div>
         <div className="text-2xl font-bold" style={{ color: "var(--text-1)", letterSpacing: "-0.025em" }}>공정별 사용량</div>
         <div className="text-sm mt-1" style={{ color: "var(--text-3)" }}>
-          자재에 커서를 올리면 해당 공정이 흐름도에 하이라이트됩니다
+          Fab·공정·자재별 계획 사용량과 최근 30일 실제 소비를 비교합니다
+        </div>
+      </div>
+
+      <div className="mb-5 grid gap-px overflow-hidden rounded-xl border border-[#DDE2E7] bg-[#DDE2E7] md:grid-cols-3">
+        <Link href="/" className="bg-white px-4 py-3 hover:bg-[#F8FAFC]">
+          <div className="text-[9px] font-black uppercase tracking-[0.1em] text-[#8A929A]">Control Tower · 조치</div>
+          <div className="mt-1 text-xs font-black text-[#303840]">부족·지연·우선순위 판단</div>
+        </Link>
+        <Link href="/campus" className="bg-white px-4 py-3 hover:bg-[#F8FAFC]">
+          <div className="text-[9px] font-black uppercase tracking-[0.1em] text-[#8A929A]">Digital Twin · 추적</div>
+          <div className="mt-1 text-xs font-black text-[#303840]">Lot·HU·이송의 물리 위치 확인</div>
+        </Link>
+        <div className="bg-[#20262D] px-4 py-3 text-white">
+          <div className="text-[9px] font-black uppercase tracking-[0.1em] text-[#B9C3CC]">Process Usage · 분석</div>
+          <div className="mt-1 text-xs font-black">계획·실사용·차이 원인 분석</div>
         </div>
       </div>
 
@@ -156,14 +216,103 @@ export default function UsageClient({
         </div>
       )}
 
+      <div className="mb-5 flex flex-wrap items-center gap-2 rounded-xl border border-[#D8DDE2] bg-white p-2" aria-label="공정별 사용량 Fab 범위">
+        <span className="px-2 text-[10px] font-black uppercase tracking-[0.08em] text-[#8A929A]">FAB SCOPE</span>
+        {FAB_IDS.map((fabId) => (
+          <button
+            key={fabId}
+            type="button"
+            onClick={() => { setSelectedFab(fabId); setSelectedProc(null); }}
+            className={`rounded-lg px-4 py-2 text-[11px] font-black ${selectedFab === fabId ? "text-white" : "bg-[#F2F4F6] text-[#59636D]"}`}
+            style={selectedFab === fabId ? { background: PRODUCT_COLORS[FAB_PRODUCT[fabId]] } : undefined}
+          >
+            {fabId} · {FAB_PRODUCT[fabId]}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => { setSelectedFab("ALL"); setSelectedProc(null); }}
+          className={`rounded-lg px-4 py-2 text-[11px] font-black ${selectedFab === "ALL" ? "bg-[#20262D] text-white" : "bg-[#F2F4F6] text-[#59636D]"}`}
+        >
+          전체 3FAB
+        </button>
+        <span className="ml-auto px-2 text-[10px] text-[#7B848D]">직접 진입은 전체 · Twin 연결은 선택 Fab 유지</span>
+      </div>
+
+      {selectedFab !== "ALL" && <section className="mb-5 overflow-hidden rounded-2xl border border-[#D8DDE2] bg-white" data-testid="fab-daily-materials">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E3E7EB] px-5 py-4">
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-[0.1em]" style={{ color: PRODUCT_COLORS[FAB_PRODUCT[selectedFab]] }}>{selectedFab} · {FAB_PRODUCT[selectedFab]}</div>
+            <h2 className="mt-1 text-sm font-black text-[#20262D]">Fab 자재 일사용량</h2>
+            <p className="mt-1 text-[10px] text-[#7A848D]">계획 월소요량 ÷ 30일 · 최근 30일 CONSUMED 실적 ÷ 30일</p>
+          </div>
+          <div className="rounded-lg bg-[#F3F5F7] px-3 py-2 text-[10px] font-bold text-[#59636D]">자재 {fabDailyMaterials.length}종 · 단위별 개별 표시</div>
+        </div>
+        <div className="max-h-[360px] overflow-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-[#F5F7F9] text-[10px] font-black text-[#7C858E]">
+              <tr><th className="px-5 py-3 text-left">자재</th><th className="px-4 py-3 text-left">적용 공정</th><th className="px-4 py-3 text-right">계획 일사용량</th><th className="px-5 py-3 text-right">30일 평균 실사용량</th></tr>
+            </thead>
+            <tbody>
+              {fabDailyMaterials.map(({ material: rowMaterial, processCodes, plannedDaily, actualDaily }) => <tr key={rowMaterial.id} className="border-t border-[#EDF0F2]">
+                <td className="px-5 py-3"><div className="font-mono text-[10px] text-[#8A929A]">{rowMaterial.code}</div><div className="mt-0.5 font-bold text-[#252B31]">{rowMaterial.name}</div></td>
+                <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{processCodes.map((processCode) => {
+                  const process = PROCESSES.find((item) => item.code === processCode);
+                  return <button key={processCode} type="button" onClick={() => setSelectedProc(processCode)} className="rounded px-1.5 py-1 text-[9px] font-black text-white" style={{ background: process?.color ?? "#7B8792" }}>{processCode} · {process?.name ?? "미등록"}</button>;
+                })}</div></td>
+                <td className="px-4 py-3 text-right font-mono font-black text-[#1D5FBF]">{plannedDaily.toLocaleString("ko-KR", { maximumFractionDigits: 1 })} <span className="text-[9px] font-bold text-[#8A929A]">{rowMaterial.unit}/일</span></td>
+                <td className="px-5 py-3 text-right font-mono font-black text-[#087A55]">{actualDaily > 0 ? <>{actualDaily.toLocaleString("ko-KR", { maximumFractionDigits: 1 })} <span className="text-[9px] font-bold text-[#719086]">{rowMaterial.unit}/일</span></> : <span className="rounded bg-[#FFF4D8] px-1.5 py-1 text-[9px] text-[#8A5A00]">최근 30일 없음</span>}</td>
+              </tr>)}
+              {!fabDailyMaterials.length && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-[#949BA2]">{selectedFab} 자재 사용량 원장이 미연결 상태입니다.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>}
+
+      <section className="mb-5 rounded-2xl border border-[#D8DDE2] bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><div className="text-[10px] font-black uppercase tracking-[0.1em] text-[#7D8790]">P01–P10 PROCESS DICTIONARY</div><h2 className="mt-1 text-sm font-black text-[#20262D]">공정 사전</h2><p className="mt-1 text-[10px] text-[#7A848D]">코드 선택 시 목적·설비·자재·관리지표를 표시합니다.</p></div>
+          <span className="rounded bg-[#FFF4D8] px-2 py-1 text-[9px] font-black text-[#8A5A00]">MODELED_BASELINE · 기준 공정 모델</span>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5 lg:grid-cols-10">
+          {PROCESSES.map((process) => <button
+            key={process.code}
+            type="button"
+            title={process.activities.join(" · ")}
+            onClick={() => setSelectedProc((current) => current === process.code ? null : process.code)}
+            className={`rounded-lg border p-2 text-left transition ${selectedProc === process.code ? "text-white" : "bg-[#F7F9FA] text-[#3F4952] hover:bg-white"}`}
+            style={selectedProc === process.code ? { background: process.color, borderColor: process.color } : { borderColor: "#DDE2E6" }}
+          >
+            <div className="font-mono text-[10px] font-black">{process.code}</div>
+            <div className="mt-1 text-[10px] font-black">{process.name}</div>
+            <div className={`mt-0.5 truncate text-[8px] ${selectedProc === process.code ? "text-white/75" : "text-[#929AA1]"}`}>{process.nameEn}</div>
+          </button>)}
+        </div>
+
+        {selectedGuide && <div className="mt-4 overflow-hidden rounded-xl border border-[#DDE2E6]">
+          <div className="flex flex-wrap items-center gap-3 px-4 py-3 text-white" style={{ background: selectedGuide.color }}>
+            <div className="font-mono text-lg font-black">{selectedGuide.code}</div><div><div className="text-sm font-black">{selectedGuide.name}</div><div className="text-[9px] text-white/75">{selectedGuide.nameEn} · {selectedGuide.key}</div></div>
+            <div className="ml-auto text-[9px] font-bold text-white/80">이전 {selectedGuide.previousCode ?? "START"} → 현재 → 다음 {selectedGuide.nextCode ?? "END"}</div>
+          </div>
+          <div className="grid gap-px bg-[#E3E7EA] md:grid-cols-2 lg:grid-cols-4">
+            <div className="bg-white p-4 lg:col-span-2"><div className="text-[9px] font-black text-[#8A929A]">공정 목적</div><p className="mt-2 text-[11px] leading-5 text-[#414A52]">{selectedGuide.purpose}</p><div className="mt-3 flex flex-wrap gap-1">{selectedGuide.activities.map((activity) => <span key={activity} className="rounded bg-[#EEF1F4] px-2 py-1 text-[9px] font-bold text-[#59636D]">{activity}</span>)}</div></div>
+            <div className="bg-white p-4"><div className="text-[9px] font-black text-[#8A929A]">대표 설비</div><div className="mt-2 space-y-1 text-[10px] font-bold text-[#414A52]">{selectedGuide.equipment.map((equipment) => <div key={equipment}>· {equipment}</div>)}</div><div className="mt-3 text-[9px] text-[#7A848D]">{guideEquipment.map((item) => `${item.fabId} ${item.count === null ? "미연결" : `${item.count}대`}`).join(" · ")}</div></div>
+            <div className="bg-white p-4"><div className="text-[9px] font-black text-[#8A929A]">대표 투입 자재</div><div className="mt-2 flex flex-wrap gap-1">{selectedGuide.materialInputs.map((input) => <span key={input} className="rounded bg-[#F2F7FF] px-2 py-1 text-[9px] font-bold text-[#1D5FBF]">{input}</span>)}</div><div className="mt-3 text-[9px] text-[#7A848D]">현재 원장 연결 {guideMaterials.length}종</div></div>
+            <div className="bg-white p-4"><div className="text-[9px] font-black text-[#8A929A]">주요 관리지표</div><div className="mt-2 space-y-1 text-[10px] font-bold text-[#414A52]">{selectedGuide.kpis.map((kpi) => <div key={kpi}>· {kpi}</div>)}</div></div>
+            <div className="bg-white p-4"><div className="text-[9px] font-black text-[#8A929A]">공정 산출물</div><p className="mt-2 text-[10px] leading-5 text-[#414A52]">{selectedGuide.output}</p></div>
+            <div className="bg-[#FFF9EA] p-4 lg:col-span-2"><div className="text-[9px] font-black text-[#8A5A00]">정합성 안내</div><p className="mt-2 text-[10px] leading-5 text-[#74521A]">{selectedGuide.fabNote}</p></div>
+          </div>
+        </div>}
+      </section>
+
       {/* 공정 흐름도 */}
       <div className="bg-white rounded-2xl p-5 mb-5" style={{ boxShadow: "var(--shadow-1)", border: "1px solid var(--border)" }}>
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm font-bold text-[#111]">
-            반도체 공정 흐름도 + 자재 공급망 (Fab Process &amp; Material Flow)
+            {selectedFab === "ALL" ? "3FAB USAGE COMPARISON" : `${selectedFab} · ${FAB_PRODUCT[selectedFab]} 공정 3D`}
           </div>
           <div className="text-[10px] text-[#999]">
-            자재 hover → 공정 하이라이트 · 공정 클릭 → 자재 필터 · 창고 hover → 공급 배관 강조
+            {selectedFab === "ALL" ? "수량 단위는 합산하지 않고 연결 건수로 비교" : "자재 hover → 공정 강조 · 공정 클릭 → 자재 필터"}
           </div>
         </div>
 
@@ -185,18 +334,49 @@ export default function UsageClient({
           </div>
         )}
 
-        {/* 3D 캔버스 + hoveredMat 패널을 relative 컨테이너 안에 묶어서 레이아웃 시프트 완전 차단 */}
-        <div className="relative" style={{ height: 480 }}>
+        {selectedFab === "ALL" ? (
+          <div className="grid gap-3 md:grid-cols-3">
+            {fabSummaries.map((summary) => {
+              const color = PRODUCT_COLORS[summary.product];
+              return <button
+                key={summary.fabId}
+                type="button"
+                onClick={() => setSelectedFab(summary.fabId)}
+                className="rounded-xl border-2 bg-[#F9FAFB] p-5 text-left transition hover:-translate-y-0.5 hover:bg-white"
+                style={{ borderColor: color }}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-lg font-black text-[#20262D]">{summary.fabId}</div>
+                    <div className="text-[10px] font-black" style={{ color }}>{summary.product}</div>
+                  </div>
+                  <span className={`rounded-full px-2 py-1 text-[9px] font-black ${summary.equipmentTotal > 0 ? "bg-[#E9F8F2] text-[#087A55]" : "bg-[#FFF4D8] text-[#8A5A00]"}`}>
+                    {summary.equipmentTotal > 0 ? "장비 원장 연결" : "장비 원장 미연결"}
+                  </span>
+                </div>
+                <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 text-[10px]">
+                  <div><div className="text-[#8A929A]">자재</div><div className="mt-1 font-mono text-base font-black text-[#303840]">{summary.materialCount}종</div></div>
+                  <div><div className="text-[#8A929A]">연결 공정</div><div className="mt-1 font-mono text-base font-black text-[#303840]">{summary.processCount}개</div></div>
+                  <div><div className="text-[#8A929A]">계획 연결</div><div className="mt-1 font-mono text-base font-black text-[#303840]">{summary.planLinkCount}건</div></div>
+                  <div><div className="text-[#8A929A]">30일 실적 확인</div><div className="mt-1 font-mono text-base font-black text-[#087A55]">{summary.actualLinkCount}건</div></div>
+                </div>
+                <div className="mt-4 border-t border-[#DDE2E7] pt-3 text-[10px] font-bold text-[#68737D]">
+                  장비 Capacity · {summary.equipmentTotal > 0 ? `${summary.equipmentTotal.toLocaleString()}대` : "미연결"} → 상세 보기
+                </div>
+              </button>;
+            })}
+          </div>
+        ) : <div className="relative" style={{ height: 480 }}>
           <Suspense fallback={<div className="w-full h-full bg-[#e8f0f8] rounded-2xl flex items-center justify-center text-sm text-[#999]">3D 로딩 중…</div>}>
             <ProcessFlow3D
-              fabId={twinFab ?? "M20"}
+              fabId={selectedFab}
               highlightedProcesses={highlightedProcesses}
               activeProcesses={activeProcesses}
               onProcessClick={(code) =>
                 setSelectedProc((prev) => (prev === code ? null : code))
               }
               onWarehouseClick={(code) => router.push(buildTwinHref(`/warehouse/${code}`, {
-                fabScope: twinFab ?? "CAMPUS", materialId: pinnedMatId,
+                fabScope: selectedFab, materialId: pinnedMatId,
                 facilityId: code, lotId: searchParams.get("lot"), handlingUnitId: searchParams.get("hu"),
                 alertId: searchParams.get("alert"), flowStep: searchParams.get("step"), mode: twinMode,
                 referenceTime: searchParams.get("time"), cameraPreset: "WMS_OVERVIEW",
@@ -204,7 +384,7 @@ export default function UsageClient({
               materialCounts={materialCounts}
               warehouses={warehouses}
               warehouseLinks={warehouseLinks}
-              equipmentCounts={equipmentCounts}
+              equipmentCounts={equipmentByFab[selectedFab]}
             />
           </Suspense>
 
@@ -234,29 +414,14 @@ export default function UsageClient({
               </div>
             )}
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* 자재 테이블 */}
       <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: "var(--shadow-1)", border: "1px solid var(--border)" }}>
         {/* 필터 */}
         <div className="px-5 py-3 flex items-center gap-3 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
-          <span className="text-[11px] font-semibold text-[#999]">제품</span>
-          {(["ALL", "HBM", "DRAM", "NAND"] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => setFilterProduct(p)}
-              className="text-[11px] font-bold px-2.5 py-1 rounded-full border transition-all"
-              style={
-                filterProduct === p
-                  ? { background: p === "ALL" ? "#111" : PRODUCT_COLORS[p], color: "#fff", borderColor: "transparent" }
-                  : { background: "#fff", color: "#555", borderColor: "#E8E8E8" }
-              }
-            >
-              {p}
-            </button>
-          ))}
-          <div className="w-px h-4 bg-[#E8E8E8]" />
+          <span className="rounded-full bg-[#20262D] px-2.5 py-1 text-[10px] font-black text-white">{selectedFab === "ALL" ? "전체 3FAB" : `${selectedFab} · ${filterProduct}`}</span>
           <span className="text-[11px] font-semibold text-[#999]">카테고리</span>
           {["ALL", "GAS", "CHM", "CSM", "UTL", "PKG"].map((c) => {
             const s = c !== "ALL" ? CATEGORY_STYLES[c] : null;
@@ -311,9 +476,10 @@ export default function UsageClient({
                   { col: "dailyUsage" as SortKey | null, label: "일소요량", align: "right" as const, px: "px-4" },
                   { col: "doh"        as SortKey | null, label: "보관일수", align: "left"  as const, px: "px-4" },
                   { col: null,                           label: "적용 공정", align: "left"  as const, px: "px-4" },
-                  { col: null,                           label: "제품",     align: "left"  as const, px: "px-4" },
+                  { col: null,                           label: "Fab / 생산제품", align: "left" as const, px: "px-4" },
                   { col: "totalQty"   as SortKey | null, label: "월 소요량", align: "right" as const, px: "px-4" },
                   { col: null,                           label: "30일 실사용", align: "right" as const, px: "px-4" },
+                  { col: null,                           label: "계획-실적 차이", align: "right" as const, px: "px-4" },
                 ]
               ).map(({ col, label, align, px }) => (
                 <th key={label} className={`${px} py-3`}>
@@ -342,6 +508,7 @@ export default function UsageClient({
               const actualQty = mat.usages
                 .filter((u) => filterProduct === "ALL" || u.product === filterProduct)
                 .reduce((sum, usage) => sum + usage.actualQty, 0);
+              const usageGap = totalQty - actualQty;
               const isHovered = hoveredMat?.id === mat.id;
               const isPinned = pinnedMat?.id === mat.id;
 
@@ -402,7 +569,7 @@ export default function UsageClient({
                               className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white"
                               style={{ background: isHovered || isPinned ? proc?.color ?? "#999" : "#cbd5e1" }}
                             >
-                              {p}
+                              {p} · {proc?.name ?? "미등록"}
                             </span>
                           );
                         })}
@@ -413,13 +580,17 @@ export default function UsageClient({
                     <div className="flex gap-1 flex-wrap">
                       {mat.products.length === 0 ? (
                         <span className="text-[9px] text-[#999]">전 제품</span>
-                      ) : mat.products.map((pr) => (
+                      ) : mat.products.toSorted((a, b) => {
+                        const aIndex = a === "HBM" || a === "DRAM" || a === "NAND" ? FAB_IDS.indexOf(PRODUCT_FAB[a]) : FAB_IDS.length;
+                        const bIndex = b === "HBM" || b === "DRAM" || b === "NAND" ? FAB_IDS.indexOf(PRODUCT_FAB[b]) : FAB_IDS.length;
+                        return aIndex - bIndex;
+                      }).map((pr) => (
                         <span
                           key={pr}
                           className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white"
                           style={{ background: PRODUCT_COLORS[pr] }}
                         >
-                          {pr}
+                          {pr === "HBM" || pr === "DRAM" || pr === "NAND" ? `${PRODUCT_FAB[pr]} · ${pr}` : pr}
                         </span>
                       ))}
                     </div>
@@ -429,8 +600,18 @@ export default function UsageClient({
                     {mat.inventory?.unit && <span className="text-[#999] font-normal text-[10px] ml-0.5">{mat.inventory.unit}</span>}
                   </td>
                   <td className="px-4 py-2.5 text-right font-bold tabular-nums text-[#087A55]">
-                    {actualQty.toLocaleString()}
-                    {mat.inventory?.unit && <span className="ml-0.5 text-[10px] font-normal text-[#6F8D82]">{mat.inventory.unit}</span>}
+                    {actualQty > 0 ? <>
+                      {actualQty.toLocaleString()}
+                      {mat.inventory?.unit && <span className="ml-0.5 text-[10px] font-normal text-[#6F8D82]">{mat.inventory.unit}</span>}
+                    </> : totalQty > 0
+                      ? <span className="rounded bg-[#FFF4D8] px-1.5 py-1 text-[9px] font-black text-[#8A5A00]">최근 30일 없음</span>
+                      : <span className="rounded bg-[#EEF1F4] px-1.5 py-1 text-[9px] font-black text-[#6F7881]">미연결</span>}
+                  </td>
+                  <td className={`px-4 py-2.5 text-right font-bold tabular-nums ${actualQty === 0 ? "text-[#9AA1A8]" : usageGap >= 0 ? "text-[#1D5FBF]" : "text-[#C51636]"}`}>
+                    {actualQty > 0 ? <>
+                      {usageGap > 0 ? "+" : ""}{usageGap.toLocaleString()}
+                      {mat.inventory?.unit && <span className="ml-0.5 text-[10px] font-normal">{mat.inventory.unit}</span>}
+                    </> : "—"}
                   </td>
                 </tr>
               );

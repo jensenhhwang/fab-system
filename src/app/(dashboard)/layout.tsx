@@ -33,7 +33,7 @@ const NAV = [
   ] },
   { group: "생산 실행", items: [
     { href: "/mes", label: "공정 실행 (MES)" },
-    { href: "/usage", label: "공정별 사용량 · 학습" },
+    { href: "/usage", label: "공정별 사용량" },
   ] },
   { group: "계획·시뮬레이션", items: [
     { href: "/erp-bridge", label: "계획·실행 브리지" },
