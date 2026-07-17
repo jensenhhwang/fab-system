@@ -7,6 +7,7 @@ import ProcessReadinessMatrix from "./ProcessReadinessMatrix";
 import WorkOrderTable from "./WorkOrderTable";
 import WorkOrderCreateModal from "./WorkOrderCreateModal";
 import PickingDrawer from "./PickingDrawer";
+import M20PilotFlowCard from "./M20PilotFlowCard";
 
 type Tab = "readiness" | "workorders" | "log";
 
@@ -38,6 +39,8 @@ export default function MesClient({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [pickingWo, setPickingWo] = useState<WorkOrderDoc | null>(null);
   const [logLoaded, setLogLoaded] = useState(false);
+  const [pilotCreating, setPilotCreating] = useState(false);
+  const [pilotError, setPilotError] = useState<string | null>(null);
 
   const TAB_LABELS: { key: Tab; label: string }[] = [
     { key: "readiness", label: "공정 준비 현황" },
@@ -70,6 +73,31 @@ export default function MesClient({
   const sortedLog = [...workOrders].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   );
+  const activePilotWorkOrder = workOrders.find((workOrder) => workOrder.scope === "M20_PILOT" && workOrder.status !== "DONE");
+  const pilotWorkOrder = activePilotWorkOrder ?? workOrders.find((workOrder) => workOrder.scope === "M20_PILOT");
+  const createPilot = async () => {
+    setPilotCreating(true);
+    setPilotError(null);
+    try {
+      const response = await fetch("/api/mes/workorders", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          processCode: "P10", product: "HBM", fabId: "M20", plannedQty: 1,
+          scope: "M20_PILOT", materialId: "PKG-001", requestId: crypto.randomUUID(),
+          note: "M20 대표 수직 흐름 · 자재 1종/Lot 1개/HU 1개",
+        }),
+      });
+      if (!response.ok) {
+        const payload = await response.json() as { error?: string };
+        setPilotError(payload.error ?? "M20 대표 작업지시 생성 실패");
+        return;
+      }
+      await refreshWorkOrders();
+      setTab("workorders");
+    } finally {
+      setPilotCreating(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -77,12 +105,10 @@ export default function MesClient({
         <h1 className="text-xl font-bold" style={{ color: "var(--text-1)" }}>
           공정 실행 관리 (MES)
         </h1>
-        <button
-          className="px-4 py-2 bg-[#0078D4] text-white text-sm font-medium rounded-lg hover:bg-blue-700"
-          onClick={() => setShowCreateModal(true)}
-        >
-          + 작업지시 생성
-        </button>
+        <div className="flex items-center gap-2">
+          {!activePilotWorkOrder && <button type="button" onClick={() => void createPilot()} disabled={pilotCreating} className="border border-[#0069B4] bg-[#F2F8FF] px-4 py-2 text-sm font-black text-[#0069B4] disabled:opacity-50">{pilotCreating ? "M20 원장 생성 중…" : "+ M20 에이전트 흐름"}</button>}
+          <button className="px-4 py-2 bg-[#0078D4] text-white text-sm font-medium rounded-lg hover:bg-blue-700" onClick={() => setShowCreateModal(true)}>+ 작업지시 생성</button>
+        </div>
       </div>
 
       <div className="flex gap-1 border-b" style={{ borderColor: "var(--border)" }}>
@@ -101,6 +127,7 @@ export default function MesClient({
       </div>
 
       <div>
+        {pilotError && <div className="mb-3 border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">{pilotError}</div>}
         {tab === "readiness" && (
           <ProcessReadinessMatrix
             onCellClick={(processCode, product) => {
@@ -117,11 +144,10 @@ export default function MesClient({
           />
         )}
         {tab === "workorders" && (
-          <WorkOrderTable
-            workOrders={workOrders}
-            onStatusChange={handleStatusChange}
-            onPickClick={(wo) => setPickingWo(wo)}
-          />
+          <div className="space-y-4">
+            {pilotWorkOrder && <M20PilotFlowCard workOrder={pilotWorkOrder} onPick={() => setPickingWo(pilotWorkOrder)} onRefresh={refreshWorkOrders} />}
+            <WorkOrderTable workOrders={workOrders} onStatusChange={handleStatusChange} onPickClick={(wo) => setPickingWo(wo)} />
+          </div>
         )}
         {tab === "log" && (
           <div className="bg-white rounded-2xl shadow-sm p-4">

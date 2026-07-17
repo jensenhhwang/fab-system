@@ -548,14 +548,20 @@ function statusLabel(status: VirtualStorageLocation["status"]) {
   return "가용";
 }
 
-export default function WarehouseDetailClient({ warehouse, locations, telemetry }: {
+export default function WarehouseDetailClient({ warehouse, locations, telemetry, initialMaterialId }: {
   warehouse: WarehouseCapacity;
   locations: VirtualStorageLocation[];
   telemetry: { metric: string; value: number; unit: string; status: string; measuredAt: string }[];
+  initialMaterialId?: string;
 }) {
+  const initialLocation = initialMaterialId
+    ? locations.find((item) => item.materialId === initialMaterialId)
+    : undefined;
+  // Twin에서 진입해도 선택 SKU로 전체 창고를 필터링하지 않는다.
+  // 전체 Capacity를 유지하면서 해당 SKU 위치만 선택 강조한다.
   const [query, setQuery] = useState("");
   const [zone, setZone] = useState("ALL");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialLocation?.id ?? null);
   const [statusOverrides, setStatusOverrides] = useState<Record<string, VirtualStorageLocation["status"]>>({});
   const [operationMessage, setOperationMessage] = useState("");
   const effectiveLocations = useMemo(() => locations.map((item) => statusOverrides[item.id] ? { ...item, status: statusOverrides[item.id] } : item), [locations, statusOverrides]);
@@ -683,7 +689,7 @@ export default function WarehouseDetailClient({ warehouse, locations, telemetry 
                 {selected.supplyLabel && <Detail label="공급 방식" value={selected.supplyLabel} />}
                 {selected.targetFacility && <Detail label="목적 공급시설" value={selected.targetFacility} accent={selected.relocationRequired} />}
                 <Detail label="보관 수량" value={selected.quantity != null ? `${selected.quantity.toLocaleString()} ${selected.unit}` : "—"} />
-                <Detail label="보관일수" value={selected.doh != null ? `${selected.doh.toFixed(1)}일` : "—"} />
+                <Detail label="보관일수" value={selected.doh != null ? `${selected.doh.toFixed(1)}일` : "수요 미배정"} />
                 <Detail label="로트번호" value={selected.lotNo ?? "—"} />
                 <Detail label="용기 ID" value={selected.containerId ?? "—"} />
                 <Detail label="유효기간" value={selected.expiryDate ? new Date(selected.expiryDate).toLocaleDateString("ko-KR") : "—"} />

@@ -16,6 +16,7 @@ const STATUS_BADGE: Record<string, { label: string; bg: string; text: string; co
   warning:  { label: "경보",   bg: "#FFF8E6", text: "#B97500", color: "#F7A600" },
   ok:       { label: "적정",   bg: "#E6FAF1", text: "#065F46", color: "#00B96B" },
   safe:     { label: "여유",   bg: "#F0F7FF", text: "#0078D4", color: "#0078D4" },
+  planned:  { label: "회복계획", bg: "#EEF4FF", text: "#1D4ED8", color: "#2563EB" },
   nodata:   { label: "데이터없음", bg: "#F5F5F5", text: "#999", color: "#999" },
 };
 
@@ -28,12 +29,22 @@ type InventoryItem = {
   usageSource?: "process" | "fallback";
   doh: number | null;
   status: string;
+  targetQuantity: number | null;
+  shortageQuantity: number | null;
+  protectedDays: number | null;
+  policyStatus: "READY" | "BLOCKED_CAPACITY" | "BLOCKED_MASTER_DATA" | null;
+  policyReason: string | null;
+  plannedInboundQuantity: number;
+  projectedQuantity: number;
+  projectedDoh: number | null;
+  scaleUpTargetQuantity: number;
   material: {
     code: string;
     name: string;
     nameEn: string | null;
     category: string;
     unit: string;
+    safetyStock: number;
     ropDays: number;
   };
   warehouse: { name: string };
@@ -58,7 +69,7 @@ function DOHBar({ doh, ropDays }: { doh: number; ropDays: number }) {
   );
 }
 
-type FilterKey = "ALL" | "critical" | "warning" | "ok" | "safe";
+type FilterKey = "ALL" | "critical" | "warning" | "ok" | "safe" | "planned";
 type CatKey = "ALL" | "GAS" | "CHM" | "CSM" | "UTL" | "PKG";
 const CAT_LIST: { key: CatKey; label: string }[] = [
   { key: "ALL", label: "전체" }, { key: "GAS", label: "GAS 가스" }, { key: "CHM", label: "CHM 케미컬" },
@@ -67,7 +78,7 @@ const CAT_LIST: { key: CatKey; label: string }[] = [
 type SortKey = "code" | "name" | "category" | "quantity" | "dailyUsage" | "monthlyQty" | "doh" | "warehouse" | "status";
 type SortDir = "asc" | "desc";
 
-const STATUS_ORDER: Record<string, number> = { critical: 0, warning: 1, ok: 2, safe: 3, nodata: 4 };
+const STATUS_ORDER: Record<string, number> = { critical: 0, warning: 1, planned: 2, ok: 3, safe: 4, nodata: 5 };
 
 function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
   const active = col === sortKey;
@@ -91,17 +102,19 @@ export default function InventoryClient({ items, lotCounts = {} }: { items: Inve
   }
 
   // 카테고리 필터 먼저 적용 → 상태 카운트/필터는 그 안에서
+  const displayStatus = (item: InventoryItem) => item.plannedInboundQuantity > 0 ? "planned" : item.status;
   const base = catFilter === "ALL" ? items : items.filter((i) => i.material.category === catFilter);
   const catCount = (k: CatKey) => k === "ALL" ? items.length : items.filter((i) => i.material.category === k).length;
 
   const counts = {
-    critical: base.filter((i) => i.status === "critical").length,
-    warning:  base.filter((i) => i.status === "warning").length,
-    ok:       base.filter((i) => i.status === "ok").length,
-    safe:     base.filter((i) => i.status === "safe").length,
+    critical: base.filter((i) => displayStatus(i) === "critical").length,
+    warning:  base.filter((i) => displayStatus(i) === "warning").length,
+    planned:  base.filter((i) => displayStatus(i) === "planned").length,
+    ok:       base.filter((i) => displayStatus(i) === "ok").length,
+    safe:     base.filter((i) => displayStatus(i) === "safe").length,
   };
 
-  const filtered = (activeFilter === "ALL" ? base : base.filter((i) => i.status === activeFilter))
+  const filtered = (activeFilter === "ALL" ? base : base.filter((i) => displayStatus(i) === activeFilter))
     .slice()
     .sort((a, b) => {
       let cmp = 0;
@@ -114,7 +127,7 @@ export default function InventoryClient({ items, lotCounts = {} }: { items: Inve
         case "monthlyQty": cmp = a.monthlyQty - b.monthlyQty; break;
         case "doh":       cmp = (a.doh ?? -1) - (b.doh ?? -1); break;
         case "warehouse": cmp = a.warehouse.name.localeCompare(b.warehouse.name); break;
-        case "status":    cmp = (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9); break;
+        case "status":    cmp = (STATUS_ORDER[displayStatus(a)] ?? 9) - (STATUS_ORDER[displayStatus(b)] ?? 9); break;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -122,6 +135,7 @@ export default function InventoryClient({ items, lotCounts = {} }: { items: Inve
   const TABS: { key: Exclude<FilterKey, "ALL">; label: string; sublabel: string; color: string; bg: string }[] = [
     { key: "critical", label: "위급",  sublabel: "5일 미만",    color: "#EA002C", bg: "#FFF0F2" },
     { key: "warning",  label: "경보",  sublabel: "ROP 이하",    color: "#F7A600", bg: "#FFF8E6" },
+    { key: "planned",  label: "회복계획", sublabel: "보충 초안", color: "#2563EB", bg: "#EEF4FF" },
     { key: "ok",       label: "적정",  sublabel: "ROP~2×ROP",  color: "#00B96B", bg: "#E6FAF1" },
     { key: "safe",     label: "여유",  sublabel: "ROP 2배 이상", color: "#0078D4", bg: "#E8F3FF" },
   ];
@@ -129,11 +143,11 @@ export default function InventoryClient({ items, lotCounts = {} }: { items: Inve
   return (
     <>
       {/* KPI 탭 카드 */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-6">
         {/* 전체 버튼 */}
         <button
           onClick={() => setActiveFilter("ALL")}
-          className="col-span-4 -mb-2 text-left"
+          className="col-span-5 -mb-2 text-left"
         >
           {activeFilter !== "ALL" && (
             <span className="text-xs text-[#999] hover:text-[#111] transition-colors">
@@ -268,7 +282,8 @@ export default function InventoryClient({ items, lotCounts = {} }: { items: Inve
               ) : (
                 filtered.map((inv) => {
                   const cat = CATEGORY_STYLES[inv.material.category] ?? { bg: "#F5F5F5", text: "#666" };
-                  const badge = STATUS_BADGE[inv.status];
+                  const rowStatus = displayStatus(inv);
+                  const badge = STATUS_BADGE[rowStatus];
                   return (
                     <tr
                       key={inv.id}
@@ -307,7 +322,7 @@ export default function InventoryClient({ items, lotCounts = {} }: { items: Inve
                         {inv.material.ropDays === 0 ? (
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#D1FAE5] text-[#065F46]">현장생산</span>
                         ) : (
-                          <>{inv.quantity.toLocaleString()}{" "}<span className="text-[#999] font-normal">{inv.material.unit}</span></>
+                          <><div>{inv.quantity.toLocaleString()} <span className="text-[#999] font-normal">{inv.material.unit}</span></div>{inv.plannedInboundQuantity > 0 && <div className="mt-1 text-[9px] font-bold text-blue-700">예정 +{inv.plannedInboundQuantity.toLocaleString()} → {inv.projectedQuantity.toLocaleString()}</div>}{inv.targetQuantity != null && <div className={`mt-1 text-[9px] font-bold ${inv.policyStatus === "READY" ? "text-blue-700" : "text-amber-700"}`} title={inv.policyReason ?? undefined}>목표 {inv.scaleUpTargetQuantity.toLocaleString()} · 안전 {inv.material.safetyStock.toLocaleString()}</div>}</>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right text-[#999] tabular-nums">
@@ -323,11 +338,12 @@ export default function InventoryClient({ items, lotCounts = {} }: { items: Inve
                           : <span className="text-[#999]">—</span>}
                       </td>
                       <td className="px-4 py-3">
-                        {inv.doh !== null ? (
-                          <DOHBar doh={inv.doh} ropDays={inv.material.ropDays} />
+                        {(inv.plannedInboundQuantity > 0 ? inv.projectedDoh : inv.doh) !== null ? (
+                          <DOHBar doh={(inv.plannedInboundQuantity > 0 ? inv.projectedDoh : inv.doh)!} ropDays={inv.material.ropDays} />
                         ) : (
                           <span className="text-[#999]">—</span>
                         )}
+                        {inv.plannedInboundQuantity > 0 && inv.projectedDoh != null && <><div className="mt-1 text-[9px] font-bold text-blue-700">재고포지션 · 보충계획 포함</div>{inv.doh != null && <div className="mt-0.5 text-[9px] font-bold text-red-600">실재고 {inv.doh.toFixed(1)}일</div>}</>}
                       </td>
                       <td className="px-4 py-3 text-[11px] text-[#555]">
                         {inv.warehouse.name.split("—")[0].trim()}

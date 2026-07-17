@@ -2,6 +2,7 @@
 
 import type { WorkOrderDoc, WorkOrderStatus } from "@/lib/db";
 import { PROCESSES } from "@/lib/processes";
+import { fabForProduct } from "@/lib/fab-domain";
 
 const STATUS_STYLE: Record<WorkOrderStatus, string> = {
   QUEUED:        "bg-gray-100 text-gray-600",
@@ -46,7 +47,7 @@ export default function WorkOrderTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b" style={{ borderColor: "var(--border)" }}>
-            {["WO 번호", "공정", "품목", "계획 수량", "상태", "생성일", "액션"].map(h => (
+            {["WO 번호", "Fab", "공정", "품목", "계획 수량", "상태", "생성일", "액션"].map(h => (
               <th key={h} className="px-4 py-3 text-left text-xs font-semibold" style={{ color: "var(--text-3)" }}>
                 {h}
               </th>
@@ -62,6 +63,12 @@ export default function WorkOrderTable({
             >
               <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--text-3)" }}>
                 {wo._id}
+                {wo.scope === "M20_PILOT" && <div className="mt-1 text-[8px] font-black text-[#0069B4]">M20 PILOT</div>}
+              </td>
+              <td className="px-4 py-3">
+                <span className="border border-[#D9D4CE] bg-white px-2 py-1 font-mono text-[10px] font-black text-[#34312E]">
+                  {wo.fabId ?? fabForProduct(wo.product)}
+                </span>
               </td>
               <td className="px-4 py-3" style={{ color: "var(--text-1)" }}>
                 <div className="font-medium text-xs leading-tight">
@@ -85,7 +92,7 @@ export default function WorkOrderTable({
               </td>
               <td className="px-4 py-3">
                 <div className="flex gap-2 flex-wrap">
-                  {wo.status === "MATERIAL_WAIT" && (
+                  {wo.status === "MATERIAL_WAIT" && wo.bomLines.some((line) => (line.pickedQty ?? line.actualQty ?? 0) < line.plannedQty) && (
                     <button
                       onClick={() => onPickClick(wo)}
                       className="px-3 py-1 text-xs bg-[#0078D4] text-white rounded-lg hover:bg-blue-700"

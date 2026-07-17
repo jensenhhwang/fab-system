@@ -32,6 +32,7 @@ async function getInventoryData() {
         nameEn: inv.material.nameEn ?? null,
         category: inv.material.category,
         unit: inv.material.unit,
+        safetyStock: inv.material.safetyStock,
         ropDays: inv.material.ropDays,
       },
       warehouse: { name: inv.warehouse.name },
@@ -40,17 +41,34 @@ async function getInventoryData() {
 }
 
 export default async function InventoryPage() {
-  const items = await getInventoryData();
+  const baseItems = await getInventoryData();
 
-  const { inventoryLots, simState: simStateColl } = await collections();
-  const [lotAgg, simStateDoc] = await Promise.all([
+  const { inventoryLots, inventoryPolicies, inboundPlans, simState: simStateColl } = await collections();
+  const [lotAgg, policyDocs, activeInbound, simStateDoc] = await Promise.all([
     inventoryLots.aggregate<{ _id: string; count: number }>([
       { $match: { qualityStatus: "AVAILABLE" } },
       { $group: { _id: "$materialId", count: { $sum: 1 } } },
     ]).toArray(),
+    inventoryPolicies.find({}).toArray(),
+    inboundPlans.aggregate<{ _id: string; quantity: number }>([
+      { $match: { status: { $in: ["DRAFT", "CONFIRMED"] }, remainingQuantity: { $gt: 0 } } },
+      { $group: { _id: "$materialId", quantity: { $sum: "$remainingQuantity" } } },
+    ]).toArray(),
     simStateColl.findOne({ _id: "singleton" }),
   ]);
   const lotCounts = Object.fromEntries(lotAgg.map((r) => [r._id, r.count]));
+  const policyMap = new Map(policyDocs.map(policy => [policy.materialId, policy]));
+  const inboundMap = new Map(activeInbound.map(item => [item._id, item.quantity]));
+  const items = baseItems.map(item => {
+    const policy = policyMap.get(item.materialId);
+    const plannedInboundQuantity = inboundMap.get(item.materialId) ?? 0;
+    const projectedQuantity = item.quantity + plannedInboundQuantity;
+    const minimumTarget = Math.ceil(item.material.safetyStock + item.avgDailyUsage);
+    return { ...item, targetQuantity: policy?.targetQuantity ?? null, shortageQuantity: policy?.shortageQuantity ?? null,
+      policyStatus: policy?.status ?? null, policyReason: policy?.blockReason ?? null, protectedDays: policy?.protectedDays ?? null,
+      plannedInboundQuantity, projectedQuantity, projectedDoh: item.avgDailyUsage > 0 ? projectedQuantity / item.avgDailyUsage : null,
+      scaleUpTargetQuantity: Math.max(minimumTarget, policy?.targetQuantity ?? 0) };
+  });
 
   return (
     <>
@@ -62,7 +80,7 @@ export default async function InventoryPage() {
       )}
       <div className="mb-1 text-2xl font-extrabold tracking-tight">재고 · 보관일수</div>
       <div className="text-sm text-[#999] mb-6">
-        보관일수(DOH) = 현재고 ÷ 일평균사용량 · 일사용량은 공정별 사용량에서 유도 · 기준: {new Date().toLocaleDateString("ko-KR")}
+        전체 자재 DOH = 전체 현재고 ÷ 전체 일평균사용량 · 위치/HU 단위 DOH는 수요 배정 전 계산하지 않음 · 기준: {new Date().toLocaleDateString("ko-KR")}
       </div>
       <InventoryClient items={items} lotCounts={lotCounts} />
     </>

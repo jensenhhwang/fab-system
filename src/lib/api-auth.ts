@@ -14,6 +14,10 @@ export const WRITE_ROLES = {
   simulation: ["ADMIN"],
   collaboration: ["ADMIN", "MATERIALS", "PRODUCTION", "LOGISTICS"],
   procurementMaster: ["ADMIN", "MATERIALS"],
+  procurementApproval: ["ADMIN", "MATERIALS"],
+  inboundPlan: ["ADMIN", "MATERIALS"],
+  transferTransition: ["ADMIN", "MATERIALS", "LOGISTICS"],
+  materialConsume: ["ADMIN", "PRODUCTION"],
 } as const satisfies Record<string, readonly Role[]>;
 
 type AuthorizedUser = { id: string; email?: string | null; role: Role };

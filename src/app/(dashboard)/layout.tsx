@@ -4,6 +4,7 @@ import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
+import { ControlContextProvider, FabScopeControl } from "@/components/ControlContext";
 
 const ROLE_COLORS: Record<string, string> = {
   ADMIN: "#EA002C",
@@ -21,18 +22,21 @@ const ROLE_LABELS: Record<string, string> = {
 
 const NAV = [
   { group: "오늘의 운영", items: [
-    { href: "/", label: "종합 현황" },
+    { href: "/", label: "Control Tower" },
+    { href: "/campus", label: "WMS·3FAB 3D Twin" },
     { href: "/daily-control", label: "생산·자재 연동" },
   ] },
   { group: "자재·창고", items: [
     { href: "/inventory", label: "재고·보관일수" },
+    { href: "/warehouse", label: "창고 Capacity" },
     { href: "/wms", label: "창고관리 (WMS)" },
   ] },
   { group: "생산 실행", items: [
     { href: "/mes", label: "공정 실행 (MES)" },
-    { href: "/usage", label: "공정별 사용량" },
+    { href: "/usage", label: "공정별 사용량 · 학습" },
   ] },
   { group: "계획·시뮬레이션", items: [
+    { href: "/erp-bridge", label: "계획·실행 브리지" },
     { href: "/simulation", label: "운영 What-if" },
     { href: "/market", label: "시장·수요 정보" },
   ] },
@@ -57,6 +61,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
+    <ControlContextProvider>
     <div className="flex h-screen overflow-hidden">
       {/* ── Sidebar ── */}
       <aside className="w-[228px] shrink-0 flex flex-col overflow-y-auto" style={{ backgroundColor: "var(--bg-sidebar)", borderRight: "1px solid var(--border)" }}>
@@ -109,7 +114,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* 푸터 */}
         <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
-          <div className="mb-2" style={{ fontSize: "11px", color: "var(--text-3)" }}>이천 M14 / M16</div>
+          <div className="mb-2" style={{ fontSize: "11px", color: "var(--text-3)" }}>이천 3FAB Campus · M20/21/22</div>
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
             className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-[#EA002C] bg-[#FFF0F2] hover:bg-[#FFD6DA] transition-colors"
@@ -136,12 +141,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               FAB 자재관리
             </span>
           </div>
-          <div className="ml-auto flex items-center gap-4">
+          <div className="ml-auto flex items-center gap-3">
+            <FabScopeControl />
             <div className="flex items-center gap-1.5 bg-[#E6FAF1] text-[#00875A] text-xs font-semibold px-2.5 py-1 rounded-full">
               <span className="w-1.5 h-1.5 rounded-full bg-[#00B96B] animate-pulse" />
               DATA CONNECTED
             </div>
-            <span className="text-xs" style={{ color: "var(--text-3)" }}>이천 M14 / M16</span>
+            <span className="hidden text-xs xl:inline" style={{ color: "var(--text-3)" }}>이천 M20 / M21 / M22</span>
             <div
               className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
               style={{ backgroundColor: roleColor }}
@@ -174,5 +180,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </div>
     </div>
+    </ControlContextProvider>
   );
 }

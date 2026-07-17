@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json() as { handlingUnitId?: string; status?: InventoryStatus; reason?: string };
   if (!body.handlingUnitId || !body.status || !ALLOWED.has(body.status)) return NextResponse.json({ error: "잘못된 상태 요청" }, { status: 400 });
   if (body.status !== "AVAILABLE" && !body.reason?.trim()) return NextResponse.json({ error: "Hold/격리 사유가 필요합니다" }, { status: 400 });
-  const { handlingUnits, inventoryLots, inventory, inventoryMovements } = await collections();
+  const { handlingUnits, inventoryLots, inventoryMovements } = await collections();
   const unit = await handlingUnits.findOne({ _id: body.handlingUnitId });
   if (!unit) return NextResponse.json({ error: "용기를 찾을 수 없습니다" }, { status: 404 });
   const now = new Date();
@@ -24,7 +24,6 @@ export async function POST(req: NextRequest) {
       await Promise.all([
         handlingUnits.updateOne({ _id: unit._id }, { $set: { status: body.status, updatedAt: now } }, { session: dbSession }),
         lotStatusUpdate,
-        inventory.updateOne({ materialId: unit.materialId, warehouseId: unit.warehouseId }, { $set: { status: body.status } }, { session: dbSession }),
         inventoryMovements.insertOne({ _id: crypto.randomUUID(), handlingUnitId: unit._id, materialId: unit.materialId,
       type: body.status === "AVAILABLE" ? "RELEASE" : body.status as "HOLD" | "QUARANTINE", fromLocationId: unit.locationId, toLocationId: unit.locationId,
           quantity: unit.quantity, reason: body.reason?.trim(), userId: access.user.id, createdAt: now }, { session: dbSession }),

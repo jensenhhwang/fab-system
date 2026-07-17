@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Product } from "@/lib/db";
 import { PROCESSES } from "@/lib/processes";
+import { fabForProduct } from "@/lib/fab-domain";
 
 type BomTemplateLine = { materialId: string; qtyPerRun: number };
 type Template = { _id: string; processCode: string; product: Product; lines: BomTemplateLine[] };
@@ -36,7 +37,7 @@ export default function WorkOrderCreateModal({
       const r = await fetch("/api/mes/workorders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ processCode, product, plannedQty: Number(plannedQty) }),
+        body: JSON.stringify({ processCode, product, fabId: fabForProduct(product), plannedQty: Number(plannedQty) }),
       });
       if (r.ok) { onCreated(); onClose(); }
     } finally {
@@ -87,6 +88,10 @@ export default function WorkOrderCreateModal({
           </div>
 
           <div>
+            <div className="mb-4 border border-[#D9E8F5] bg-[#F3F8FC] px-3 py-2 text-xs text-[#315D7D]">
+              대상 Fab <span className="ml-1 font-black text-[#0B4F7D]">{fabForProduct(product)}</span>
+              <span className="ml-2 text-[10px] text-[#6F8798]">제품–Fab 마스터에서 자동 지정</span>
+            </div>
             <label className="block text-xs font-medium mb-1" style={{ color: "var(--text-2)" }}>계획 수량 (런)</label>
             <input
               type="number"

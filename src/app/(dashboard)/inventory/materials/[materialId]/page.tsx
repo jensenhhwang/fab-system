@@ -22,11 +22,11 @@ function dateLabel(value?: Date | null) {
 
 export default async function MaterialDetailPage({ params }: { params: Promise<{ materialId: string }> }) {
   const { materialId } = await params;
-  const { materials, inventory, warehouses, inventoryLots, processUsage, materialSuppliers, suppliers, bomTemplates } = await collections();
+  const { materials, inventory, warehouses, inventoryLots, processUsage, materialSuppliers, suppliers, bomTemplates, inventoryPolicies } = await collections();
   const material = await materials.findOne({ _id: materialId });
   if (!material) notFound();
 
-  const [inventoryDocs, lotDocs, usageDocs, links, supplierDocs, templates, usageMap] = await Promise.all([
+  const [inventoryDocs, lotDocs, usageDocs, links, supplierDocs, templates, usageMap, policy] = await Promise.all([
     inventory.find({ materialId }).toArray(),
     inventoryLots.find({ materialId, qualityStatus: { $ne: "CONSUMED" } }).sort({ expiryDate: 1, receivedAt: 1 }).toArray(),
     processUsage.find({ materialId }).sort({ site: 1, processCode: 1, product: 1 }).toArray(),
@@ -34,6 +34,7 @@ export default async function MaterialDetailPage({ params }: { params: Promise<{
     suppliers.find({}).sort({ name: 1 }).toArray(),
     bomTemplates.find({ "lines.materialId": materialId }).sort({ processCode: 1, product: 1 }).toArray(),
     getMaterialDailyUsage(),
+    inventoryPolicies.findOne({ materialId }),
   ]);
   const warehouseIds = [...new Set([...inventoryDocs.map((item) => item.warehouseId), ...lotDocs.flatMap((lot) => lot.warehouseId ? [lot.warehouseId] : [])])];
   const warehouseDocs = await warehouses.find({ _id: { $in: warehouseIds } }).toArray();
@@ -58,6 +59,8 @@ export default async function MaterialDetailPage({ params }: { params: Promise<{
     ...(procurement && !procurement.rangeComplete ? ["주공급사의 최소·최대 리드타임 범위가 미등록 상태입니다."] : []),
     ...(expiringLots.length ? [`30일 이내 유효기한 도래 Lot이 ${expiringLots.length}건 있습니다.`] : []),
     ...(lotDocs.some((lot) => lot.qualityStatus === "HOLD" || lot.qualityStatus === "QUARANTINE") ? ["보류 또는 격리 상태의 Lot이 있습니다."] : []),
+    ...(policy?.status === "BLOCKED_CAPACITY" ? [`계획 기준수량 적용이 Capacity 때문에 차단됐습니다: ${policy.blockReason ?? "한도 확인 필요"}`] : []),
+    ...(policy?.status === "BLOCKED_MASTER_DATA" ? [`계획 기준수량 적용에 필요한 기준정보가 부족합니다: ${policy.blockReason ?? "마스터 확인 필요"}`] : []),
   ];
   const serializedLinks = links.map((link) => ({
     ...link,
@@ -74,7 +77,7 @@ export default async function MaterialDetailPage({ params }: { params: Promise<{
       </div>
     </div>
 
-    <section className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+    <section className="grid grid-cols-2 gap-3 lg:grid-cols-7">
       {[
         ["전체 재고", `${totalQuantity.toLocaleString()} ${material.unit}`],
         ["일사용량", usage.daily > 0 ? `${usage.daily.toFixed(1)} ${material.unit}` : "—"],
@@ -82,6 +85,7 @@ export default async function MaterialDetailPage({ params }: { params: Promise<{
         ["보관일수", doh == null ? "—" : `${doh.toFixed(1)}일`],
         ["ROP", material.ropDays > 0 ? `${material.ropDays}일` : "비적용"],
         ["공급 형태", SUPPLY_LABEL[material.supplyMode ?? "GENERAL"] ?? material.supplyMode ?? "일반 조달"],
+        ["계획 기준수량", policy ? `${policy.targetQuantity.toLocaleString()} ${material.unit}` : "미산정"],
       ].map(([label, value]) => <div key={label} className="rounded-2xl border bg-white p-4"><div className="text-[11px] text-[#888]">{label}</div><div className="mt-2 text-base font-extrabold">{value}</div></div>)}
     </section>
 

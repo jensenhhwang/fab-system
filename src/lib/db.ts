@@ -1,4 +1,5 @@
 import { MongoClient, Db, Collection } from "mongodb";
+import type { FabId, FacilityRole } from "@/lib/fab-domain";
 
 // MongoDB(Atlas) 네이티브 드라이버. TCP 기반이라 Next.js fetch 패치 영향 없음.
 // 서버리스 콜드스타트에서 커넥션을 재사용하도록 클라이언트를 글로벌 캐시.
@@ -46,6 +47,9 @@ export interface WarehouseDoc {
   totalCapacity: number; unit: string; temperature?: string | null; notes?: string | null;
   legalLimit?: number; // 위험물 등 법적 저장 한도 (파렛트 환산)
   capacityMode?: "SPACE" | "TANK_LEVEL" | "CONTINUOUS";
+  facilityRole?: FacilityRole;
+  fabId?: FabId;
+  layoutVersion?: string;
 }
 export interface InventoryDoc {
   _id: string; materialId: string; warehouseId: string; quantity: number; avgDailyUsage: number;
@@ -69,17 +73,25 @@ export interface InventoryLotDoc {
   receivedAt: Date; manufactureDate?: Date; expiryDate?: Date;
   qualityStatus: InventoryStatus; holdReason?: string; updatedAt: Date;
   warehouseId?: string; slotId?: string;
+  inboundPlanId?: string;
   simulated?: true;
 }
 export interface HandlingUnitDoc {
   _id: string; inventoryLotId: string; materialId: string; warehouseId: string; locationId: string;
   containerType: string; quantity: number; status: InventoryStatus; updatedAt: Date;
+  logisticsStatus?: "STORED" | "RESERVED" | "STAGED" | "IN_TRANSIT" | "RECEIVED" | "LINE_SIDE" | "CONSUMED";
+  currentFacilityId?: string;
+  currentLocationId?: string;
+  reservedWorkOrderId?: string;
+  reservedTransferOrderId?: string;
+  version?: number;
 }
 export interface InventoryMovementDoc {
-  _id: string; handlingUnitId?: string; materialId: string; type: "RECEIPT" | "PUTAWAY" | "MOVE" | "PICK" | "ISSUE" | "HOLD" | "RELEASE" | "QUARANTINE";
+  _id: string; handlingUnitId?: string; materialId: string; type: "RECEIPT" | "PUTAWAY" | "MOVE" | "PICK" | "ISSUE" | "HOLD" | "RELEASE" | "QUARANTINE" | "ADJUSTMENT";
   fromLocationId?: string | null; toLocationId?: string | null; quantity: number;
   reason?: string; userId: string; createdAt: Date;
   lotId?: string; processCode?: string;
+  inboundPlanId?: string; requestId?: string;
   simulated?: true;
 }
 export interface FacilityTelemetryDoc {
@@ -104,6 +116,42 @@ export interface MaterialSupplierDoc {
   minLeadTimeDays?: number | null; standardLeadTimeDays?: number | null; maxLeadTimeDays?: number | null;
   currentExpectedLeadTimeDays?: number | null; currentExpectedValidUntil?: Date | null; leadTimeReason?: string | null;
   emergencyOrderAllowed?: boolean; plannedSharePct?: number | null; updatedAt?: Date;
+}
+export type InboundPlanStatus = "DRAFT" | "CONFIRMED" | "COMPLETED" | "CANCELLED";
+export interface InboundPlanEvent {
+  type: "CREATED" | "UPDATED" | "CONFIRMED" | "CANCELLED" | "RECEIVED";
+  userId: string; at: Date; reason?: string | null;
+  changes?: Record<string, { before: string | number | null; after: string | number | null }>;
+  receiptId?: string; quantity?: number;
+}
+export interface InboundPlanDoc {
+  _id: string; planNo: string; materialId: string; supplierId: string; unit: string;
+  plannedDate: Date; plannedQuantity: number; receivedQuantity: number; remainingQuantity: number;
+  status: InboundPlanStatus; note?: string | null;
+  createdBy: string; createdAt: Date; updatedAt: Date;
+  confirmedBy?: string | null; confirmedAt?: Date | null;
+  cancelledBy?: string | null; cancelledAt?: Date | null; cancelReason?: string | null;
+  completedAt?: Date | null; events: InboundPlanEvent[];
+  source?: "MANUAL" | "INVENTORY_SCALE_UP";
+  scaleUpRequestId?: string;
+  scaleUp?: {
+    formulaVersion: "SAFETY_PLUS_1D_V1";
+    reviewStatus: "READY" | "CAPACITY_REVIEW" | "MASTER_DATA_REVIEW";
+    referenceQuantity: number; activeInboundQuantity: number; safetyStock: number;
+    dailyUsage: number; targetQuantity: number;
+  };
+}
+export type InventoryPolicyStatus = "READY" | "BLOCKED_CAPACITY" | "BLOCKED_MASTER_DATA";
+export interface InventoryPolicyDoc {
+  _id: string; materialId: string; facilityId: string;
+  referenceQuantity: number; targetQuantity: number; shortageQuantity: number;
+  dailyUsage: number; ropDays: number; leadTimeDays: number; protectedDays: number;
+  supplierId: string; status: InventoryPolicyStatus; blockReason?: string | null;
+  formulaVersion: "BASELINE_V1"; batchId: string; calculatedAt: Date; updatedAt: Date;
+}
+export interface InventoryPolicyAuditDoc {
+  _id: string; batchId: string; materialId: string; action: "APPLY" | "ROLLBACK";
+  before: InventoryPolicyDoc | null; after: InventoryPolicyDoc | null; createdAt: Date;
 }
 export interface InfraDoc {
   _id: string; name: string; processCode: string; unit: string;
@@ -179,6 +227,8 @@ export interface PickedLot {
 export interface BomLine {
   materialId: string;
   plannedQty: number;
+  pickedQty?: number;
+  consumedQty?: number;
   actualQty?: number;
   pickedLots: PickedLot[];
 }
@@ -195,9 +245,13 @@ export type WorkOrderStatus = "QUEUED" | "MATERIAL_WAIT" | "RUNNING" | "DONE" | 
 
 export interface WorkOrderDoc {
   _id: string; // "WO-{Date.now()}"
+  fabId: FabId;
   processCode: string;
   product: Product;
   plannedQty: number;
+  plannedQtyUnit?: "RUN" | "WAFER";
+  scope?: "FULL_BOM" | "M20_PILOT";
+  requestId?: string;
   status: WorkOrderStatus;
   bomLines: BomLine[];
   plannedStart?: Date;
@@ -207,6 +261,212 @@ export interface WorkOrderDoc {
   createdAt: Date;
   updatedAt: Date;
   note?: string;
+}
+
+export interface FacilityNodeDoc {
+  _id: string;
+  code: string;
+  name: string;
+  role: FacilityRole;
+  fabId?: FabId;
+  parentFacilityId?: string;
+  layoutVersion: string;
+  position: { x: number; y: number; z: number };
+  active: boolean;
+  updatedAt: Date;
+}
+
+export type AllocationStatus = "PLANNED" | "RESERVED" | "RELEASED" | "CONSUMED" | "CANCELLED";
+export interface MaterialAllocationDoc {
+  _id: string;
+  materialId: string;
+  fabId: FabId;
+  quantity: number;
+  unit: string;
+  status: AllocationStatus;
+  sourceFacilityId: string;
+  destinationFacilityId: string;
+  workOrderId?: string;
+  inventoryLotIds?: string[];
+  source: "OPERATOR" | "MES" | "PLAN_ADAPTER";
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type TransferOrderStatus = "CREATED" | "PICKING" | "STAGED" | "IN_TRANSIT" | "RECEIVED" | "DELIVERED" | "CANCELLED";
+export interface TransferOrderDoc {
+  _id: string;
+  allocationId: string;
+  materialId: string;
+  fabId: FabId;
+  quantity: number;
+  unit: string;
+  fromFacilityId: string;
+  toFacilityId: string;
+  fromLocationId?: string;
+  toLocationId?: string;
+  workOrderId?: string;
+  processCode?: string;
+  lotId?: string;
+  handlingUnitId?: string;
+  status: TransferOrderStatus;
+  requestedAt?: Date;
+  pickedAt?: Date;
+  stagedAt?: Date;
+  departedAt?: Date;
+  eta?: Date;
+  receivedAt?: Date;
+  deliveredAt?: Date;
+  telemetryAt?: Date;
+  lastPosition?: { x: number; y: number; z: number; progress?: number };
+  version?: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type MaterialFlowEventType = "ALLOCATED" | "PICKING_STARTED" | "PICKED" | "STAGED" | "DISPATCHED" | "RECEIVED" | "DELIVERED" | "CANCELLED" | "LINE_SIDE" | "CONSUMED" | "RETURNED" | "HELD";
+export interface MaterialFlowEventDoc {
+  _id: string;
+  materialId: string;
+  fabId: FabId;
+  type: MaterialFlowEventType;
+  quantity: number;
+  unit: string;
+  facilityId: string;
+  locationId?: string;
+  allocationId?: string;
+  transferOrderId?: string;
+  workOrderId?: string;
+  processCode?: string;
+  lotId?: string;
+  handlingUnitId?: string;
+  requestId?: string;
+  sequence?: number;
+  occurredAt: Date;
+  recordedBy: string;
+}
+
+export type FabStockLocationType = "PRS" | "LINE_SIDE";
+export interface FabMaterialStockDoc {
+  _id: string;
+  fabId: FabId;
+  processCode: string;
+  locationType: FabStockLocationType;
+  locationId: string;
+  materialId: string;
+  quantity: number;
+  unit: string;
+  updatedAt: Date;
+}
+
+export type EquipmentStatus = "RUN" | "IDLE" | "PM" | "DOWN";
+export interface EquipmentMasterDoc {
+  _id: string;
+  fabId: FabId;
+  processCode: string;
+  model: string;
+  bay: string;
+  position: { x: number; y: number; z: number };
+  status: EquipmentStatus;
+  ratedCapacity: number;
+  capacityUnit: "WAFER_DAY";
+  oee: number;
+  source: "MODELED_BASELINE" | "MES_MASTER";
+  updatedAt: Date;
+}
+
+export type AgentRole = "PROCUREMENT" | "WMS" | "MES" | "PROCESS";
+export type AgentRunStatus = "OPEN" | "WAITING_APPROVAL" | "WAITING_PHYSICAL" | "BLOCKED" | "COMPLETED" | "FAILED";
+export type AgentRunStage = "CREATED" | "RESERVED" | "PICKED" | "STAGED" | "IN_TRANSIT" | "RECEIVED" | "LINE_SIDE" | "RELEASED" | "CONSUMED";
+export interface AgentRunDoc {
+  _id: string;
+  workOrderId: string;
+  fabId: FabId;
+  traceId: string;
+  status: AgentRunStatus;
+  stage: AgentRunStage;
+  policyVersion: string;
+  nextHumanAction?: "PICK_CONFIRM" | "STAGE_CONFIRM" | "DEPART_CONFIRM" | "RECEIVE_CONFIRM" | "DELIVER_CONFIRM" | "CONSUME_CONFIRM" | "PO_APPROVAL";
+  blockedReason?: string | null;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AgentDecisionDoc {
+  _id: string;
+  runId: string;
+  workOrderId: string;
+  traceId: string;
+  agentRole: AgentRole;
+  policyVersion: string;
+  inputSnapshot: Record<string, unknown>;
+  reasonCodes: string[];
+  proposedAction: string;
+  result: "AUTO_EXECUTED" | "WAITING_APPROVAL" | "WAITING_PHYSICAL" | "NO_ACTION" | "BLOCKED";
+  idempotencyKey: string;
+  createdAt: Date;
+}
+
+export type PurchaseOrderDraftStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "OUTBOXED" | "CANCELLED";
+export interface PurchaseOrderDraftDoc {
+  _id: string;
+  poNo: string;
+  sourceWorkOrderId: string;
+  agentRunId: string;
+  materialId: string;
+  supplierId: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  currency: "KRW";
+  moq: number;
+  orderMultiple: number;
+  leadTimeDays: number;
+  expectedDate: Date;
+  status: PurchaseOrderDraftStatus;
+  policyVersion: string;
+  calculation: {
+    onHand: number;
+    activeReservations: number;
+    confirmedInbound: number;
+    projectedAvailable: number;
+    policyTarget: number;
+    shortage: number;
+  };
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+  approvedBy?: string;
+  approvedAt?: Date;
+  rejectedBy?: string;
+  rejectedAt?: Date;
+  rejectionReason?: string;
+}
+
+export interface IntegrationOutboxDoc {
+  _id: string;
+  aggregateType: "PURCHASE_ORDER";
+  aggregateId: string;
+  eventType: "PURCHASE_ORDER_APPROVED";
+  payload: Record<string, unknown>;
+  status: "PENDING" | "SENT" | "FAILED";
+  createdAt: Date;
+  sentAt?: Date;
+}
+
+export interface EquipmentAssignmentDoc {
+  _id: string;
+  workOrderId: string;
+  equipmentId: string;
+  fabId: FabId;
+  processCode: string;
+  plannedLoad: number;
+  capacityUnit: "WAFER_DAY";
+  capacitySource: "MODELED_BASELINE" | "MES_MASTER";
+  status: "RESERVED" | "ACTIVE" | "COMPLETED" | "CANCELLED";
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export type BottleneckRisk = "HIGH" | "MEDIUM" | "LOW";
@@ -247,6 +507,20 @@ export async function collections(): Promise<{
   bomTemplates: Collection<BomTemplateDoc>;
   workOrders: Collection<WorkOrderDoc>;
   processMetadata: Collection<ProcessMetadataDoc>;
+  inboundPlans: Collection<InboundPlanDoc>;
+  inventoryPolicies: Collection<InventoryPolicyDoc>;
+  inventoryPolicyAudits: Collection<InventoryPolicyAuditDoc>;
+  facilityNodes: Collection<FacilityNodeDoc>;
+  materialAllocations: Collection<MaterialAllocationDoc>;
+  transferOrders: Collection<TransferOrderDoc>;
+  materialFlowEvents: Collection<MaterialFlowEventDoc>;
+  fabMaterialStocks: Collection<FabMaterialStockDoc>;
+  equipmentMaster: Collection<EquipmentMasterDoc>;
+  agentRuns: Collection<AgentRunDoc>;
+  agentDecisions: Collection<AgentDecisionDoc>;
+  purchaseOrderDrafts: Collection<PurchaseOrderDraftDoc>;
+  integrationOutbox: Collection<IntegrationOutboxDoc>;
+  equipmentAssignments: Collection<EquipmentAssignmentDoc>;
 }> {
   const db = await getDb();
   return {
@@ -275,5 +549,19 @@ export async function collections(): Promise<{
     bomTemplates: db.collection<BomTemplateDoc>("bomTemplates"),
     workOrders: db.collection<WorkOrderDoc>("workOrders"),
     processMetadata: db.collection<ProcessMetadataDoc>("processMetadata"),
+    inboundPlans: db.collection<InboundPlanDoc>("inboundPlans"),
+    inventoryPolicies: db.collection<InventoryPolicyDoc>("inventoryPolicies"),
+    inventoryPolicyAudits: db.collection<InventoryPolicyAuditDoc>("inventoryPolicyAudits"),
+    facilityNodes: db.collection<FacilityNodeDoc>("facilityNodes"),
+    materialAllocations: db.collection<MaterialAllocationDoc>("materialAllocations"),
+    transferOrders: db.collection<TransferOrderDoc>("transferOrders"),
+    materialFlowEvents: db.collection<MaterialFlowEventDoc>("materialFlowEvents"),
+    fabMaterialStocks: db.collection<FabMaterialStockDoc>("fabMaterialStocks"),
+    equipmentMaster: db.collection<EquipmentMasterDoc>("equipmentMaster"),
+    agentRuns: db.collection<AgentRunDoc>("agentRuns"),
+    agentDecisions: db.collection<AgentDecisionDoc>("agentDecisions"),
+    purchaseOrderDrafts: db.collection<PurchaseOrderDraftDoc>("purchaseOrderDrafts"),
+    integrationOutbox: db.collection<IntegrationOutboxDoc>("integrationOutbox"),
+    equipmentAssignments: db.collection<EquipmentAssignmentDoc>("equipmentAssignments"),
   };
 }

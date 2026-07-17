@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { collections } from "@/lib/db";
 import type { Product } from "@/lib/db";
+import { getInventoryRows } from "@/lib/queries";
+import { fabForProduct, type FabId } from "@/lib/fab-domain";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +16,7 @@ type ProcessReadinessCell = {
 };
 
 type ProcessReadinessRow = {
+  fabId: FabId;
   processCode: string;
   processName: string;
   site: string[];
@@ -22,11 +25,11 @@ type ProcessReadinessRow = {
 };
 
 export async function GET() {
-  const { processUsage, inventory, materials, processMetadata } = await collections();
+  const { processUsage, materials, processMetadata } = await collections();
 
-  const [usages, invRows, mats, metaDocs] = await Promise.all([
+  const [usages, inventoryRows, mats, metaDocs] = await Promise.all([
     processUsage.find({}).toArray(),
-    inventory.find({}).toArray(),
+    getInventoryRows(),
     materials.find({}).toArray(),
     processMetadata.find({}).toArray(),
   ]);
@@ -35,15 +38,12 @@ export async function GET() {
   const metaMap = new Map(metaDocs.map(m => [m._id, m]));
 
   const availMap = new Map<string, number>();
-  for (const inv of invRows) {
-    availMap.set(inv.materialId, (availMap.get(inv.materialId) ?? 0) + inv.quantity);
-  }
-
-  // 자재별 전체 공정 합산 일 소비량 (재고는 공정 구분 없이 공유됨)
   const totalDailyUsageMap = new Map<string, number>();
-  for (const u of usages) {
-    const prev = totalDailyUsageMap.get(u.materialId) ?? 0;
-    totalDailyUsageMap.set(u.materialId, prev + u.monthlyQty / 30);
+  for (const row of inventoryRows) {
+    if (!availMap.has(row.materialId)) {
+      availMap.set(row.materialId, row.totalQuantity);
+      totalDailyUsageMap.set(row.materialId, row.dailyUsage);
+    }
   }
 
   const rowMap = new Map<string, ProcessReadinessRow>();
@@ -52,6 +52,7 @@ export async function GET() {
     if (!rowMap.has(key)) {
       const meta = metaMap.get(u.processCode);
       rowMap.set(key, {
+        fabId: fabForProduct(u.product),
         processCode: u.processCode,
         processName: meta?.name ?? u.processCode,
         site: meta?.site ?? [],

@@ -21,6 +21,7 @@ export default function PickingDrawer({
   const [lots, setLots] = useState<InventoryLotDoc[]>([]);
   const [pickQtys, setPickQtys] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [renderedAt] = useState(() => Date.now());
 
   useEffect(() => {
@@ -33,15 +34,36 @@ export default function PickingDrawer({
 
   const handlePick = async () => {
     setSubmitting(true);
+    setError(null);
     try {
+      if (wo.scope === "M20_PILOT") {
+        const response = await fetch(`/api/mes/workorders/${wo._id}/pick`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ materialId: selectedLine.materialId, requestId: crypto.randomUUID() }),
+        });
+        if (!response.ok) {
+          const payload = await response.json() as { error?: string };
+          setError(payload.error ?? "현장 피킹 확인에 실패했습니다.");
+          return;
+        }
+        await onPicked();
+        onClose();
+        return;
+      }
       for (const [lotId, qtyStr] of Object.entries(pickQtys)) {
         const qty = Number(qtyStr);
         if (!qty || qty <= 0) continue;
-        await fetch(`/api/mes/workorders/${wo._id}/pick`, {
+        const response = await fetch(`/api/mes/workorders/${wo._id}/pick`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ materialId: selectedLine.materialId, lotId, qty }),
+          body: JSON.stringify({ materialId: selectedLine.materialId, lotId, qty, requestId: crypto.randomUUID() }),
         });
+        if (!response.ok) {
+          const payload = await response.json() as { error?: string };
+          setError(payload.error ?? "피킹에 실패했습니다.");
+          return;
+        }
       }
       await onPicked();
       onClose();
@@ -50,8 +72,8 @@ export default function PickingDrawer({
     }
   };
 
-  const totalPicking = Object.values(pickQtys).reduce((s, v) => s + (Number(v) || 0), 0);
   const remaining = selectedLine ? selectedLine.plannedQty - (selectedLine.actualQty ?? 0) : 0;
+  const totalPicking = wo.scope === "M20_PILOT" ? remaining : Object.values(pickQtys).reduce((s, v) => s + (Number(v) || 0), 0);
   const availableLots = lots.filter(l => l.qualityStatus === "AVAILABLE" && l.availableQuantity > 0);
 
   return (
@@ -104,6 +126,11 @@ export default function PickingDrawer({
 
         {/* Lot 목록 */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+          {wo.scope === "M20_PILOT" && (
+            <div className="mb-3 border border-[#B9D8F3] bg-[#F2F8FF] p-3 text-[11px] leading-5 text-[#315D7D]">
+              WMS 에이전트가 FEFO Lot과 정확한 수량의 Handling Unit 1개를 이미 예약했습니다. 이 버튼은 현장 피킹 실적만 확정하며, WMS 집계재고는 실제 출발 전까지 차감하지 않습니다.
+            </div>
+          )}
           <div className="text-xs font-medium mb-2" style={{ color: "var(--text-2)" }}>
             FEFO 순 가용 Lot ({availableLots.length}개)
           </div>
@@ -151,6 +178,7 @@ export default function PickingDrawer({
             <span>총 피킹 수량</span>
             <span className="font-semibold">{totalPicking.toFixed(1)}</span>
           </div>
+          {error && <div className="border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
           <div className="flex gap-3">
             <button onClick={onClose} className="flex-1 py-2 text-sm font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200">
               취소
@@ -161,7 +189,7 @@ export default function PickingDrawer({
               title={!canPick ? "자재관리팀(MATERIALS) 또는 관리자 권한 필요" : undefined}
               className="flex-1 py-2 text-sm font-medium rounded-lg bg-[#0078D4] text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitting ? "처리 중..." : "피킹 확정"}
+              {submitting ? "처리 중..." : wo.scope === "M20_PILOT" ? "현장 피킹 완료 확정" : "피킹 확정"}
             </button>
           </div>
           {!canPick && (

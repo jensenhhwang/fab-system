@@ -11,12 +11,27 @@
     "test:e2e": "playwright test",
     "test:planner": "tsx scripts/test-production-plan.ts",
     "test:procurement": "tsx scripts/test-procurement.ts",
+    "test:inbound-plans": "tsx scripts/test-inbound-plans.ts",
+    "test:inventory-policy": "tsx scripts/test-inventory-policy.ts",
+    "test:inventory-scaleup": "tsx scripts/test-inventory-scaleup.ts",
+    "test:fab-scenario": "tsx scripts/test-fab-scenario.ts",
+    "test:material-flow": "tsx scripts/test-material-flow.ts",
+    "test:live-transfer": "tsx scripts/test-live-transfer.ts",
+    "test:m20-pilot": "tsx scripts/verify-m20-pilot.ts",
+    "test:m20-agents": "tsx scripts/test-m20-agents.ts",
     "check": "npm run typecheck && npm run lint",
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate-storage": "tsx prisma/migrate-storage-layout.ts",
     "db:migrate-warehouse-ops": "tsx prisma/migrate-warehouse-operations.ts",
     "db:migrate-procurement": "tsx scripts/migrate-procurement-master.ts",
-    "db:validate": "tsx prisma/validate-data-consistency.ts"
+    "db:migrate-inbound-plans": "tsx scripts/migrate-inbound-plans.ts",
+    "db:migrate-campus-twin": "tsx scripts/migrate-campus-twin.ts",
+    "db:migrate-m20-pilot": "tsx scripts/migrate-m20-pilot.ts",
+    "db:migrate-m20-agents": "tsx scripts/migrate-m20-agents.ts",
+    "db:validate": "tsx prisma/validate-data-consistency.ts",
+    "db:audit-inventory": "tsx scripts/audit-inventory-doh.ts",
+    "db:calibrate-inventory": "tsx scripts/calibrate-inventory-policy.ts"
+    ,"db:scale-opening-inventory": "tsx scripts/apply-opening-inventory-scaleup.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

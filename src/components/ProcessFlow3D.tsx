@@ -5,6 +5,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Text, CameraControls, Environment, Lightformer, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
 import PanCameraControls from "@/components/PanCameraControls";
+import type { FabId } from "@/lib/fab-domain";
 
 import { PROCESSES } from "@/lib/processes";
 export type { ProcessDef } from "@/lib/processes";
@@ -106,6 +107,7 @@ export const WAFER_CONFIGS = [
   { id: "W11",  label: "FOUP-11", color: "#D946EF", startStep: 20 },
   { id: "W12",  label: "FOUP-12", color: "#64748B", startStep: 22 },
 ];
+const CAMPUS_FOUP_CONFIGS = WAFER_CONFIGS.slice(0, 4);
 
 const RAIL_X        = FAB_W * 0.37;
 const RAIL_Y        = 3.18;
@@ -266,18 +268,23 @@ function FabTool({ x, z, proc, isHL, isDimmed, machineIdx, kind, facing }: {
 // ─────────────────────────────────────────────
 // Process bay (2 equipment rows + AMHS intrabay rail)
 // ─────────────────────────────────────────────
-function ProcessBay({ proc, isHL, isDimmed, activeFoupCount, onClick }: {
+function ProcessBay({ proc, isHL, isDimmed, activeFoupCount, onClick, compact = false, actualMachineCount }: {
   proc: typeof PROCESSES[0]; isHL: boolean; isDimmed: boolean;
-  activeFoupCount: number; onClick: () => void;
+  activeFoupCount: number; onClick: () => void; compact?: boolean; actualMachineCount?: number;
 }) {
   const [hov, setHov] = useState(false);
   const bayZ   = BAY_Z[proc.code];
-  const xs     = machineXPositions(proc.nMachines);
+  const actualCount = actualMachineCount ?? proc.nMachines * 2;
+  const firstRowCount = Math.ceil(actualCount / 2);
+  const secondRowCount = Math.floor(actualCount / 2);
+  const visualPerRow = Math.min(compact ? 12 : 16, firstRowCount);
+  const firstXs = machineXPositions(visualPerRow);
+  const secondXs = machineXPositions(Math.min(visualPerRow, secondRowCount));
   const kind   = PROCESS_KIND[proc.code] ?? "box";
   const rowGap = 0.62;                 // 통로 반폭 (두 열 사이 생산 통로)
   const zIn    = bayZ - rowGap;        // 통로 아래쪽 열 (통로 향해 +z)
   const zOut   = bayZ + rowGap;        // 통로 위쪽 열 (통로 향해 -z)
-  const bayW   = (proc.nMachines - 1) * PITCH + MACHINE_W + 0.4;
+  const bayW   = (Math.max(visualPerRow, 1) - 1) * PITCH + MACHINE_W + 0.4;
 
   return (
     <group>
@@ -316,13 +323,13 @@ function ProcessBay({ proc, isHL, isDimmed, activeFoupCount, onClick }: {
       ))}
 
       {/* 장비 2열 — 통로를 마주보게 (bay-and-chase) */}
-      {xs.map((x, i) => (
+      {firstXs.map((x, i) => (
         <FabTool key={`in-${i}`} x={x} z={zIn} proc={proc} kind={kind} facing={+1}
           isHL={isHL} isDimmed={isDimmed} machineIdx={i} />
       ))}
-      {xs.map((x, i) => (
+      {secondXs.map((x, i) => (
         <FabTool key={`out-${i}`} x={x} z={zOut} proc={proc} kind={kind} facing={-1}
-          isHL={isHL} isDimmed={isDimmed} machineIdx={proc.nMachines + i} />
+          isHL={isHL} isDimmed={isDimmed} machineIdx={firstRowCount + i} />
       ))}
 
       {/* Intrabay AMHS rail */}
@@ -340,7 +347,7 @@ function ProcessBay({ proc, isHL, isDimmed, activeFoupCount, onClick }: {
       </Text>
       <Text position={[0, 1.9, bayZ]} fontSize={0.12} color={isHL ? proc.color : "#9ca3af"}
         anchorX="center" anchorY="middle">
-        {`${proc.nameEn} · ×${proc.nMachines * 2}대`}
+        {`${proc.nameEn} · 실제 원장 ×${actualCount}대${actualCount > firstXs.length + secondXs.length ? ` · 3D ${firstXs.length + secondXs.length}대 대표배치` : ""}`}
       </Text>
 
       {/* FOUP-in-bay indicator */}
@@ -461,6 +468,104 @@ function AnimatedFoup({ config, stateRef }: {
         anchorX="center" anchorY="bottom">
         {config.id.replace("W", "")}
       </Text>
+    </group>
+  );
+}
+
+// Campus 전체뷰에서 공정별 사용량 탭의 장비·AMHS·FOUP을 같은 형상으로 재사용하는 축소 FAB.
+// Canvas를 포함하지 않아 상위 Campus Canvas 안에 M20·M21·M22를 동시 배치할 수 있다.
+export function CampusFabProcessModel({
+  fabId = "M20",
+  highlightedProcesses = [],
+  onProcessClick,
+  showFoup = true,
+  equipmentCounts,
+}: {
+  fabId?: FabId;
+  highlightedProcesses?: string[];
+  onProcessClick?: (code: string) => void;
+  showFoup?: boolean;
+  equipmentCounts?: Record<string, number>;
+}) {
+  const waferStates = useMemo(() => CAMPUS_FOUP_CONFIGS.map((config): React.MutableRefObject<WaferState> => ({
+    current: {
+      id: config.id,
+      color: config.color,
+      stepIdx: config.startStep,
+      phase: "processing",
+      timer: PROCESS_SECS * (config.startStep % 3 + 0.5),
+      t: 0,
+      tSpeed: 0,
+      curve: null,
+      currentBay: WAFER_RECIPE[config.startStep] ?? "P01",
+    },
+  })), []);
+  const hasHighlight = highlightedProcesses.length > 0;
+
+  return (
+    <group>
+      <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[FAB_W + 2, 36]} />
+        <meshStandardMaterial color="#E7EBF0" roughness={0.25} metalness={0.12} />
+      </mesh>
+      <CleanroomFloorGrid />
+      <OverheadInfra />
+      {PROCESSES.map((proc) => (
+        <ProcessBay
+          key={proc.code}
+          proc={proc}
+          isHL={highlightedProcesses.includes(proc.code)}
+          isDimmed={hasHighlight && !highlightedProcesses.includes(proc.code)}
+          activeFoupCount={0}
+          compact
+          actualMachineCount={equipmentCounts?.[proc.code] ?? (FAB_MACHINE_PROFILES[fabId][proc.code] ?? 2) * 2}
+          onClick={() => onProcessClick?.(proc.code)}
+        />
+      ))}
+      <FabSignatureEquipment fabId={fabId} />
+      {showFoup && CAMPUS_FOUP_CONFIGS.map((config, index) => (
+        <AnimatedFoup key={config.id} config={config} stateRef={waferStates[index]} />
+      ))}
+    </group>
+  );
+}
+
+const FAB_MACHINE_PROFILES: Record<FabId, Record<string, number>> = {
+  M20: { P01: 2, P02: 3, P03: 5, P04: 4, P05: 2, P06: 3, P07: 3, P08: 5, P09: 3, P10: 4 },
+  M21: { P01: 3, P02: 4, P03: 4, P04: 5, P05: 3, P06: 5, P07: 4, P08: 2, P09: 4, P10: 2 },
+  M22: { P01: 3, P02: 6, P03: 3, P04: 6, P05: 2, P06: 5, P07: 3, P08: 2, P09: 3, P10: 2 },
+};
+
+function FabSignatureEquipment({ fabId }: { fabId: FabId }) {
+  if (fabId === "M20") {
+    return (
+      <group position={[5.4, 0, BAY_Z.P08]}>
+        {[-0.65, 0, 0.65].map((z, index) => <group key={z} position={[0, 0, z]}>
+          <mesh position={[0, 1.05 + index * 0.12, 0]}><boxGeometry args={[1.25, 2.1 + index * 0.24, 0.52]} /><meshStandardMaterial color="#C9B5E8" metalness={0.35} roughness={0.28} /></mesh>
+          <mesh position={[0, 2.18 + index * 0.24, 0]}><boxGeometry args={[0.8, 0.16, 0.38]} /><meshStandardMaterial color="#EA002C" emissive="#EA002C" emissiveIntensity={0.5} /></mesh>
+        </group>)}
+        <Text position={[0, 3.05, 0]} fontSize={0.22} color="#EA002C" anchorX="center">HBM TSV · STACK BOND</Text>
+      </group>
+    );
+  }
+  if (fabId === "M21") {
+    return (
+      <group position={[5.4, 0, BAY_Z.P06]}>
+        {[-1.0, -0.34, 0.34, 1.0].map((z) => <group key={z} position={[0, 0, z]}>
+          <mesh position={[0, 1.1, 0]}><boxGeometry args={[1.15, 2.2, 0.5]} /><meshStandardMaterial color="#B8D4F1" metalness={0.28} roughness={0.32} /></mesh>
+          <mesh position={[0, 1.55, 0.27]}><boxGeometry args={[0.76, 0.42, 0.06]} /><meshStandardMaterial color="#2563EB" emissive="#2563EB" emissiveIntensity={0.55} /></mesh>
+        </group>)}
+        <Text position={[0, 2.75, 0]} fontSize={0.22} color="#2563EB" anchorX="center">DRAM CELL · METAL ARRAY</Text>
+      </group>
+    );
+  }
+  return (
+    <group position={[5.4, 0, BAY_Z.P04]}>
+      {[-0.9, 0, 0.9].map((z, index) => <group key={z} position={[0, 0, z]}>
+        <mesh position={[0, 1.5, 0]}><cylinderGeometry args={[0.46, 0.62, 3 + index * 0.28, 16]} /><meshStandardMaterial color="#C5D8CF" metalness={0.42} roughness={0.3} /></mesh>
+        <mesh position={[0, 2.85 + index * 0.14, 0]}><cylinderGeometry args={[0.32, 0.46, 0.32, 16]} /><meshStandardMaterial color="#059669" emissive="#059669" emissiveIntensity={0.6} /></mesh>
+      </group>)}
+      <Text position={[0, 3.65, 0]} fontSize={0.22} color="#059669" anchorX="center">3D NAND HAR ETCH · STACK CVD</Text>
     </group>
   );
 }
@@ -743,7 +848,7 @@ function WarehouseBuilding({ wh, isHL, isDimmed, onHover, onLeave, onFocus }: {
         {wh.code}
       </Text>
       <Text position={[0, h + 0.24, 0]} fontSize={0.16} color="#94a3b8" anchorX="center" anchorY="bottom">
-        {meta.short}
+        {wh.name || meta.short}
       </Text>
       {!isDimmed && (
         <Text position={[0, 0.55, d / 2 + 0.35]} fontSize={0.14} color="#64748b"
@@ -1009,11 +1114,14 @@ function CleanroomFloorGrid() {
 // Main 3D Scene
 // ─────────────────────────────────────────────
 function Scene({
+  fabId,
   highlightedProcesses, onProcessClick,
   waferStates, warehouses, warehouseLinks,
   hoveredWh, setHoveredWh, onFocusWh, onFocusBay, focus,
   showFoup, showPipes,
+  equipmentCounts,
 }: {
+  fabId?: FabId;
   highlightedProcesses: string[];
   onProcessClick?: (code: string) => void;
   waferStates: React.MutableRefObject<WaferState>[];
@@ -1026,6 +1134,7 @@ function Scene({
   focus: FocusView;
   showFoup: boolean;
   showPipes: boolean;
+  equipmentCounts?: Record<string, number>;
 }) {
   const camRef = useRef<CameraControls>(null);
 
@@ -1122,6 +1231,9 @@ function Scene({
       {/* Section labels */}
       <Text position={[0, 3.8, -10]} fontSize={0.32} color="#6b7280" anchorX="center">전공정 (FEOL)</Text>
       <Text position={[0, 3.8,  10]} fontSize={0.32} color="#6b7280" anchorX="center">후공정 (BEOL)</Text>
+      {fabId && <Text position={[0, 4.55, 0]} fontSize={0.42} color={fabId === "M20" ? "#EA002C" : fabId === "M21" ? "#2563EB" : "#059669"} anchorX="center">
+        {fabId === "M20" ? "M20 · HBM / TSV STACK" : fabId === "M21" ? "M21 · DRAM CELL ARRAY" : "M22 · 3D NAND VERTICAL STACK"}
+      </Text>}
       <Text position={[0, 0.02, 0]} fontSize={0.2} color="#94a3b8" anchorX="center" rotation={[-Math.PI / 2, 0, 0]}>
         AMHS 인터베이 코리더
       </Text>
@@ -1131,8 +1243,10 @@ function Scene({
         <ProcessBay key={proc.code} proc={proc}
           isHL={isHL(proc.code)} isDimmed={isDimmed(proc.code)}
           activeFoupCount={foupCounts[proc.code] ?? 0}
+          actualMachineCount={equipmentCounts?.[proc.code] ?? (fabId ? (FAB_MACHINE_PROFILES[fabId][proc.code] ?? 2) * 2 : undefined)}
           onClick={() => { onProcessClick?.(proc.code); onFocusBay(proc.code); }} />
       ))}
+      {fabId && <FabSignatureEquipment fabId={fabId} />}
 
       {/* Animated FOUPs */}
       {showFoup && WAFER_CONFIGS.map((cfg, i) => (
@@ -1171,12 +1285,15 @@ function Scene({
 // Exported component
 // ─────────────────────────────────────────────
 export default function ProcessFlow3D({
+  fabId,
   highlightedProcesses = [],
   onProcessClick,
   onWarehouseClick,
   warehouses = [],
   warehouseLinks = [],
+  equipmentCounts,
 }: {
+  fabId?: FabId;
   highlightedProcesses?: string[];
   activeProcesses?: string[];
   onProcessClick?: (code: string) => void;
@@ -1184,6 +1301,7 @@ export default function ProcessFlow3D({
   materialCounts?: Record<string, number>;
   warehouses?: WarehouseInfo[];
   warehouseLinks?: WarehouseLink[];
+  equipmentCounts?: Record<string, number>;
 }) {
   const [hoveredWh, setHoveredWh] = useState<string | null>(null);
   const [showFoup, setShowFoup] = useState(true);
@@ -1265,6 +1383,7 @@ export default function ProcessFlow3D({
         style={{ background: "linear-gradient(180deg,#eaeff5 0%,#f4f7fa 55%,#ffffff 100%)", borderRadius: 16 }}>
         <Suspense fallback={null}>
           <Scene
+            fabId={fabId}
             highlightedProcesses={highlightedProcesses}
             onProcessClick={onProcessClick}
             waferStates={waferStates}
@@ -1277,6 +1396,7 @@ export default function ProcessFlow3D({
             focus={focus}
             showFoup={showFoup}
             showPipes={showPipes}
+            equipmentCounts={equipmentCounts}
           />
         </Suspense>
       </Canvas>

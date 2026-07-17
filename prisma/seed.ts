@@ -431,6 +431,23 @@ async function main() {
   );
   console.log(`✅ ProcessUsage: ${processUsageData.length}건`);
 
+  // 운영 시작 재고 기준: 공정 사용량 스케일과 동일한 ROP 기간을 확보한다.
+  // 초기 현재고는 최소 안전재고 + 1일 수요 이상이며, ROP가 더 크면 ROP 수요를 적용한다.
+  const materialDefMap = new Map(materialDefs.map(def => [def.code, def]));
+  const monthlyUsageByMaterial = new Map<string, number>();
+  for (const usage of processUsageData) monthlyUsageByMaterial.set(usage.code, (monthlyUsageByMaterial.get(usage.code) ?? 0) + usage.qty);
+  for (const inv of inventoryData) {
+    const material = materialDefMap.get(inv.code);
+    if (!material || material.ropDays <= 0) continue;
+    const dailyUsage = (monthlyUsageByMaterial.get(inv.code) ?? inv.daily * 30) / 30;
+    const openingQuantity = Math.ceil(Math.max(inv.qty, material.safetyStock + dailyUsage, dailyUsage * material.ropDays));
+    await col("inventory").updateOne({ _id: `${inv.code}__${inv.whCode}` }, {
+      $set: { quantity: openingQuantity, avgDailyUsage: dailyUsage,
+        capacityLimit: Math.ceil(openingQuantity / 0.68), updatedAt: new Date() },
+    });
+  }
+  console.log("✅ Inventory opening baseline: safety stock + ROP demand");
+
   // ─── 7. Lot 초기 데이터 ────────────────────────────────────
   await db.collection("inventoryLots").deleteMany({});
 

@@ -2,8 +2,11 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import { PROCESSES } from "@/lib/processes";
+import { FAB_IDS, type FabId } from "@/lib/fab-domain";
+import { buildTwinHref, type CameraPreset, type TwinMode } from "@/lib/twin-navigation";
 
 const ProcessFlow3D = dynamic(() => import("@/components/ProcessFlow3D"), { ssr: false });
 
@@ -21,10 +24,14 @@ const PRODUCT_COLORS: Record<string, string> = {
   NAND: "#00B96B",
 };
 
+const FAB_PRODUCT: Record<FabId, "HBM" | "DRAM" | "NAND"> = {
+  M20: "HBM", M21: "DRAM", M22: "NAND",
+};
+
 type Material = {
   id: string; code: string; name: string; category: string;
   processes: string[]; products: string[];
-  usages: { proc: string; product: string; qty: number }[];
+  usages: { proc: string; product: string; qty: number; actualQty: number }[];
   inventory: { quantity: number; dailyUsage: number; doh: number | null; unit: string } | null;
 };
 
@@ -52,17 +59,24 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 }
 
 export default function UsageClient({
-  materials, warehouseLinks = [], warehouses = [],
+  materials, warehouseLinks = [], warehouses = [], equipmentCounts = {},
 }: {
   materials: Material[];
   warehouseLinks?: WarehouseLink[];
   warehouses?: WarehouseInfo[];
+  equipmentCounts?: Record<string, number>;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const fabParam = searchParams.get("fab");
+  const twinFab = fabParam && FAB_IDS.includes(fabParam as FabId) ? fabParam as FabId : null;
+  const materialParam = searchParams.get("material");
+  const twinMode = (searchParams.get("mode") as TwinMode | null) ?? "LIVE";
+  const twinCamera = (searchParams.get("camera") as CameraPreset | null) ?? (twinFab ? `${twinFab}_OVERVIEW` as CameraPreset : "CAMPUS_OVERVIEW");
   const [hoveredMat, setHoveredMat] = useState<Material | null>(null);
+  const [pinnedMatId, setPinnedMatId] = useState<string | null>(materialParam);
   const [selectedProc, setSelectedProc] = useState<string | null>(() => searchParams.get("process"));
-  const [filterProduct, setFilterProduct] = useState<"ALL" | "HBM" | "DRAM" | "NAND">("ALL");
+  const [filterProduct, setFilterProduct] = useState<"ALL" | "HBM" | "DRAM" | "NAND">(() => twinFab ? FAB_PRODUCT[twinFab] : "ALL");
   const [filterCat, setFilterCat] = useState<string>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -72,8 +86,10 @@ export default function UsageClient({
     else { setSortKey(col); setSortDir("asc"); }
   }
 
-  const highlightedProcesses = hoveredMat
-    ? hoveredMat.processes
+  const pinnedMat = materials.find((material) => material.id === pinnedMatId) ?? null;
+  const focusedMat = hoveredMat ?? pinnedMat;
+  const highlightedProcesses = focusedMat
+    ? focusedMat.processes
     : selectedProc
     ? [selectedProc]
     : [];
@@ -120,6 +136,26 @@ export default function UsageClient({
         </div>
       </div>
 
+      {(twinFab || materialParam) && (
+        <div className="mb-5 flex flex-wrap items-center gap-2 border border-[#B9D8F3] bg-[#F2F8FF] px-4 py-3 text-[11px] text-[#335A78]">
+          <span className="font-black text-[#0069B4]">CAMPUS TWIN CONTEXT</span>
+          {twinFab && <span className="border-l border-[#B9D8F3] pl-2 font-bold">{twinFab} · {FAB_PRODUCT[twinFab]}</span>}
+          {pinnedMat && <span className="font-mono font-bold">{pinnedMat.code} · {pinnedMat.name}</span>}
+          <Link
+            href={buildTwinHref("/campus", {
+              fabScope: twinFab ?? "CAMPUS", materialId: pinnedMatId,
+              facilityId: searchParams.get("facility"), lotId: searchParams.get("lot"),
+              handlingUnitId: searchParams.get("hu"), alertId: searchParams.get("alert"),
+              flowStep: searchParams.get("step"), mode: twinMode,
+              referenceTime: searchParams.get("time"), cameraPreset: twinCamera,
+            })}
+            className="ml-auto font-black text-[#0069B4] hover:underline"
+          >
+            ← Campus 전체뷰
+          </Link>
+        </div>
+      )}
+
       {/* 공정 흐름도 */}
       <div className="bg-white rounded-2xl p-5 mb-5" style={{ boxShadow: "var(--shadow-1)", border: "1px solid var(--border)" }}>
         <div className="flex items-center justify-between mb-4">
@@ -136,10 +172,11 @@ export default function UsageClient({
           <div className="flex items-center gap-4 flex-wrap mb-3 px-1">
             <span className="text-[10px] font-semibold text-[#999]">자재창고</span>
             {warehouses.map((wh) => (
-              <div key={wh.code} className="flex items-center gap-1.5">
+              <div key={wh.code} className="flex items-center gap-1.5" title={`${wh.code} · ${wh.name}`}>
                 <span className="w-2.5 h-2.5 rounded-sm"
                   style={{ background: CAT_COLOR[wh.categories[0] ?? "GAS"] }} />
                 <span className="text-[10px] font-bold text-[#333]">{wh.code}</span>
+                <span className="text-[9px] text-[#777]">{wh.name}</span>
                 <span className="text-[9px] text-[#aaa]">{wh.processCount}공정</span>
               </div>
             ))}
@@ -152,29 +189,36 @@ export default function UsageClient({
         <div className="relative" style={{ height: 480 }}>
           <Suspense fallback={<div className="w-full h-full bg-[#e8f0f8] rounded-2xl flex items-center justify-center text-sm text-[#999]">3D 로딩 중…</div>}>
             <ProcessFlow3D
+              fabId={twinFab ?? "M20"}
               highlightedProcesses={highlightedProcesses}
               activeProcesses={activeProcesses}
               onProcessClick={(code) =>
                 setSelectedProc((prev) => (prev === code ? null : code))
               }
-              onWarehouseClick={(code) => router.push(`/warehouse/${code}`)}
+              onWarehouseClick={(code) => router.push(buildTwinHref(`/warehouse/${code}`, {
+                fabScope: twinFab ?? "CAMPUS", materialId: pinnedMatId,
+                facilityId: code, lotId: searchParams.get("lot"), handlingUnitId: searchParams.get("hu"),
+                alertId: searchParams.get("alert"), flowStep: searchParams.get("step"), mode: twinMode,
+                referenceTime: searchParams.get("time"), cameraPreset: "WMS_OVERVIEW",
+              }))}
               materialCounts={materialCounts}
               warehouses={warehouses}
               warehouseLinks={warehouseLinks}
+              equipmentCounts={equipmentCounts}
             />
           </Suspense>
 
           {/* hover 중인 자재 상세 — absolute overlay라 레이아웃에 영향 없음 */}
           <div
             className="absolute bottom-0 left-0 right-0 rounded-b-2xl overflow-hidden pointer-events-none transition-opacity duration-150"
-            style={{ opacity: hoveredMat ? 1 : 0, background: "rgba(15,23,42,0.92)", backdropFilter: "blur(6px)" }}
+            style={{ opacity: focusedMat ? 1 : 0, background: "rgba(15,23,42,0.92)", backdropFilter: "blur(6px)" }}
           >
-            {hoveredMat && (
+            {focusedMat && (
               <div className="p-4">
-                <div className="text-[10px] text-slate-400 font-mono mb-0.5">{hoveredMat.code}</div>
-                <div className="text-sm font-bold text-white mb-2">{hoveredMat.name}</div>
+                <div className="text-[10px] text-slate-400 font-mono mb-0.5">{focusedMat.code}</div>
+                <div className="text-sm font-bold text-white mb-2">{focusedMat.name}</div>
                 <div className="flex flex-wrap gap-4">
-                  {hoveredMat.usages.map((u, i) => {
+                  {focusedMat.usages.map((u, i) => {
                     const proc = PROCESSES.find((p) => p.code === u.proc);
                     return (
                       <div key={i} className="flex items-center gap-2 text-[11px]">
@@ -182,6 +226,7 @@ export default function UsageClient({
                         <span className="text-slate-300">{u.proc} {proc?.name}</span>
                         <span className="text-slate-500">{u.product}</span>
                         <span className="font-bold text-white">{u.qty.toLocaleString()}</span>
+                        <span className="font-bold text-emerald-300">실적 {u.actualQty.toLocaleString()}</span>
                       </div>
                     );
                   })}
@@ -268,6 +313,7 @@ export default function UsageClient({
                   { col: null,                           label: "적용 공정", align: "left"  as const, px: "px-4" },
                   { col: null,                           label: "제품",     align: "left"  as const, px: "px-4" },
                   { col: "totalQty"   as SortKey | null, label: "월 소요량", align: "right" as const, px: "px-4" },
+                  { col: null,                           label: "30일 실사용", align: "right" as const, px: "px-4" },
                 ]
               ).map(({ col, label, align, px }) => (
                 <th key={label} className={`${px} py-3`}>
@@ -293,15 +339,20 @@ export default function UsageClient({
               const totalQty = mat.usages
                 .filter((u) => filterProduct === "ALL" || u.product === filterProduct)
                 .reduce((s, u) => s + u.qty, 0);
+              const actualQty = mat.usages
+                .filter((u) => filterProduct === "ALL" || u.product === filterProduct)
+                .reduce((sum, usage) => sum + usage.actualQty, 0);
               const isHovered = hoveredMat?.id === mat.id;
+              const isPinned = pinnedMat?.id === mat.id;
 
               return (
                 <tr
                   key={mat.id}
                   onMouseEnter={() => setHoveredMat(mat)}
                   onMouseLeave={() => setHoveredMat(null)}
+                  onClick={() => setPinnedMatId((current) => current === mat.id ? null : mat.id)}
                   className="transition-colors cursor-pointer"
-                  style={{ background: isHovered ? "#FFF5F5" : "transparent", borderBottom: "1px solid var(--border)" }}
+                  style={{ background: isHovered ? "#FFF5F5" : isPinned ? "#F2F8FF" : "transparent", borderBottom: "1px solid var(--border)" }}
                 >
                   <td className="px-5 py-2.5 font-mono text-[11px] text-[#999]">{mat.code}</td>
                   <td className="px-4 py-2.5 font-semibold text-[#111]">{mat.name}</td>
@@ -349,7 +400,7 @@ export default function UsageClient({
                             <span
                               key={p}
                               className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white"
-                              style={{ background: isHovered ? proc?.color ?? "#999" : "#cbd5e1" }}
+                              style={{ background: isHovered || isPinned ? proc?.color ?? "#999" : "#cbd5e1" }}
                             >
                               {p}
                             </span>
@@ -376,6 +427,10 @@ export default function UsageClient({
                   <td className="px-4 py-2.5 text-right font-bold tabular-nums">
                     {totalQty.toLocaleString()}
                     {mat.inventory?.unit && <span className="text-[#999] font-normal text-[10px] ml-0.5">{mat.inventory.unit}</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-bold tabular-nums text-[#087A55]">
+                    {actualQty.toLocaleString()}
+                    {mat.inventory?.unit && <span className="ml-0.5 text-[10px] font-normal text-[#6F8D82]">{mat.inventory.unit}</span>}
                   </td>
                 </tr>
               );

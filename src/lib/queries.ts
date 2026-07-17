@@ -246,18 +246,20 @@ export async function getWarehouseOperationalLayout(warehouseCode: string): Prom
     materials.find({ _id: { $in: materialIds } }).toArray(),
     inventoryLots.find({ _id: { $in: lotIds } }).toArray(),
   ]);
+  const lotIdsFound = new Set(lotDocs.map((lot) => lot._id));
+  // HU가 참조하는 Lot이 없으면 과거 레이아웃 스냅샷이 현재 WMS 원장과 단절된 상태다.
+  // 이 경우 부분 HU 수량으로 DOH를 만들지 않고 호출자가 집계 재고 기반 가상 레이아웃을 사용한다.
+  if (units.some((unit) => !lotIdsFound.has(unit.inventoryLotId))) return null;
   const unitByLocation = new Map(units.map((unit) => [unit.locationId, unit]));
   const materialMap = new Map(materialDocs.map((material) => [material._id, material]));
   const lotMap = new Map(lotDocs.map((lot) => [lot._id, lot]));
   const inventoryMap = new Map(inventoryDocs.map((item) => [item.materialId, item]));
   const zoneMap = new Map(zones.map((zone) => [zone._id, zone.name]));
-  const usage = await getMaterialDailyUsage();
   return locations.map((location) => {
     const unit = unitByLocation.get(location._id);
     const material = unit ? materialMap.get(unit.materialId) : undefined;
     const lot = unit ? lotMap.get(unit.inventoryLotId) : undefined;
     const inv = unit ? inventoryMap.get(unit.materialId) : undefined;
-    const daily = unit ? usage.get(unit.materialId)?.daily ?? 0 : 0;
     const rule = material ? getStorageRule(material.code) : null;
     const supply = material ? getSupplyProfile(material.code) : null;
     const status = unit?.status === "HOLD" || unit?.status === "QUARANTINE" ? unit.status : unit ? "OCCUPIED" : "AVAILABLE";
@@ -265,7 +267,10 @@ export async function getWarehouseOperationalLayout(warehouseCode: string): Prom
       id: location._id, code: location.code, zone: zoneMap.get(location.zoneId) ?? location.zoneId, aisle: location.aisle ?? 0, bay: location.bay ?? 0, level: location.level ?? 0,
       position: [location.position.x, location.position.y, location.position.z], status,
       materialId: unit?.materialId, materialCode: material?.code, materialName: material?.name, category: material?.category,
-      quantity: unit?.quantity, unit: material?.unit, doh: unit && daily > 0 ? unit.quantity / daily : null,
+      quantity: unit?.quantity, unit: material?.unit,
+      // 위치/HU 하나에 전체 자재 일수요를 나누면 인위적인 1/n DOH가 된다.
+      // 창고별 수요 배정이 생기기 전까지 위치 단위 DOH는 계산하지 않는다.
+      doh: null,
       hazard: rule?.hazard, rationale: rule?.rationale ?? (material ? getGeneralStorageRationale(warehouse.type) : undefined), controls: rule?.controls,
       supplyMode: supply?.mode, supplyLabel: supply?.label, supplyFlow: supply?.flow, targetFacility: supply?.targetFacility,
       relocationRequired: warehouse.type === "HAZMAT" && (supply?.mode === "BULK_GAS" || supply?.mode === "BULK_CHEMICAL"),
