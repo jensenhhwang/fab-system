@@ -570,7 +570,7 @@ const M20_PILOT_MATERIAL_ID = "PKG-001";
 // "+ M20 에이전트 흐름" 버튼(POST /api/mes/workorders, scope: M20_PILOT)과 완전히 같은 로직을
 // 서버 함수로 뽑아둔 것 — 사람이 버튼을 눌러 시작하는 경우와, 웨이퍼 로트가 패키징 노드에
 // 진입해 자동으로 새 소비 사이클이 필요해지는 경우 둘 다 이 함수를 통해 같은 방식으로 워크오더를 만든다.
-export async function createM20PilotWorkOrder(actorId: string, requestId: string): Promise<WorkOrderDoc> {
+export async function createM20PilotWorkOrder(actorId: string, requestId: string, source?: { lotId: string; foupCode: string }): Promise<WorkOrderDoc> {
   const fabId = "M20" as const;
   const product = "HBM" as const;
   const processCode = "P10";
@@ -597,8 +597,9 @@ export async function createM20PilotWorkOrder(actorId: string, requestId: string
     _id: `WO-${fabId}-${randomUUID()}`,
     fabId, processCode, product, plannedQty, plannedQtyUnit: "RUN",
     scope: "M20_PILOT", requestId, status: "MATERIAL_WAIT", bomLines,
+    lotId: source?.lotId, foupCode: source?.foupCode,
     createdBy: actorId, createdAt: now, updatedAt: now,
-    note: "M20 대표 수직 흐름 · 웨이퍼 로트 실행 원장에서 자동 생성",
+    note: source ? `M20 대표 수직 흐름 · ${source.foupCode} 패키징 진입으로 자동 생성` : "M20 대표 수직 흐름 · 수동 생성",
   };
 
   const materialDocs = await materials.find({ _id: { $in: bomLines.map((line) => line.materialId) } }).toArray();

@@ -12,11 +12,13 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const statusParam = searchParams.get("status");
   const fabId = searchParams.get("fabId") as FabId | null;
+  const scope = searchParams.get("scope") as WorkOrderDoc["scope"] | null;
   const { workOrders } = await collections();
 
   const filter: Record<string, unknown> = {};
   if (statusParam) filter.status = { $in: statusParam.split(",") as WorkOrderDoc["status"][] };
   if (fabId) filter.fabId = fabId;
+  if (scope) filter.scope = scope;
 
   const orders = await workOrders
     .find(filter)

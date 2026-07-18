@@ -21,6 +21,7 @@
     "test:m20-agents": "tsx scripts/test-m20-agents.ts",
     "test:scene-clock": "tsx scripts/test-scene-clock.ts",
     "test:wafer-lot-12foup": "tsx scripts/test-wafer-lot-12foup.ts",
+    "test:pilot-queue": "tsx scripts/test-pilot-queue.ts",
     "check": "npm run typecheck && npm run lint",
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate-storage": "tsx prisma/migrate-storage-layout.ts",

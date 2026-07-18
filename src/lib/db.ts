@@ -251,6 +251,8 @@ export interface WorkOrderDoc {
   plannedQtyUnit?: "RUN" | "WAFER";
   scope?: "FULL_BOM" | "M20_PILOT";
   requestId?: string;
+  lotId?: string; // M20_PILOT이 waferLots 실행 원장에서 자동 생성된 경우, 트리거한 웨이퍼 로트
+  foupCode?: string; // 위 lotId의 FOUP 식별자 — MES 화면에서 어떤 FOUP의 사이클인지 구분하는 용도
   status: WorkOrderStatus;
   bomLines: BomLine[];
   plannedStart?: Date;

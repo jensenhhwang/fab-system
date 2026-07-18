@@ -131,7 +131,7 @@ export async function advanceLotStep(lotId: string, actorId: string, idempotency
   // 워크오더 생성은 기존 /api/mes/workorders POST가 이미 하듯 orchestrateM20Agents를 자동 호출한다.
   if (lot.fabId === "M20" && lot.product === "HBM" && visit.nodeId === "packaging" && visit.visitIndex === 0) {
     try {
-      await createM20PilotWorkOrder(actorId, `WLOT-PACKAGING:${lotId}:${visit.stepIndex}`);
+      await createM20PilotWorkOrder(actorId, `WLOT-PACKAGING:${lotId}:${visit.stepIndex}`, { lotId, foupCode: lot.foupCode });
     } catch {
       // 소비 사이클 생성 실패가 웨이퍼 라우팅 확인 자체를 막으면 안 됨 — 다음 조회 때 운영자가 별도로 재시도할 수 있다.
     }

@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import type { WorkOrderDoc, WorkOrderStatus } from "@/lib/db";
 import ProcessReadinessMatrix from "./ProcessReadinessMatrix";
 import WorkOrderTable from "./WorkOrderTable";
 import WorkOrderCreateModal from "./WorkOrderCreateModal";
 import PickingDrawer from "./PickingDrawer";
-import M20PilotFlowCard from "./M20PilotFlowCard";
+import PilotFlowDrawer from "./PilotFlowDrawer";
+import WorkOrderStallBanner from "./WorkOrderStallBanner";
+import WorkOrderQueueGrid, { type QueueFilter } from "./WorkOrderQueueGrid";
+import type { PilotQueueItemView } from "./pilot-queue-types";
 
 type Tab = "readiness" | "workorders" | "log";
 
@@ -41,6 +44,9 @@ export default function MesClient({
   const [logLoaded, setLogLoaded] = useState(false);
   const [pilotCreating, setPilotCreating] = useState(false);
   const [pilotError, setPilotError] = useState<string | null>(null);
+  const [pilotQueue, setPilotQueue] = useState<PilotQueueItemView[]>([]);
+  const [selectedPilotWoId, setSelectedPilotWoId] = useState<string | null>(null);
+  const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
 
   const TAB_LABELS: { key: Tab; label: string }[] = [
     { key: "readiness", label: "공정 준비 현황" },
@@ -52,6 +58,22 @@ export default function MesClient({
     const r = await fetch("/api/mes/workorders");
     if (r.ok) setWorkOrders(await r.json());
   }, []);
+
+  const refreshPilotQueue = useCallback(async () => {
+    const r = await fetch("/api/mes/pilot-queue");
+    if (r.ok) setPilotQueue(await r.json());
+  }, []);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([refreshWorkOrders(), refreshPilotQueue()]);
+  }, [refreshWorkOrders, refreshPilotQueue]);
+
+  useEffect(() => {
+    if (tab !== "workorders") return;
+    const initial = window.setTimeout(() => void refreshPilotQueue(), 0);
+    const interval = window.setInterval(() => { if (!document.hidden) void refreshPilotQueue(); }, 6_000);
+    return () => { window.clearTimeout(initial); window.clearInterval(interval); };
+  }, [tab, refreshPilotQueue]);
 
   const selectTab = useCallback(async (nextTab: Tab) => {
     setTab(nextTab);
@@ -67,14 +89,13 @@ export default function MesClient({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    await refreshWorkOrders();
-  }, [refreshWorkOrders]);
+    await refreshAll();
+  }, [refreshAll]);
 
   const sortedLog = [...workOrders].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   );
-  const activePilotWorkOrder = workOrders.find((workOrder) => workOrder.scope === "M20_PILOT" && workOrder.status !== "DONE");
-  const pilotWorkOrder = activePilotWorkOrder ?? workOrders.find((workOrder) => workOrder.scope === "M20_PILOT");
+  const selectedPilotItem = pilotQueue.find((item) => item.workOrder._id === selectedPilotWoId) ?? null;
   const createPilot = async () => {
     setPilotCreating(true);
     setPilotError(null);
@@ -92,7 +113,9 @@ export default function MesClient({
         setPilotError(payload.error ?? "M20 대표 작업지시 생성 실패");
         return;
       }
-      await refreshWorkOrders();
+      const created = await response.json() as WorkOrderDoc;
+      await refreshAll();
+      setSelectedPilotWoId(created._id);
       setTab("workorders");
     } finally {
       setPilotCreating(false);
@@ -106,7 +129,7 @@ export default function MesClient({
           공정 실행 관리 (MES)
         </h1>
         <div className="flex items-center gap-2">
-          {!activePilotWorkOrder && <button type="button" onClick={() => void createPilot()} disabled={pilotCreating} className="border border-[#0069B4] bg-[#F2F8FF] px-4 py-2 text-sm font-black text-[#0069B4] disabled:opacity-50">{pilotCreating ? "M20 원장 생성 중…" : "+ M20 에이전트 흐름"}</button>}
+          <button type="button" onClick={() => void createPilot()} disabled={pilotCreating} className="border border-[#0069B4] bg-[#F2F8FF] px-4 py-2 text-sm font-black text-[#0069B4] disabled:opacity-50">{pilotCreating ? "M20 원장 생성 중…" : "+ M20 에이전트 흐름"}</button>
           <button className="px-4 py-2 bg-[#0078D4] text-white text-sm font-medium rounded-lg hover:bg-blue-700" onClick={() => setShowCreateModal(true)}>+ 작업지시 생성</button>
         </div>
       </div>
@@ -145,7 +168,14 @@ export default function MesClient({
         )}
         {tab === "workorders" && (
           <div className="space-y-4">
-            {pilotWorkOrder && <M20PilotFlowCard workOrder={pilotWorkOrder} onPick={() => setPickingWo(pilotWorkOrder)} onRefresh={refreshWorkOrders} />}
+            <WorkOrderStallBanner items={pilotQueue} onShowStalled={() => setQueueFilter("stalled")} />
+            <WorkOrderQueueGrid
+              items={pilotQueue}
+              selectedId={selectedPilotWoId}
+              onSelect={setSelectedPilotWoId}
+              filter={queueFilter}
+              onFilterChange={setQueueFilter}
+            />
             <WorkOrderTable workOrders={workOrders} onStatusChange={handleStatusChange} onPickClick={(wo) => setPickingWo(wo)} />
           </div>
         )}
@@ -197,7 +227,16 @@ export default function MesClient({
         <PickingDrawer
           wo={pickingWo}
           onClose={() => setPickingWo(null)}
-          onPicked={refreshWorkOrders}
+          onPicked={refreshAll}
+        />
+      )}
+
+      {selectedPilotItem && (
+        <PilotFlowDrawer
+          workOrder={selectedPilotItem.workOrder}
+          onClose={() => setSelectedPilotWoId(null)}
+          onPick={() => setPickingWo(selectedPilotItem.workOrder)}
+          onRefresh={refreshAll}
         />
       )}
     </div>
