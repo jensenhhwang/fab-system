@@ -70,4 +70,17 @@
 
 ---
 
+## Day 11 · 2026-07-18 · 실제 공정 라우트 + 12-FOUP 실시간 추적
+
+- 일일 생산 실적(`productionActuals`) 원장을 추가해 일일 통제 화면의 재고·DOH 투영이 계획치가 아닌 확정 실적 기준으로 계산되도록 연결
+- `materialReroute`로 자재 전용 경로 변경을 기록하고, MES 공정 준비도·자재 상세 화면의 잔존 이천 M14/M16 표기를 M20/M21/M22 기준으로 정리
+- 업계 공개 자료(Applied Materials, SK하이닉스 뉴스룸, Samsung Newsroom, imec, SemiEngineering 등)를 근거로 HBM·DRAM·NAND 실제 공정 흐름을 `docs/route-master.md`에 정의하고 `routeMaster` 컬렉션으로 시딩(M20·HBM 9노드·130스텝)
+- `waferLots`/`waferLotStepEvents` 실행 원장을 추가해 FOUP-01 하나만 되던 3D 실시간 추적을 12개 FOUP 전부로 확장
+- FOUP가 130스텝을 완주하면 새 웨이퍼 25장 로트로 자동 재적재되는 순환 구조 구현
+- 패키징 노드 첫 진입 시 M20 파일럿 워크오더를 자동 생성해 WMS 예약·소비·발주 에이전트 체인을 재트리거 — 재고가 계속 깎이기만 하고 발주로 이어지지 않던 문제 해소
+- 6초 폴링마다 `MES_TELEMETRY` 트리거로 1스텝씩 자동 진행하는 타이머를 추가하고, 기존 `OPERATOR_CONFIRM` 수동 확인 버튼과 병행 가능하게 유지
+- `docs/vision.md`에 시뮬레이션 배속(약 1.2만~1.6만배, 균등 배분 가정)을 기록하고, "타임 액셀러레이터 제외" 원칙은 Phase 4 What-if 트윈에 한정됨을 명시해 FOUP 자동 진행과의 관계를 정리
+
+---
+
 ## Next · 입고 시뮬레이션 (`/simulation`) — VISION 원칙 1번
