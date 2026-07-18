@@ -4,7 +4,7 @@ import { collections, getMongoClient } from "@/lib/db";
 import type { WorkOrderDoc, BomLine, MaterialAllocationDoc, MaterialFlowEventDoc, Product, TransferOrderDoc } from "@/lib/db";
 import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 import { fabForProduct, type FabId } from "@/lib/fab-domain";
-import { orchestrateM20Agents } from "@/lib/m20-agent-service";
+import { createM20PilotWorkOrder } from "@/lib/m20-agent-service";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +53,14 @@ export async function POST(req: NextRequest) {
   if (scope === "M20_PILOT" && (resolvedFabId !== "M20" || product !== "HBM" || processCode !== "P10" || !pilotMaterialId)) {
     return NextResponse.json({ error: "M20 대표 흐름은 M20/HBM/P10과 대표 자재가 필요합니다." }, { status: 400 });
   }
+  if (scope === "M20_PILOT") {
+    try {
+      const wo = await createM20PilotWorkOrder(access.user.id, requestId ?? randomUUID());
+      return NextResponse.json(wo, { status: 201 });
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : "M20 대표 워크오더 생성 실패" }, { status: 409 });
+    }
+  }
 
   const { workOrders, bomTemplates, materials, inventory, materialAllocations, transferOrders, materialFlowEvents } = await collections();
 
@@ -64,11 +72,7 @@ export async function POST(req: NextRequest) {
     if (existing) return NextResponse.json(existing);
   }
 
-  const selectedLines = scope === "M20_PILOT"
-    ? template.lines.filter((line) => line.materialId === pilotMaterialId)
-    : template.lines;
-  if (!selectedLines.length) return NextResponse.json({ error: `${pilotMaterialId}가 ${templateId} BOM에 없습니다.` }, { status: 409 });
-  const bomLines: BomLine[] = selectedLines.map(line => ({
+  const bomLines: BomLine[] = template.lines.map(line => ({
     materialId: line.materialId,
     plannedQty: Math.round(line.qtyPerRun * plannedQty * 100) / 100,
     pickedQty: 0,
@@ -168,9 +172,6 @@ export async function POST(req: NextRequest) {
     });
   } finally {
     await session.endSession();
-  }
-  if (scope === "M20_PILOT") {
-    await orchestrateM20Agents(wo._id, access.user.id);
   }
   return NextResponse.json(wo, { status: 201 });
 }

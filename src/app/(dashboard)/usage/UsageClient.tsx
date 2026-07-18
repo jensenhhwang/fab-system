@@ -8,6 +8,8 @@ import { PROCESSES } from "@/lib/processes";
 import { FAB_IDS, type FabId } from "@/lib/fab-domain";
 import { getProcessGuide } from "@/lib/process-guide";
 import { buildTwinHref, type CameraPreset, type TwinMode } from "@/lib/twin-navigation";
+import LotRouteTrackerCard from "./LotRouteTrackerCard";
+import type { LiveFoupView } from "@/components/ProcessFlow3D";
 
 const ProcessFlow3D = dynamic(() => import("@/components/ProcessFlow3D"), { ssr: false });
 
@@ -82,6 +84,7 @@ export default function UsageClient({
   const [pinnedMatId, setPinnedMatId] = useState<string | null>(materialParam);
   const [selectedProc, setSelectedProc] = useState<string | null>(() => searchParams.get("process"));
   const [selectedFab, setSelectedFab] = useState<"ALL" | FabId>(() => twinFab ?? "ALL");
+  const [liveFoups, setLiveFoups] = useState<LiveFoupView[]>([]);
   const [filterCat, setFilterCat] = useState<string>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -132,19 +135,6 @@ export default function UsageClient({
     fabId,
     count: equipmentByFab[fabId][selectedProc] ?? null,
   })) : [];
-  const fabDailyMaterials = selectedFab === "ALL" ? [] : materials
-    .map((material) => {
-      const usages = material.usages.filter((usage) => usage.product === FAB_PRODUCT[selectedFab]);
-      return {
-        material,
-        processCodes: [...new Set(usages.map((usage) => usage.proc))],
-        plannedDaily: usages.reduce((sum, usage) => sum + usage.qty, 0) / 30,
-        actualDaily: usages.reduce((sum, usage) => sum + usage.actualQty, 0) / 30,
-      };
-    })
-    .filter((row) => row.plannedDaily > 0 || row.actualDaily > 0)
-    .sort((a, b) => b.plannedDaily - a.plannedDaily);
-
   const filteredMaterials = materials
     .filter((m) => {
       if (filterProduct !== "ALL" && !m.products.includes(filterProduct)) return false;
@@ -238,36 +228,6 @@ export default function UsageClient({
         </button>
         <span className="ml-auto px-2 text-[10px] text-[#7B848D]">직접 진입은 전체 · Twin 연결은 선택 Fab 유지</span>
       </div>
-
-      {selectedFab !== "ALL" && <section className="mb-5 overflow-hidden rounded-2xl border border-[#D8DDE2] bg-white" data-testid="fab-daily-materials">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E3E7EB] px-5 py-4">
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-[0.1em]" style={{ color: PRODUCT_COLORS[FAB_PRODUCT[selectedFab]] }}>{selectedFab} · {FAB_PRODUCT[selectedFab]}</div>
-            <h2 className="mt-1 text-sm font-black text-[#20262D]">Fab 자재 일사용량</h2>
-            <p className="mt-1 text-[10px] text-[#7A848D]">계획 월소요량 ÷ 30일 · 최근 30일 CONSUMED 실적 ÷ 30일</p>
-          </div>
-          <div className="rounded-lg bg-[#F3F5F7] px-3 py-2 text-[10px] font-bold text-[#59636D]">자재 {fabDailyMaterials.length}종 · 단위별 개별 표시</div>
-        </div>
-        <div className="max-h-[360px] overflow-auto">
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-[#F5F7F9] text-[10px] font-black text-[#7C858E]">
-              <tr><th className="px-5 py-3 text-left">자재</th><th className="px-4 py-3 text-left">적용 공정</th><th className="px-4 py-3 text-right">계획 일사용량</th><th className="px-5 py-3 text-right">30일 평균 실사용량</th></tr>
-            </thead>
-            <tbody>
-              {fabDailyMaterials.map(({ material: rowMaterial, processCodes, plannedDaily, actualDaily }) => <tr key={rowMaterial.id} className="border-t border-[#EDF0F2]">
-                <td className="px-5 py-3"><div className="font-mono text-[10px] text-[#8A929A]">{rowMaterial.code}</div><div className="mt-0.5 font-bold text-[#252B31]">{rowMaterial.name}</div></td>
-                <td className="px-4 py-3"><div className="flex flex-wrap gap-1">{processCodes.map((processCode) => {
-                  const process = PROCESSES.find((item) => item.code === processCode);
-                  return <button key={processCode} type="button" onClick={() => setSelectedProc(processCode)} className="rounded px-1.5 py-1 text-[9px] font-black text-white" style={{ background: process?.color ?? "#7B8792" }}>{processCode} · {process?.name ?? "미등록"}</button>;
-                })}</div></td>
-                <td className="px-4 py-3 text-right font-mono font-black text-[#1D5FBF]">{plannedDaily.toLocaleString("ko-KR", { maximumFractionDigits: 1 })} <span className="text-[9px] font-bold text-[#8A929A]">{rowMaterial.unit}/일</span></td>
-                <td className="px-5 py-3 text-right font-mono font-black text-[#087A55]">{actualDaily > 0 ? <>{actualDaily.toLocaleString("ko-KR", { maximumFractionDigits: 1 })} <span className="text-[9px] font-bold text-[#719086]">{rowMaterial.unit}/일</span></> : <span className="rounded bg-[#FFF4D8] px-1.5 py-1 text-[9px] text-[#8A5A00]">최근 30일 없음</span>}</td>
-              </tr>)}
-              {!fabDailyMaterials.length && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-[#949BA2]">{selectedFab} 자재 사용량 원장이 미연결 상태입니다.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </section>}
 
       <section className="mb-5 rounded-2xl border border-[#D8DDE2] bg-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -366,59 +326,63 @@ export default function UsageClient({
               </button>;
             })}
           </div>
-        ) : <div className="relative" style={{ height: 480 }}>
-          <Suspense fallback={<div className="w-full h-full bg-[#e8f0f8] rounded-2xl flex items-center justify-center text-sm text-[#999]">3D 로딩 중…</div>}>
-            <ProcessFlow3D
-              fabId={selectedFab}
-              highlightedProcesses={highlightedProcesses}
-              activeProcesses={activeProcesses}
-              onProcessClick={(code) =>
-                setSelectedProc((prev) => (prev === code ? null : code))
-              }
-              onWarehouseClick={(code) => router.push(buildTwinHref(`/warehouse/${code}`, {
-                fabScope: selectedFab, materialId: pinnedMatId,
-                facilityId: code, lotId: searchParams.get("lot"), handlingUnitId: searchParams.get("hu"),
-                alertId: searchParams.get("alert"), flowStep: searchParams.get("step"), mode: twinMode,
-                referenceTime: searchParams.get("time"), cameraPreset: "WMS_OVERVIEW",
-              }))}
-              materialCounts={materialCounts}
-              warehouses={warehouses}
-              warehouseLinks={warehouseLinks}
-              equipmentCounts={equipmentByFab[selectedFab]}
-            />
-          </Suspense>
+        ) : <div className={selectedFab === "M20" ? "grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]" : undefined}>
+          <div className="relative" style={{ height: 480 }}>
+            <Suspense fallback={<div className="w-full h-full bg-[#e8f0f8] rounded-2xl flex items-center justify-center text-sm text-[#999]">3D 로딩 중…</div>}>
+              <ProcessFlow3D
+                fabId={selectedFab}
+                highlightedProcesses={highlightedProcesses}
+                activeProcesses={activeProcesses}
+                onProcessClick={(code) =>
+                  setSelectedProc((prev) => (prev === code ? null : code))
+                }
+                onWarehouseClick={(code) => router.push(buildTwinHref(`/warehouse/${code}`, {
+                  fabScope: selectedFab, materialId: pinnedMatId,
+                  facilityId: code, lotId: searchParams.get("lot"), handlingUnitId: searchParams.get("hu"),
+                  alertId: searchParams.get("alert"), flowStep: searchParams.get("step"), mode: twinMode,
+                  referenceTime: searchParams.get("time"), cameraPreset: "WMS_OVERVIEW",
+                }))}
+                materialCounts={materialCounts}
+                warehouses={warehouses}
+                warehouseLinks={warehouseLinks}
+                equipmentCounts={equipmentByFab[selectedFab]}
+                liveFoups={selectedFab === "M20" ? liveFoups : []}
+              />
+            </Suspense>
 
-          {/* hover 중인 자재 상세 — absolute overlay라 레이아웃에 영향 없음 */}
-          <div
-            className="absolute bottom-0 left-0 right-0 rounded-b-2xl overflow-hidden pointer-events-none transition-opacity duration-150"
-            style={{ opacity: focusedMat ? 1 : 0, background: "rgba(15,23,42,0.92)", backdropFilter: "blur(6px)" }}
-          >
-            {focusedMat && (
-              <div className="p-4">
-                <div className="text-[10px] text-slate-400 font-mono mb-0.5">{focusedMat.code}</div>
-                <div className="text-sm font-bold text-white mb-2">{focusedMat.name}</div>
-                <div className="flex flex-wrap gap-4">
-                  {focusedMat.usages.map((u, i) => {
-                    const proc = PROCESSES.find((p) => p.code === u.proc);
-                    return (
-                      <div key={i} className="flex items-center gap-2 text-[11px]">
-                        <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: proc?.color }} />
-                        <span className="text-slate-300">{u.proc} {proc?.name}</span>
-                        <span className="text-slate-500">{u.product}</span>
-                        <span className="font-bold text-white">{u.qty.toLocaleString()}</span>
-                        <span className="font-bold text-emerald-300">실적 {u.actualQty.toLocaleString()}</span>
-                      </div>
-                    );
-                  })}
+            {/* hover 중인 자재 상세 — absolute overlay라 레이아웃에 영향 없음 */}
+            <div
+              className="absolute bottom-0 left-0 right-0 rounded-b-2xl overflow-hidden pointer-events-none transition-opacity duration-150"
+              style={{ opacity: focusedMat ? 1 : 0, background: "rgba(15,23,42,0.92)", backdropFilter: "blur(6px)" }}
+            >
+              {focusedMat && (
+                <div className="p-4">
+                  <div className="text-[10px] text-slate-400 font-mono mb-0.5">{focusedMat.code}</div>
+                  <div className="text-sm font-bold text-white mb-2">{focusedMat.name}</div>
+                  <div className="flex flex-wrap gap-4">
+                    {focusedMat.usages.map((u, i) => {
+                      const proc = PROCESSES.find((p) => p.code === u.proc);
+                      return (
+                        <div key={i} className="flex items-center gap-2 text-[11px]">
+                          <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: proc?.color }} />
+                          <span className="text-slate-300">{u.proc} {proc?.name}</span>
+                          <span className="text-slate-500">{u.product}</span>
+                          <span className="font-bold text-white">{u.qty.toLocaleString()}</span>
+                          <span className="font-bold text-emerald-300">실적 {u.actualQty.toLocaleString()}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
+          {selectedFab === "M20" && <LotRouteTrackerCard fabId="M20" product="HBM" onLiveFoupsChange={setLiveFoups} />}
         </div>}
       </div>
 
       {/* 자재 테이블 */}
-      <div className="bg-white rounded-2xl overflow-hidden" style={{ boxShadow: "var(--shadow-1)", border: "1px solid var(--border)" }}>
+      <div className="bg-white rounded-2xl overflow-hidden" data-testid="material-table" style={{ boxShadow: "var(--shadow-1)", border: "1px solid var(--border)" }}>
         {/* 필터 */}
         <div className="px-5 py-3 flex items-center gap-3 flex-wrap" style={{ borderBottom: "1px solid var(--border)" }}>
           <span className="rounded-full bg-[#20262D] px-2.5 py-1 text-[10px] font-black text-white">{selectedFab === "ALL" ? "전체 3FAB" : `${selectedFab} · ${filterProduct}`}</span>
@@ -564,13 +528,15 @@ export default function UsageClient({
                         {mat.processes.sort().map((p) => {
                           const proc = PROCESSES.find((pr) => pr.code === p);
                           return (
-                            <span
+                            <button
                               key={p}
-                              className="text-[9px] font-bold px-1.5 py-0.5 rounded text-white"
-                              style={{ background: isHovered || isPinned ? proc?.color ?? "#999" : "#cbd5e1" }}
+                              type="button"
+                              onClick={(event) => { event.stopPropagation(); setSelectedProc((current) => current === p ? null : p); }}
+                              className="rounded px-1.5 py-0.5 text-[9px] font-bold text-white transition-colors"
+                              style={{ background: selectedProc === p ? proc?.color ?? "#999" : isHovered || isPinned ? proc?.color ?? "#999" : "#cbd5e1" }}
                             >
                               {p} · {proc?.name ?? "미등록"}
-                            </span>
+                            </button>
                           );
                         })}
                       </div>
@@ -604,8 +570,8 @@ export default function UsageClient({
                       {actualQty.toLocaleString()}
                       {mat.inventory?.unit && <span className="ml-0.5 text-[10px] font-normal text-[#6F8D82]">{mat.inventory.unit}</span>}
                     </> : totalQty > 0
-                      ? <span className="rounded bg-[#FFF4D8] px-1.5 py-1 text-[9px] font-black text-[#8A5A00]">최근 30일 없음</span>
-                      : <span className="rounded bg-[#EEF1F4] px-1.5 py-1 text-[9px] font-black text-[#6F7881]">미연결</span>}
+                      ? <span className="whitespace-nowrap rounded bg-[#FFF4D8] px-1.5 py-1 text-[9px] font-black text-[#8A5A00]">최근 30일 없음</span>
+                      : <span className="whitespace-nowrap rounded bg-[#EEF1F4] px-1.5 py-1 text-[9px] font-black text-[#6F7881]">미연결</span>}
                   </td>
                   <td className={`px-4 py-2.5 text-right font-bold tabular-nums ${actualQty === 0 ? "text-[#9AA1A8]" : usageGap >= 0 ? "text-[#1D5FBF]" : "text-[#C51636]"}`}>
                     {actualQty > 0 ? <>

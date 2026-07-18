@@ -126,6 +126,17 @@ type WaferState = {
   currentBay: string;
 };
 
+// 실제 lotStepEvents 원장을 폴링해서 얻은, 하드코딩이 아닌 진짜 로트 위치.
+export type LiveFoupView = {
+  lotId: string;
+  foupLabel: string; // "FOUP-01"
+  processCode: string; // 현재 베이 (P01~P10)
+  nodeLabel: string; // routeMaster 노드 설명
+  stepIndex: number; // 전체 시퀀스 중 절대 순번 (0-based)
+  totalSteps: number;
+  isDone: boolean;
+};
+
 function makeCurve(fromCode: string, toCode: string): THREE.CatmullRomCurve3 {
   const fz = BAY_Z[fromCode];
   const tz = BAY_Z[toCode];
@@ -397,9 +408,10 @@ function OverheadInfra() {
 // ─────────────────────────────────────────────
 // Animated FOUP on the AMHS rail
 // ─────────────────────────────────────────────
-function AnimatedFoup({ config, stateRef }: {
+function AnimatedFoup({ config, stateRef, dimmed = false }: {
   config: typeof WAFER_CONFIGS[0];
   stateRef: React.MutableRefObject<WaferState>;
+  dimmed?: boolean;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const ringRef  = useRef<THREE.Mesh>(null);
@@ -449,24 +461,72 @@ function AnimatedFoup({ config, stateRef }: {
     return new THREE.Vector3(0, RAIL_Y, bz);
   }, [config.startStep]);
 
+  const bodyOpacity = dimmed ? 0.55 : 1;
+  const ringOpacity = dimmed ? 0.4 : 0.85;
+
   return (
     <group ref={groupRef} position={initPos}>
       {/* FOUP body */}
       <mesh position={[0, 0, 0]} castShadow>
         <boxGeometry args={[0.3, 0.22, 0.26]} />
         <meshStandardMaterial color={config.color} roughness={0.25} metalness={0.2}
-          emissive={config.color} emissiveIntensity={0.5} />
+          emissive={config.color} emissiveIntensity={dimmed ? 0.25 : 0.5} transparent opacity={bodyOpacity} />
       </mesh>
       {/* Pulsing ring (shows when processing) */}
       <mesh ref={ringRef} position={[0, 0, 0]}>
         <torusGeometry args={[0.28, 0.02, 6, 20]} />
-        <meshStandardMaterial color={config.color} emissive={config.color} emissiveIntensity={1.2}
-          transparent opacity={0.85} />
+        <meshStandardMaterial color={config.color} emissive={config.color} emissiveIntensity={dimmed ? 0.6 : 1.2}
+          transparent opacity={ringOpacity} />
       </mesh>
       {/* Label — 번호만 표시해서 12개가 돼도 뷰가 깔끔하게 유지됨 */}
       <Text position={[0, 0.22, 0]} fontSize={0.09} color={config.color}
-        anchorX="center" anchorY="bottom">
+        anchorX="center" anchorY="bottom" fillOpacity={dimmed ? 0.55 : 1}>
         {config.id.replace("W", "")}
+      </Text>
+    </group>
+  );
+}
+
+// ─────────────────────────────────────────────
+// 실제 lotStepEvents 원장을 폴링해서 움직이는 진짜 FOUP.
+// 자체 타이머가 없다 — liveFoup prop이 바뀔 때만(=서버에 새 확인 이벤트가 기록됐을 때만) 다음 베이로 이동한다.
+// ─────────────────────────────────────────────
+function LiveTrackedFoup({ liveFoup }: { liveFoup: LiveFoupView }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
+  const target = useMemo(() => {
+    const bz = BAY_Z[liveFoup.processCode] ?? BAY_Z.P01;
+    return new THREE.Vector3(0, RAIL_Y, bz);
+  }, [liveFoup.processCode]);
+
+  useFrame((_, dt) => {
+    const g = groupRef.current;
+    if (g) g.position.lerp(target, Math.min(1, dt * 2.2));
+    if (ringRef.current) {
+      // 확인 대기 중(=원장이 정지된 상태)임을 보여주려고 일부러 펄싱을 끔 — 장식용 FOUP과의 핵심 차이
+      const scale = liveFoup.isDone ? 1 : 1 + 0.08 * Math.sin(Date.now() * 0.0025);
+      ringRef.current.scale.setScalar(scale);
+    }
+  });
+
+  return (
+    <group ref={groupRef} position={target.clone()}>
+      <mesh castShadow>
+        <boxGeometry args={[0.34, 0.26, 0.3]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.15} metalness={0.35}
+          emissive="#38bdf8" emissiveIntensity={0.7} />
+      </mesh>
+      {/* 이중 테두리 링 — 장식용 FOUP은 링이 하나뿐 */}
+      <mesh ref={ringRef}>
+        <torusGeometry args={[0.32, 0.024, 6, 24]} />
+        <meshStandardMaterial color="#ffffff" emissive="#38bdf8" emissiveIntensity={1.5} transparent opacity={0.95} />
+      </mesh>
+      <mesh>
+        <torusGeometry args={[0.42, 0.016, 6, 24]} />
+        <meshStandardMaterial color="#ffffff" emissive="#38bdf8" emissiveIntensity={1.1} transparent opacity={0.7} />
+      </mesh>
+      <Text position={[0, 0.32, 0]} fontSize={0.1} color="#38bdf8" anchorX="center" anchorY="bottom">
+        {`LIVE · ${liveFoup.foupLabel}`}
       </Text>
     </group>
   );
@@ -1120,6 +1180,7 @@ function Scene({
   hoveredWh, setHoveredWh, onFocusWh, onFocusBay, focus,
   showFoup, showPipes,
   equipmentCounts,
+  liveFoups,
 }: {
   fabId?: FabId;
   highlightedProcesses: string[];
@@ -1133,6 +1194,7 @@ function Scene({
   onFocusBay: (code: string) => void;
   focus: FocusView;
   showFoup: boolean;
+  liveFoups?: LiveFoupView[];
   showPipes: boolean;
   equipmentCounts?: Record<string, number>;
 }) {
@@ -1165,13 +1227,17 @@ function Scene({
   const floorW = FAB_W, floorD = 34;
 
   // Count FOUPs currently at each bay (approximate — based on state at render time)
+  // liveFoups에 들어있는 FOUP은 waferStates 대신 실데이터로 그려지므로 별도 집계.
+  const liveFoupLabels = new Set((liveFoups ?? []).map((f) => f.foupLabel));
   const foupCounts: Record<string, number> = {};
   waferStates.forEach((ws) => {
+    if (liveFoupLabels.has(ws.current.id.replace("W", "FOUP-"))) return;
     if (ws.current.phase === "processing") {
       const b = ws.current.currentBay;
       foupCounts[b] = (foupCounts[b] ?? 0) + 1;
     }
   });
+  for (const liveFoup of liveFoups ?? []) foupCounts[liveFoup.processCode] = (foupCounts[liveFoup.processCode] ?? 0) + 1;
 
   return (
     <>
@@ -1248,10 +1314,12 @@ function Scene({
       ))}
       {fabId && <FabSignatureEquipment fabId={fabId} />}
 
-      {/* Animated FOUPs */}
-      {showFoup && WAFER_CONFIGS.map((cfg, i) => (
-        <AnimatedFoup key={cfg.id} config={cfg} stateRef={waferStates[i]} />
-      ))}
+      {/* Animated FOUPs — liveFoups에 있는 자리는 실데이터 구독형으로 교체, routeMaster가 아직 없는 FOUP만 장식용(dimmed)으로 남는다 */}
+      {showFoup && (liveFoups ?? []).map((lf) => <LiveTrackedFoup key={lf.lotId} liveFoup={lf} />)}
+      {showFoup && WAFER_CONFIGS.map((cfg, i) => {
+        if (liveFoupLabels.has(cfg.label)) return null;
+        return <AnimatedFoup key={cfg.id} config={cfg} stateRef={waferStates[i]} dimmed={liveFoupLabels.size > 0} />;
+      })}
 
       {/* 자재 야드 라벨 */}
       {warehouses.length > 0 && (
@@ -1292,6 +1360,7 @@ export default function ProcessFlow3D({
   warehouses = [],
   warehouseLinks = [],
   equipmentCounts,
+  liveFoups,
 }: {
   fabId?: FabId;
   highlightedProcesses?: string[];
@@ -1302,6 +1371,7 @@ export default function ProcessFlow3D({
   warehouses?: WarehouseInfo[];
   warehouseLinks?: WarehouseLink[];
   equipmentCounts?: Record<string, number>;
+  liveFoups?: LiveFoupView[];
 }) {
   const [hoveredWh, setHoveredWh] = useState<string | null>(null);
   const [showFoup, setShowFoup] = useState(true);
@@ -1342,7 +1412,7 @@ export default function ProcessFlow3D({
   // React state for the legend panel (updates every ~1s)
   type LegendEntry = {
     id: string; label: string; color: string; bay: string;
-    bayName?: string; stepIdx: number; phase: "processing" | "traveling";
+    bayName?: string; stepIdx: number; phase: "processing" | "traveling"; isLive?: boolean;
   };
   const [legendData, setLegendData] = useState<LegendEntry[]>(() =>
     WAFER_CONFIGS.map((cfg) => ({
@@ -1357,8 +1427,17 @@ export default function ProcessFlow3D({
 
   useEffect(() => {
     const interval = setInterval(() => {
+      const liveByLabel = new Map((liveFoups ?? []).map((lf) => [lf.foupLabel, lf]));
       setLegendData(
         WAFER_CONFIGS.map((cfg, i) => {
+          const live = liveByLabel.get(cfg.label);
+          if (live) {
+            return {
+              id: cfg.id, label: live.foupLabel, color: "#38bdf8",
+              bay: live.processCode, bayName: live.nodeLabel,
+              stepIdx: live.stepIndex, phase: "processing" as const, isLive: true,
+            };
+          }
           const s = waferStates[i].current;
           const proc = PROCESSES.find((p) => p.code === s.currentBay);
           return {
@@ -1374,7 +1453,7 @@ export default function ProcessFlow3D({
       );
     }, 800);
     return () => clearInterval(interval);
-  }, [waferStates]);
+  }, [waferStates, liveFoups]);
 
   return (
     <div className="relative w-full h-full">
@@ -1397,6 +1476,7 @@ export default function ProcessFlow3D({
             showFoup={showFoup}
             showPipes={showPipes}
             equipmentCounts={equipmentCounts}
+            liveFoups={liveFoups}
           />
         </Suspense>
       </Canvas>
@@ -1441,13 +1521,15 @@ export default function ProcessFlow3D({
               <div key={w.id} className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-sm flex-shrink-0"
                   style={{ backgroundColor: w.color, opacity: w.phase === "processing" ? 1 : 0.45 }} />
-                <span className="text-[9px] font-bold text-white/70 w-5">{w.id.replace("W", "")}</span>
+                <span className="text-[9px] font-bold w-5" style={{ color: w.isLive ? "#38bdf8" : "rgba(255,255,255,0.7)" }}>
+                  {w.isLive ? "🔴" : w.id.replace("W", "")}
+                </span>
                 <span className="text-[9px] font-bold px-1 py-0.5 rounded-sm"
                   style={{ background: proc?.color ?? "#333", color: "#fff" }}>
                   {w.bay}
                 </span>
-                <span className="text-[8px] text-white/35">
-                  {w.phase === "processing" ? "⚙" : "▶"}
+                <span className="text-[8px]" style={{ color: w.isLive ? "#38bdf8" : "rgba(255,255,255,0.35)" }}>
+                  {w.isLive ? "LIVE · OPERATOR_CONFIRM 대기" : w.phase === "processing" ? "⚙" : "▶"}
                 </span>
               </div>
             );

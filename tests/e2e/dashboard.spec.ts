@@ -63,8 +63,8 @@ test.describe("대시보드", () => {
     await expect(page.getByText(/실리콘 표면에 균일한 절연막/)).toBeVisible();
     await expect(page.locator("canvas")).toHaveCount(0);
     await page.getByRole("button", { name: "M21 · DRAM", exact: true }).click();
-    await expect(page.getByTestId("fab-daily-materials")).toContainText("M21 · DRAM");
-    await expect(page.getByTestId("fab-daily-materials")).toContainText("계획 일사용량");
+    await expect(page.getByTestId("material-table")).toContainText("M21 · DRAM");
+    await expect(page.getByTestId("material-table")).toContainText("월 소요량");
     await expect(page.locator("canvas")).toHaveCount(1);
     await expect(page.getByText("M21 · DRAM 공정 3D", { exact: true })).toBeVisible();
     await expect(page.getByRole("main")).not.toContainText("학습");

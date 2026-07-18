@@ -20,6 +20,7 @@
     "test:m20-pilot": "tsx scripts/verify-m20-pilot.ts",
     "test:m20-agents": "tsx scripts/test-m20-agents.ts",
     "test:scene-clock": "tsx scripts/test-scene-clock.ts",
+    "test:wafer-lot-12foup": "tsx scripts/test-wafer-lot-12foup.ts",
     "check": "npm run typecheck && npm run lint",
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate-storage": "tsx prisma/migrate-storage-layout.ts",
@@ -30,6 +31,7 @@
     "db:migrate-m20-pilot": "tsx scripts/migrate-m20-pilot.ts",
     "db:migrate-m20-agents": "tsx scripts/migrate-m20-agents.ts",
     "db:migrate-agent-policies": "tsx scripts/migrate-agent-policies.ts",
+    "db:migrate-route-master": "tsx scripts/migrate-route-master.ts",
     "db:validate": "tsx prisma/validate-data-consistency.ts",
     "db:audit-inventory": "tsx scripts/audit-inventory-doh.ts",
     "db:calibrate-inventory": "tsx scripts/calibrate-inventory-policy.ts"

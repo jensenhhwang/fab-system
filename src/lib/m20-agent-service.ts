@@ -5,8 +5,12 @@ import type {
   AgentRole,
   AgentRoleMode,
   AgentRunDoc,
+  BomLine,
   EquipmentAssignmentDoc,
+  MaterialAllocationDoc,
+  MaterialFlowEventDoc,
   PurchaseOrderDraftDoc,
+  TransferOrderDoc,
   WorkOrderDoc,
 } from "@/lib/db";
 import {
@@ -559,4 +563,88 @@ export async function decidePurchaseOrder(input: {
     outbox: await integrationOutbox.findOne({ aggregateId: po._id }),
     idempotent: false,
   };
+}
+
+const M20_PILOT_MATERIAL_ID = "PKG-001";
+
+// "+ M20 에이전트 흐름" 버튼(POST /api/mes/workorders, scope: M20_PILOT)과 완전히 같은 로직을
+// 서버 함수로 뽑아둔 것 — 사람이 버튼을 눌러 시작하는 경우와, 웨이퍼 로트가 패키징 노드에
+// 진입해 자동으로 새 소비 사이클이 필요해지는 경우 둘 다 이 함수를 통해 같은 방식으로 워크오더를 만든다.
+export async function createM20PilotWorkOrder(actorId: string, requestId: string): Promise<WorkOrderDoc> {
+  const fabId = "M20" as const;
+  const product = "HBM" as const;
+  const processCode = "P10";
+  const plannedQty = 1;
+
+  const { workOrders, bomTemplates, materials, inventory, materialAllocations, transferOrders, materialFlowEvents } = await collections();
+
+  const existing = await workOrders.findOne({ requestId });
+  if (existing) return existing;
+
+  const templateId = `${processCode}-${product}`;
+  const template = await bomTemplates.findOne({ _id: templateId });
+  if (!template?.lines.length) throw new Error(`${templateId} BOM 템플릿이 비어 있습니다.`);
+  const selectedLines = template.lines.filter((line) => line.materialId === M20_PILOT_MATERIAL_ID);
+  if (!selectedLines.length) throw new Error(`${M20_PILOT_MATERIAL_ID}가 ${templateId} BOM에 없습니다.`);
+  const bomLines: BomLine[] = selectedLines.map((line) => ({
+    materialId: line.materialId,
+    plannedQty: Math.round(line.qtyPerRun * plannedQty * 100) / 100,
+    pickedQty: 0, consumedQty: 0, pickedLots: [],
+  }));
+
+  const now = new Date();
+  const wo: WorkOrderDoc = {
+    _id: `WO-${fabId}-${randomUUID()}`,
+    fabId, processCode, product, plannedQty, plannedQtyUnit: "RUN",
+    scope: "M20_PILOT", requestId, status: "MATERIAL_WAIT", bomLines,
+    createdBy: actorId, createdAt: now, updatedAt: now,
+    note: "M20 대표 수직 흐름 · 웨이퍼 로트 실행 원장에서 자동 생성",
+  };
+
+  const materialDocs = await materials.find({ _id: { $in: bomLines.map((line) => line.materialId) } }).toArray();
+  const inventoryDocs = await inventory.find({
+    materialId: { $in: bomLines.map((line) => line.materialId) },
+    quantity: { $gt: 0 },
+    status: { $nin: ["HOLD", "QUARANTINE", "CONSUMED"] },
+  }).sort({ quantity: -1 }).toArray();
+  const unitByMaterial = new Map(materialDocs.map((material) => [material._id, material.unit]));
+  const sourceByMaterial = new Map<string, string>();
+  for (const row of inventoryDocs) if (!sourceByMaterial.has(row.materialId)) sourceByMaterial.set(row.materialId, row.warehouseId);
+  const allocations: MaterialAllocationDoc[] = bomLines.map((line) => ({
+    _id: randomUUID(),
+    materialId: line.materialId, fabId, quantity: line.plannedQty,
+    unit: unitByMaterial.get(line.materialId) ?? "EA", status: "PLANNED",
+    sourceFacilityId: sourceByMaterial.get(line.materialId) ?? "UNASSIGNED-WMS",
+    destinationFacilityId: `FAB-${fabId}`, workOrderId: wo._id, source: "MES",
+    createdAt: now, updatedAt: now,
+  }));
+  const transfers: TransferOrderDoc[] = allocations.map((allocation) => ({
+    _id: randomUUID(),
+    allocationId: allocation._id, workOrderId: wo._id, materialId: allocation.materialId,
+    fabId: allocation.fabId, quantity: allocation.quantity, unit: allocation.unit,
+    fromFacilityId: allocation.sourceFacilityId, toFacilityId: allocation.destinationFacilityId,
+    processCode, status: "CREATED", requestedAt: now, version: 1, createdAt: now, updatedAt: now,
+  }));
+  const allocationEvents: MaterialFlowEventDoc[] = transfers.map((transfer) => ({
+    _id: randomUUID(),
+    materialId: transfer.materialId, fabId: transfer.fabId, type: "ALLOCATED",
+    quantity: transfer.quantity, unit: transfer.unit, facilityId: transfer.fromFacilityId,
+    allocationId: transfer.allocationId, transferOrderId: transfer._id, workOrderId: wo._id, processCode,
+    requestId: `${requestId}:ALLOCATED:${transfer.materialId}`, sequence: 1, occurredAt: now, recordedBy: actorId,
+  }));
+
+  const client = await getMongoClient();
+  const session = client.startSession();
+  try {
+    await session.withTransaction(async () => {
+      await workOrders.insertOne(wo, { session });
+      if (allocations.length) await materialAllocations.insertMany(allocations, { session });
+      if (transfers.length) await transferOrders.insertMany(transfers, { session });
+      if (allocationEvents.length) await materialFlowEvents.insertMany(allocationEvents, { session });
+    });
+  } finally {
+    await session.endSession();
+  }
+  await orchestrateM20Agents(wo._id, actorId);
+  return wo;
 }
