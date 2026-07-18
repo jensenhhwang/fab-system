@@ -100,7 +100,6 @@ export interface FacilityTelemetryDoc {
 }
 export interface ProcessUsageDoc {
   _id: string; materialId: string; processCode: string; product: Product; monthlyQty: number;
-  site?: "이천" | "청주";
 }
 export interface TransactionDoc {
   _id: string; materialId: string; type: TxType; quantity: number; date: Date;
@@ -346,6 +345,96 @@ export interface MaterialFlowEventDoc {
   recordedBy: string;
 }
 
+export type ProductionActualSource = "MANUAL" | "MES_MASTER";
+export interface ProductionActualRevision {
+  producedQty: number;
+  note?: string;
+  reason?: string;
+  enteredBy: string;
+  recordedAt: Date;
+}
+export interface ProductionActualDoc {
+  _id: string; // `${fabId}:${product}:${date}`
+  fabId: FabId;
+  product: Product;
+  date: string; // "YYYY-MM-DD"
+  producedQty: number;
+  planQty: number;
+  unit: "K_WAFER";
+  note?: string;
+  source: ProductionActualSource;
+  enteredBy: string;
+  confirmedAt: Date;
+  revisions: ProductionActualRevision[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MaterialRerouteDoc {
+  _id: string;
+  materialId: string;
+  fromFabId: FabId;
+  toFabId: FabId;
+  quantity: number;
+  unit: string;
+  reason?: string;
+  decidedBy: string;
+  decidedAt: Date;
+}
+
+export type RouteNodeStage = "FRONT_END" | "TSV_FRONT" | "BACKGRIND" | "TSV_BACK" | "TEST" | "PACKAGING" | "PERIPHERAL" | "CELL_STACK";
+export interface RouteMasterNode {
+  id: string;
+  label: string;
+  cycle: string[]; // 이 노드에서 도는 공정 코드 순서 (예: ["P03","P04","P02","P07"])
+  repeatCount: number; // cycle을 몇 번 반복하는지
+  stage: RouteNodeStage;
+}
+export interface RouteMasterEdge {
+  from: string; // node id 또는 "START"
+  to: string; // node id 또는 "END"
+  condition?: string;
+}
+export interface RouteMasterDoc {
+  _id: string; // `${fabId}:${product}`
+  fabId: FabId;
+  product: Product;
+  version: string;
+  nodes: RouteMasterNode[];
+  edges: RouteMasterEdge[];
+  source: "MODELED_BASELINE";
+  sourceRefs: string[];
+  updatedAt: Date;
+}
+
+// "lots"는 이미 InventoryLotDoc(재고 로트)이 쓰고 있어서, 웨이퍼 생산 로트는 waferLots로 분리한다.
+export type WaferLotStatus = "IN_PROGRESS" | "DONE";
+export interface WaferLotDoc {
+  _id: string;
+  fabId: FabId;
+  product: Product;
+  routeMasterId: string; // `${fabId}:${product}`
+  foupCode: string; // 예: "FOUP-01"
+  status: WaferLotStatus;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type WaferLotStepTriggerType = "OPERATOR_CONFIRM" | "MES_TELEMETRY";
+export interface WaferLotStepEventDoc {
+  _id: string; // `${lotId}:${stepIndex}`
+  lotId: string;
+  nodeId: string;
+  processCode: string;
+  stepIndex: number; // routeMaster 전개 시퀀스에서 절대 순번 (0-based)
+  visitIndex: number; // 해당 노드 안에서 몇 번째 반복인지 (0-based)
+  enteredAt: Date;
+  completedAt?: Date;
+  triggeredBy: { type: WaferLotStepTriggerType; actorId: string };
+  idempotencyKey: string;
+}
+
 export type FabStockLocationType = "PRS" | "LINE_SIDE";
 export interface FabMaterialStockDoc {
   _id: string;
@@ -501,7 +590,6 @@ export interface ProcessMetadataDoc {
   _id: string;        // processCode (예: "P01")
   name: string;       // 한국어 이름 (예: "산화막")
   nameEn: string;     // 영문 이름 (예: "Oxidation")
-  site: ("이천" | "청주")[];  // 해당 공정이 있는 사이트
   sequence: number;   // 공정 순서 (P01=1, P10=10)
   bottleneckRisk: BottleneckRisk;
 }
@@ -549,6 +637,11 @@ export async function collections(): Promise<{
   purchaseOrderDrafts: Collection<PurchaseOrderDraftDoc>;
   integrationOutbox: Collection<IntegrationOutboxDoc>;
   equipmentAssignments: Collection<EquipmentAssignmentDoc>;
+  productionActuals: Collection<ProductionActualDoc>;
+  materialReroutes: Collection<MaterialRerouteDoc>;
+  routeMasters: Collection<RouteMasterDoc>;
+  waferLots: Collection<WaferLotDoc>;
+  waferLotStepEvents: Collection<WaferLotStepEventDoc>;
 }> {
   const db = await getDb();
   return {
@@ -593,5 +686,10 @@ export async function collections(): Promise<{
     purchaseOrderDrafts: db.collection<PurchaseOrderDraftDoc>("purchaseOrderDrafts"),
     integrationOutbox: db.collection<IntegrationOutboxDoc>("integrationOutbox"),
     equipmentAssignments: db.collection<EquipmentAssignmentDoc>("equipmentAssignments"),
+    productionActuals: db.collection<ProductionActualDoc>("productionActuals"),
+    materialReroutes: db.collection<MaterialRerouteDoc>("materialReroutes"),
+    routeMasters: db.collection<RouteMasterDoc>("routeMasters"),
+    waferLots: db.collection<WaferLotDoc>("waferLots"),
+    waferLotStepEvents: db.collection<WaferLotStepEventDoc>("waferLotStepEvents"),
   };
 }

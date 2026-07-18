@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { collections } from "@/lib/db";
 import { getMaterialDailyUsage } from "@/lib/queries";
 import { buildProcurementSummary } from "@/lib/procurement";
+import { fabForProduct } from "@/lib/fab-domain";
 import ProcurementMasterClient from "../../../scm/ProcurementMasterClient";
 
 const DAY = 86_400_000;
@@ -29,7 +30,7 @@ export default async function MaterialDetailPage({ params }: { params: Promise<{
   const [inventoryDocs, lotDocs, usageDocs, links, supplierDocs, templates, usageMap, policy] = await Promise.all([
     inventory.find({ materialId }).toArray(),
     inventoryLots.find({ materialId, qualityStatus: { $ne: "CONSUMED" } }).sort({ expiryDate: 1, receivedAt: 1 }).toArray(),
-    processUsage.find({ materialId }).sort({ site: 1, processCode: 1, product: 1 }).toArray(),
+    processUsage.find({ materialId }).sort({ processCode: 1, product: 1 }).toArray(),
     materialSuppliers.find({ materialId }).sort({ isPrimary: -1 }).toArray(),
     suppliers.find({}).sort({ name: 1 }).toArray(),
     bomTemplates.find({ "lines.materialId": materialId }).sort({ processCode: 1, product: 1 }).toArray(),
@@ -97,7 +98,7 @@ export default async function MaterialDetailPage({ params }: { params: Promise<{
     </div>
 
     <div className="grid gap-5 xl:grid-cols-2">
-      <section className="rounded-2xl border bg-white p-5"><h2 className="font-extrabold">운영 구도</h2><p className="mt-1 text-xs text-[#888]">공정별 사용량이 소비량 계산의 단일 기준입니다.</p><div className="mt-4 overflow-auto"><table className="w-full text-xs"><thead><tr className="border-b text-left text-[#888]"><th className="py-2">사이트</th><th>공정</th><th>제품</th><th className="text-right">월소요량</th></tr></thead><tbody>{usageDocs.map((item) => <tr key={item._id} className="border-b last:border-0"><td className="py-2">{item.site ?? "공통"}</td><td className="font-bold">{item.processCode}</td><td>{item.product}</td><td className="text-right">{item.monthlyQty.toLocaleString()} {material.unit}</td></tr>)}</tbody></table>{!usageDocs.length && <div className="py-8 text-center text-sm text-[#999]">연결된 공정 사용량이 없습니다.</div>}</div></section>
+      <section className="rounded-2xl border bg-white p-5"><h2 className="font-extrabold">운영 구도</h2><p className="mt-1 text-xs text-[#888]">공정별 사용량이 소비량 계산의 단일 기준입니다.</p><div className="mt-4 overflow-auto"><table className="w-full text-xs"><thead><tr className="border-b text-left text-[#888]"><th className="py-2">FAB</th><th>공정</th><th>제품</th><th className="text-right">월소요량</th></tr></thead><tbody>{usageDocs.map((item) => <tr key={item._id} className="border-b last:border-0"><td className="py-2">{fabForProduct(item.product)}</td><td className="font-bold">{item.processCode}</td><td>{item.product}</td><td className="text-right">{item.monthlyQty.toLocaleString()} {material.unit}</td></tr>)}</tbody></table>{!usageDocs.length && <div className="py-8 text-center text-sm text-[#999]">연결된 공정 사용량이 없습니다.</div>}</div></section>
       <section className="rounded-2xl border bg-white p-5"><h2 className="font-extrabold">생산 · BOM 연결</h2><p className="mt-1 text-xs text-[#888]">BOM은 연결 관계를 보여주며 월소요량에 중복 합산하지 않습니다.</p><div className="mt-4 space-y-2">{templates.map((template) => { const line = template.lines.find((item) => item.materialId === materialId); return <div key={template._id} className="flex items-center justify-between rounded-xl bg-[#F8F6F4] px-4 py-3 text-xs"><span><b>{template.product}</b> · {template.processCode}</span><span>생산 1단위당 <b>{line?.qtyPerRun ?? 0} {material.unit}</b></span></div> })}{!templates.length && <div className="py-8 text-center text-sm text-[#999]">연결된 BOM 템플릿이 없습니다.</div>}</div></section>
     </div>
 

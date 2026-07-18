@@ -13,7 +13,7 @@ test.describe("로그인 페이지", () => {
   test("로그인 페이지가 정상 렌더링된다", async ({ page }) => {
     await page.goto(`${BASE}/login`);
     await expect(page.getByRole("heading", { name: "로그인" })).toBeVisible();
-    await expect(page.getByText("이천 M14/M16 자재관리 시스템")).toBeVisible();
+    await expect(page.getByText("이천 3FAB Campus · M20/M21/M22 자재관리 시스템")).toBeVisible();
     await expect(page.getByPlaceholder("email@fab.skh")).toBeVisible();
     await expect(page.getByText("데모 계정")).toBeVisible();
   });

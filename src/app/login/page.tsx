@@ -67,7 +67,7 @@ export default function LoginPage() {
 
           <div className="mb-6">
             <h1 className="text-xl font-bold mb-1" style={{ color: "var(--text-1)", letterSpacing: "-0.02em" }}>로그인</h1>
-            <p className="text-sm" style={{ color: "var(--text-3)" }}>이천 M14/M16 자재관리 시스템</p>
+            <p className="text-sm" style={{ color: "var(--text-3)" }}>이천 3FAB Campus · M20/M21/M22 자재관리 시스템</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">

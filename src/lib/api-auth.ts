@@ -19,6 +19,8 @@ export const WRITE_ROLES = {
   transferTransition: ["ADMIN", "MATERIALS", "LOGISTICS"],
   materialConsume: ["ADMIN", "PRODUCTION"],
   agentRoleMode: ["ADMIN", "MATERIALS"],
+  productionActualConfirm: ["ADMIN", "PRODUCTION"],
+  materialReroute: ["ADMIN", "MATERIALS"],
 } as const satisfies Record<string, readonly Role[]>;
 
 type AuthorizedUser = { id: string; email?: string | null; role: Role };

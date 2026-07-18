@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { FAB_IDS, type FabId } from "@/lib/fab-domain";
 
 type ReadinessCell = {
   materialId: string;
@@ -13,9 +14,9 @@ type ReadinessCell = {
 };
 
 type ReadinessRow = {
+  fabId: FabId;
   processCode: string;
   processName: string;
-  site: string[];
   product: string;
   cells: ReadinessCell[];
 };
@@ -26,9 +27,13 @@ function getDohStyle(doh: number, ropDays: number): string {
   return "bg-green-100 text-green-700";
 }
 
-const SITE_BADGE: Record<string, string> = {
-  "이천": "bg-blue-100 text-blue-700",
-  "청주": "bg-green-100 text-green-700",
+const FAB_BADGE: Record<FabId, string> = {
+  M20: "bg-red-100 text-red-700",
+  M21: "bg-blue-100 text-blue-700",
+  M22: "bg-green-100 text-green-700",
+};
+const FAB_LABEL: Record<FabId, string> = {
+  M20: "M20 · HBM", M21: "M21 · DRAM", M22: "M22 · NAND",
 };
 
 export default function ProcessReadinessMatrix({
@@ -41,7 +46,7 @@ export default function ProcessReadinessMatrix({
   const router = useRouter();
   const [rows, setRows] = useState<ReadinessRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [siteFilter, setSiteFilter] = useState<"ALL" | "이천" | "청주">("ALL");
+  const [fabFilter, setFabFilter] = useState<"ALL" | FabId>("ALL");
   const [hoveredProcess, setHoveredProcess] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,9 +63,9 @@ export default function ProcessReadinessMatrix({
     );
   }
 
-  const filteredRows = siteFilter === "ALL"
+  const filteredRows = fabFilter === "ALL"
     ? rows
-    : rows.filter(r => r.site.includes(siteFilter));
+    : rows.filter(r => r.fabId === fabFilter);
 
   const allMaterials = Array.from(
     new Map(
@@ -88,20 +93,20 @@ export default function ProcessReadinessMatrix({
         ))}
       </div>
 
-      {/* 사이트 필터 */}
+      {/* Fab 필터 */}
       <div className="flex gap-2 items-center">
-        <span className="text-xs font-semibold" style={{ color: "var(--text-3)" }}>사이트</span>
-        {(["ALL", "이천", "청주"] as const).map(s => (
+        <span className="text-xs font-semibold" style={{ color: "var(--text-3)" }}>FAB</span>
+        {(["ALL", ...FAB_IDS] as const).map(f => (
           <button
-            key={s}
-            onClick={() => setSiteFilter(s)}
+            key={f}
+            onClick={() => setFabFilter(f)}
             className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${
-              siteFilter === s
+              fabFilter === f
                 ? "bg-[#0078D4] text-white border-[#0078D4]"
                 : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
             }`}
           >
-            {s}
+            {f === "ALL" ? "ALL" : FAB_LABEL[f]}
           </button>
         ))}
       </div>
@@ -147,11 +152,9 @@ export default function ProcessReadinessMatrix({
                         )}
                       </div>
                       <div className="flex items-center gap-1">
-                        {row.site.map(s => (
-                          <span key={s} className={`text-[9px] font-bold px-1 py-0.5 rounded ${SITE_BADGE[s] ?? "bg-gray-100 text-gray-600"}`}>
-                            {s}
-                          </span>
-                        ))}
+                        <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${FAB_BADGE[row.fabId]}`}>
+                          {row.fabId}
+                        </span>
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100" style={{ color: "var(--text-3)" }}>
                           {row.product}
                         </span>

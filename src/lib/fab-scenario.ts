@@ -36,6 +36,20 @@ export function fabScenarioMetrics(fab: FabScenario) {
   };
 }
 
+// MODELED_BASELINE: 실측 MES 일일 생산량 마스터가 없어, FAB_SCENARIO 가동률로부터 역산한 계획치입니다.
+export function dailyPlanKWafer(product: FabProduct): number {
+  const fab = FAB_SCENARIO.find((entry) => entry.product === product);
+  if (!fab) return 0;
+  return fabScenarioMetrics(fab).dailyWaferStarts / 1000;
+}
+
+// MODELED_BASELINE: processUsage.monthlyQty가 가정한 월간 가동 웨이퍼 투입량(K wafer).
+export function utilizedMonthlyKWafer(product: FabProduct): number {
+  const fab = FAB_SCENARIO.find((entry) => entry.product === product);
+  if (!fab) return 0;
+  return (fab.nominalWspm * fab.utilization) / 1000;
+}
+
 export function campusScenarioMetrics(fabs: readonly FabScenario[] = FAB_SCENARIO) {
   const nominalWspm = fabs.reduce((sum, fab) => sum + fab.nominalWspm, 0);
   const effectiveWspm = fabs.reduce((sum, fab) => sum + fabScenarioMetrics(fab).effectiveWspm, 0);

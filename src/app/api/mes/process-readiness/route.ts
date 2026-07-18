@@ -19,7 +19,6 @@ type ProcessReadinessRow = {
   fabId: FabId;
   processCode: string;
   processName: string;
-  site: string[];
   product: Product;
   cells: ProcessReadinessCell[];
 };
@@ -55,7 +54,6 @@ export async function GET() {
         fabId: fabForProduct(u.product),
         processCode: u.processCode,
         processName: meta?.name ?? u.processCode,
-        site: meta?.site ?? [],
         product: u.product as Product,
         cells: [],
       });
