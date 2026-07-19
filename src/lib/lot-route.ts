@@ -13,6 +13,9 @@ export const FOUP_CODES = Array.from({ length: 12 }, (_, i) => `FOUP-${String(i 
 // 균등 배분 가정이라 정밀한 시간 비례는 아님. 자세한 근거는 docs/route-master.md의 "시뮬레이션 배속 가정" 참고.
 export const AUTO_ADVANCE_INTERVAL_MS = 5_000;
 
+// docs/route-master.md: 실제 웨이퍼 투입→패키징 완료는 약 3~4개월(90~120일) — 중간값 채택(MODELED_BASELINE).
+export const M20_CYCLE_DAYS = 105;
+
 export type LotRouteState = {
   lot: WaferLotDoc;
   nodes: RouteMasterNode[]; // routeMaster 노드 목록 (9노드 세그먼트 표시용)

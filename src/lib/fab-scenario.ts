@@ -60,6 +60,16 @@ export function fabScenarioMetrics(fab: FabScenario) {
   };
 }
 
+// 300mm FOUP 표준 적재 용량(업계 공통 규격, MODELED_BASELINE) — 25장.
+export const WAFERS_PER_FOUP = 25;
+
+// Little's Law: 동시 WIP(개) = 일일 투입량(FOUP/일) × 공정 체류시간(일).
+export function targetWipCount(scenario: FabScenario, cycleDays: number, wafersPerFoup: number = WAFERS_PER_FOUP): number {
+  const { dailyWaferStarts } = fabScenarioMetrics(scenario);
+  const dailyFoupStarts = dailyWaferStarts / wafersPerFoup;
+  return Math.round(dailyFoupStarts * cycleDays);
+}
+
 // MODELED_BASELINE: 실측 MES 일일 생산량 마스터가 없어, FAB_SCENARIO 가동률로부터 역산한 계획치입니다.
 export function dailyPlanKWafer(product: FabProduct): number {
   const fab = FAB_SCENARIO.find((entry) => entry.product === product);
