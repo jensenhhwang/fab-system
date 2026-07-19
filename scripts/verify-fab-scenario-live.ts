@@ -1,7 +1,7 @@
 import "dotenv/config";
 import assert from "node:assert/strict";
 import { collections } from "../src/lib/db";
-import { getLiveFabScenario, setFabUtilization } from "../src/lib/fab-scenario";
+import { getLiveFabScenario, setFabUtilization } from "../src/lib/fab-scenario-live";
 
 async function main() {
   const { fabScenarios } = await collections();

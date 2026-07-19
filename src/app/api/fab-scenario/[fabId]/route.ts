@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 import { FAB_IDS, type FabId } from "@/lib/fab-domain";
-import { fabScenarioMetrics, getLiveFabScenario, M20_PRODUCTION_SCENARIOS, setFabUtilization, targetWipCount } from "@/lib/fab-scenario";
+import { fabScenarioMetrics, M20_PRODUCTION_SCENARIOS, targetWipCount } from "@/lib/fab-scenario";
+import { getLiveFabScenario, setFabUtilization } from "@/lib/fab-scenario-live";
 
 export const dynamic = "force-dynamic";
 

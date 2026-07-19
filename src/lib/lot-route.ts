@@ -5,7 +5,8 @@ import type { FabId } from "@/lib/fab-domain";
 import type { Product } from "@/lib/db";
 import { getRouteMaster, expandRouteMaster, type RouteVisit } from "@/lib/route-master";
 import { createM20PilotWorkOrder } from "@/lib/m20-agent-service";
-import { fabScenarioMetrics, getLiveFabScenario, M20_PRODUCTION_SCENARIOS, targetWipCount } from "@/lib/fab-scenario";
+import { fabScenarioMetrics, M20_PRODUCTION_SCENARIOS, targetWipCount } from "@/lib/fab-scenario";
+import { getLiveFabScenario } from "@/lib/fab-scenario-live";
 
 export const FOUP_CODES = Array.from({ length: 12 }, (_, i) => `FOUP-${String(i + 1).padStart(2, "0")}`);
 
