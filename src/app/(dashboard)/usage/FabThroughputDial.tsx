@@ -9,6 +9,11 @@ type ScenarioResponse = {
   targetWip: number | null;
 };
 type AggregateWipResponse = { targetWip: number; currentWip: number; created: number; advanced: number; completed: number };
+type LotLookupResponse = {
+  foupCode: string; status: string; cohort: "AGGREGATE" | "VISUAL";
+  nodeId: string | null; nodeLabel: string | null;
+  stepIndex: number | null; totalSteps: number; lastEventAt: string | null;
+};
 
 export default function FabThroughputDial({ fabId }: { fabId: FabId }) {
   const [scenario, setScenario] = useState<ScenarioResponse | null>(null);
@@ -16,6 +21,10 @@ export default function FabThroughputDial({ fabId }: { fabId: FabId }) {
   const [sliderValue, setSliderValue] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lookupCode, setLookupCode] = useState("");
+  const [lookupResult, setLookupResult] = useState<LotLookupResponse | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
 
   const loadScenario = useCallback(async () => {
     const response = await fetch(`/api/fab-scenario/${fabId}`, { cache: "no-store" });
@@ -53,6 +62,22 @@ export default function FabThroughputDial({ fabId }: { fabId: FabId }) {
       setError(err instanceof Error ? err.message : "저장 실패");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const runLookup = async () => {
+    const code = lookupCode.trim();
+    if (!code) return;
+    setLookingUp(true); setLookupError(null); setLookupResult(null);
+    try {
+      const response = await fetch(`/api/wafer-lots/lookup?fabId=${fabId}&product=HBM&foupCode=${encodeURIComponent(code)}`, { cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "조회 실패");
+      setLookupResult(body as LotLookupResponse);
+    } catch (err) {
+      setLookupError(err instanceof Error ? err.message : "조회 실패");
+    } finally {
+      setLookingUp(false);
     }
   };
 
@@ -101,6 +126,40 @@ export default function FabThroughputDial({ fabId }: { fabId: FabId }) {
         </div>
       </div>
       {error && <div className="mt-2 text-[10px] font-bold text-[#EA002C]">{error}</div>}
+
+      <div className="mt-4 border-t border-[#EEF1F4] pt-3">
+        <div className="text-[10px] font-black uppercase tracking-[0.08em] text-[#7D8790]">로트 조회</div>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            type="text" value={lookupCode}
+            onChange={(event) => setLookupCode(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") void runLookup(); }}
+            placeholder="FOUP-01 또는 FOUP-WIP-xxxxxxxx"
+            className="flex-1 rounded-lg border border-[#D8DDE2] px-2 py-1.5 text-[11px] font-mono"
+          />
+          <button
+            type="button" onClick={() => void runLookup()} disabled={lookingUp || !lookupCode.trim()}
+            className="rounded-lg bg-[#20262D] px-3 py-1.5 text-[10px] font-black text-white disabled:opacity-40"
+          >
+            {lookingUp ? "조회 중…" : "조회"}
+          </button>
+        </div>
+        {lookupError && <div className="mt-2 text-[10px] font-bold text-[#EA002C]">{lookupError}</div>}
+        {lookupResult && (
+          <div className="mt-2 rounded-lg bg-[#F7F9FA] p-2.5 text-[10px]">
+            <div className="flex items-center justify-between">
+              <span className="font-mono font-black text-[#20262D]">{lookupResult.foupCode}</span>
+              <span className="rounded bg-[#EEF1F4] px-1.5 py-0.5 text-[9px] font-black text-[#59636D]">{lookupResult.cohort}</span>
+            </div>
+            <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+              <div><span className="text-[#8A929A]">상태</span> <span className="font-bold">{lookupResult.status}</span></div>
+              <div><span className="text-[#8A929A]">공정</span> <span className="font-bold">{lookupResult.nodeLabel ?? "—"}</span></div>
+              <div><span className="text-[#8A929A]">진행</span> <span className="font-mono font-bold">{lookupResult.stepIndex ?? "—"} / {lookupResult.totalSteps}</span></div>
+              <div><span className="text-[#8A929A]">최근 이벤트</span> <span className="font-mono font-bold">{lookupResult.lastEventAt ? new Date(lookupResult.lastEventAt).toLocaleTimeString() : "—"}</span></div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
