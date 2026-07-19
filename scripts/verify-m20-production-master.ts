@@ -12,7 +12,7 @@ async function main() {
   assert.equal(normal.knownGoodDiesPerWafer, 650);
   assert.equal(normal.finishedHbmStacksPerWafer, 48.75);
   assert.equal(normal.finishedHbmStacks, 5_703_750);
-  console.log("✅ M20 NORMAL: 117K WSPM → WIP 16,380 FOUP → HBM4 12-Hi 5,703,750개/월");
+  console.log("✅ M20 NORMAL: 117K WSPM → WIP 16,380 FOUP-eq → HBM4 12-Hi 5,703,750개/월");
 
   const route = await getRouteMaster("M20", "HBM");
   assert(route, "M20:HBM Route Master가 없습니다");

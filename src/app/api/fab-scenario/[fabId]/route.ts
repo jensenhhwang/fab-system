@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 import { FAB_IDS, type FabId } from "@/lib/fab-domain";
-import { fabScenarioMetrics, getLiveFabScenario, setFabUtilization, targetWipCount } from "@/lib/fab-scenario";
-import { M20_CYCLE_DAYS } from "@/lib/lot-route";
+import { fabScenarioMetrics, getLiveFabScenario, M20_PRODUCTION_SCENARIOS, setFabUtilization, targetWipCount } from "@/lib/fab-scenario";
 
 export const dynamic = "force-dynamic";
 
 function targetWipFor(fabId: FabId, scenario: Awaited<ReturnType<typeof getLiveFabScenario>>) {
-  return fabId === "M20" ? targetWipCount(scenario, M20_CYCLE_DAYS) : null;
+  return fabId === "M20"
+    ? targetWipCount(fabScenarioMetrics(scenario).utilizedWspm, M20_PRODUCTION_SCENARIOS.NORMAL.cycleTimeDays)
+    : null;
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ fabId: string }> }) {

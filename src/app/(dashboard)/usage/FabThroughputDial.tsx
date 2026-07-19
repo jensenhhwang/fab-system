@@ -8,7 +8,10 @@ type ScenarioResponse = {
   metrics: { utilizedWspm: number; effectiveWspm: number; dailyWaferStarts: number };
   targetWip: number | null;
 };
-type AggregateWipResponse = { targetWip: number; currentWip: number; created: number; advanced: number; completed: number };
+type AggregateWipResponse = {
+  targetWip: number; currentWip: number; aggregateWip: number; visualWip: number;
+  unit: "FOUP_EQUIVALENT"; readOnly: true;
+};
 type LotLookupResponse = {
   foupCode: string; status: string; cohort: "AGGREGATE" | "VISUAL";
   nodeId: string | null; nodeLabel: string | null;
@@ -108,22 +111,25 @@ export default function FabThroughputDial({ fabId }: { fabId: FabId }) {
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3 text-[10px]">
         <div>
-          <div className="text-[#8A929A]">유효 WSPM</div>
+          <div className="text-[#8A929A]">가동 투입 WSPM</div>
           <div className="mt-0.5 font-mono text-sm font-black text-[#303840]">{Math.round(scenario.metrics.utilizedWspm).toLocaleString()}</div>
         </div>
         <div>
-          <div className="text-[#8A929A]">목표 WIP</div>
-          <div className="mt-0.5 font-mono text-sm font-black text-[#303840]">{targetWip.toLocaleString()}개</div>
+          <div className="text-[#8A929A]">105일 참조 목표 WIP</div>
+          <div className="mt-0.5 font-mono text-sm font-black text-[#303840]">{targetWip.toLocaleString()} FOUP-eq</div>
         </div>
       </div>
       <div className="mt-3">
         <div className="flex items-center justify-between text-[10px]">
-          <span className="text-[#8A929A]">현재 WIP</span>
+          <span className="text-[#8A929A]">현재 WIP · FOUP-eq</span>
           <span className="font-mono font-black" style={{ color: wipColor }}>{currentWip.toLocaleString()} / {targetWip.toLocaleString()}</span>
         </div>
         <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#F2F4F6]">
           <div className="h-full rounded-full transition-all" style={{ width: `${wipRatio * 100}%`, background: wipColor }} />
         </div>
+      </div>
+      <div className="mt-2 text-[9px] leading-4 text-[#8A929A]">
+        25-wafer 환산치 · VISUAL {wip?.visualWip ?? 0}개는 전체 WIP의 추적 표본이며 패키징 Die/Stack 물리 WIP와는 별도입니다.
       </div>
       {error && <div className="mt-2 text-[10px] font-bold text-[#EA002C]">{error}</div>}
 

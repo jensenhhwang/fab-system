@@ -17,6 +17,7 @@
     "test:fab-scenario": "tsx scripts/test-fab-scenario.ts",
     "test:material-consumption": "tsx scripts/test-material-consumption.ts",
     "test:m20-production-master": "tsx scripts/verify-m20-production-master.ts",
+    "test:aggregate-wip-read-only": "tsx scripts/verify-aggregate-wip-read-only.ts",
     "test:material-flow": "tsx scripts/test-material-flow.ts",
     "test:live-transfer": "tsx scripts/test-live-transfer.ts",
     "test:m20-pilot": "tsx scripts/verify-m20-pilot.ts",
