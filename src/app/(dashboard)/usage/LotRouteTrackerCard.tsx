@@ -134,7 +134,7 @@ export default function LotRouteTrackerCard({
 
           {state.isDone ? (
             <div className="mt-3 rounded-lg bg-[#E9F8F2] px-3 py-2 text-[11px] font-black text-[#087A55]">
-              라우팅 130스텝 완주 — routeMaster 전체를 통과했습니다.
+              라우팅 전체 스텝 완주 — routeMaster 전체를 통과했습니다.
             </div>
           ) : (
             <>

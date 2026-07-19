@@ -77,9 +77,16 @@ export async function buildLiveDailyControl(date: string): Promise<LiveMaterialR
 
     const productsUsed = PRODUCTS.filter((product) => usageRows.some((row) => row.product === product));
     const usageByProduct: MaterialUsageByProduct[] = productsUsed.map((product) => {
-      const monthlyQty = usageRows.filter((row) => row.product === product).reduce((sum, row) => sum + row.monthlyQty, 0);
+      const productUsageRows = usageRows.filter((row) => row.product === product);
+      const monthlyQty = productUsageRows.reduce((sum, row) => sum + row.monthlyQty, 0);
       const monthlyBase = utilizedMonthlyKWafer(product);
-      const coefficient = monthlyBase > 0 ? monthlyQty / monthlyBase : 0;
+      // 새 원단위가 있으면 wafer당 값을 직접 사용한다. 이전 DB 문서는 월소요량 역산으로 호환한다.
+      const explicitCoefficient = productUsageRows.reduce(
+        (sum, row) => sum + (row.equivalentPerWafer === undefined ? 0 : row.equivalentPerWafer * 1_000),
+        0,
+      );
+      const hasExplicitCoefficient = productUsageRows.every((row) => row.equivalentPerWafer !== undefined);
+      const coefficient = hasExplicitCoefficient ? explicitCoefficient : monthlyBase > 0 ? monthlyQty / monthlyBase : 0;
       const actual = actuals[product];
       const producedQty = actual?.producedQty ?? null;
       const planQty = dailyPlanKWafer(product);

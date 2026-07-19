@@ -100,6 +100,12 @@ export interface FacilityTelemetryDoc {
 }
 export interface ProcessUsageDoc {
   _id: string; materialId: string; processCode: string; product: Product; monthlyQty: number;
+  fabId?: FabId;
+  modelProduct?: string;
+  equivalentPerWafer?: number;
+  consumptionBasis?: "WAFER_VISIT" | "TOOL_USAGE" | "REPLACEMENT_LIFE" | "STACK_EQUIVALENT";
+  source?: "MODELED_BASELINE" | "MES_ACTUAL";
+  sourceVersion?: string;
 }
 export interface TransactionDoc {
   _id: string; materialId: string; type: TxType; quantity: number; date: Date;

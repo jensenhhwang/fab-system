@@ -169,7 +169,7 @@ function DetailPanel({ row }: { row: LiveMaterialRowView | undefined }) {
           <b>{FAB_LABEL[item.fabId]}</b>
           <div className="h-1.5 overflow-hidden rounded-full bg-[#EEE]"><div className="h-full rounded-full bg-[#F47725]" style={{ width: `${Math.min(100, (item.usage / Math.max(...row.usageByProduct.map((entry) => entry.usage), 1)) * 100)}%` }} /></div>
           <span className="tabular-nums text-[#777]">
-            {(item.producedQty ?? item.planQty).toFixed(1)}K × <span title="MODELED_BASELINE: processUsage 월간 소요량에서 역산한 원단위, 실측 아님" className="rounded bg-[#EEE] px-1 text-[8px] font-bold text-[#888]">MODELED {item.coefficient.toFixed(2)}</span> = <b className="text-[#C45C19]">{item.usage.toFixed(1)} {row.unit}</b>
+            {(item.producedQty ?? item.planQty).toFixed(1)}K × <span title="M20은 MATERIAL_CONSUMPTION_M20_V1의 wafer당 원단위, M21·M22는 기존 월소요량 역산값입니다. 모두 실측 전 모델값입니다." className="rounded bg-[#EEE] px-1 text-[8px] font-bold text-[#888]">MODELED {item.coefficient.toFixed(2)}</span> = <b className="text-[#C45C19]">{item.usage.toFixed(1)} {row.unit}</b>
             {!item.confirmed && <span className="ml-1 text-[8px] text-[#6D28D9]">(계획치)</span>}
           </span>
         </div>
@@ -384,7 +384,7 @@ export default function DailyControlClient() {
     )}
 
     <div className="mt-5 rounded-xl border border-dashed p-4 text-[10px] leading-5 text-[#777]" style={{ borderColor: "#C9C4BF" }}>
-      <b className="text-[#444]">데이터 출처:</b> 생산실적·현재고는 사용자가 확정한 실측치(productionActuals, inventory)입니다. 자재 원단위(제품별 사용계수)는 MODELED_BASELINE — 진짜 MES 원단위 마스터가 아직 없어 processUsage 월간 소요량을 FAB_SCENARIO 가동률로 역산한 값입니다. 계수가 부정확하면 사용량·마감예상도 함께 어긋납니다. 재배정 기록은 실물 이동이 아니라 우선순위 결정 로그입니다.
+      <b className="text-[#444]">데이터 출처:</b> 생산실적·현재고는 사용자가 확정한 실측치(productionActuals, inventory)입니다. M20 자재 원단위는 MATERIAL_CONSUMPTION_M20_V1의 wafer당 MODELED_BASELINE이며, M21·M22는 기존 processUsage 월소요량 역산값입니다. MES 실측 원단위가 들어오면 모델값을 교체해야 하며, 계수가 부정확하면 사용량·마감예상도 함께 어긋납니다. 재배정 기록은 실물 이동이 아니라 우선순위 결정 로그입니다.
     </div>
   </div>;
 }

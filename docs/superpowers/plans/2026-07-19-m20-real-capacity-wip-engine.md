@@ -1,5 +1,7 @@
 # M20 실제 캐파 기반 WIP 엔진 Implementation Plan
 
+> **2026-07-19 변경 주의:** 이 계획의 생산능력·WIP 개념은 [`docs/fab-master.md`](../../fab-master.md)로 승계되었다. 특히 Task 1의 "기존 HBM `processUsage.monthlyQty` 전체를 2.6배"하는 절차는 폐기되었으므로 실행하지 않는다. 자재량은 [`docs/material-consumption-master.md`](../../material-consumption-master.md)의 wafer당 원단위에서 시나리오별로 다시 산출해야 한다. 이 계획은 구현 이력과 AGGREGATE WIP 설계 참고용으로만 유지한다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** M20(HBM)의 웨이퍼 로트(FOUP) 동시 재공재고(WIP)를, 실제 SK하이닉스 M16 공개 캐파 수치를 반영한 `nominalWspm`으로부터 Little's Law로 계산한 목표치(약 16,380개)까지 실제로 채워 돌아가게 만들고, 가동률을 실시간으로 조절할 수 있는 다이얼을 제공한다.

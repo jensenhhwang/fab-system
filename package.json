@@ -15,6 +15,8 @@
     "test:inventory-policy": "tsx scripts/test-inventory-policy.ts",
     "test:inventory-scaleup": "tsx scripts/test-inventory-scaleup.ts",
     "test:fab-scenario": "tsx scripts/test-fab-scenario.ts",
+    "test:material-consumption": "tsx scripts/test-material-consumption.ts",
+    "test:m20-production-master": "tsx scripts/verify-m20-production-master.ts",
     "test:material-flow": "tsx scripts/test-material-flow.ts",
     "test:live-transfer": "tsx scripts/test-live-transfer.ts",
     "test:m20-pilot": "tsx scripts/verify-m20-pilot.ts",
@@ -33,6 +35,7 @@
     "db:migrate-m20-agents": "tsx scripts/migrate-m20-agents.ts",
     "db:migrate-agent-policies": "tsx scripts/migrate-agent-policies.ts",
     "db:migrate-route-master": "tsx scripts/migrate-route-master.ts",
+    "db:migrate-m20-consumption": "tsx scripts/migrate-m20-material-consumption.ts",
     "db:validate": "tsx prisma/validate-data-consistency.ts",
     "db:audit-inventory": "tsx scripts/audit-inventory-doh.ts",
     "db:calibrate-inventory": "tsx scripts/calibrate-inventory-policy.ts"

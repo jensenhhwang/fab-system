@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { MongoClient } from "mongodb";
 import { randomUUID } from "crypto";
 import { FACILITY_MASTER, getCanonicalFacility, getSupplyProfile } from "../src/lib/warehouse-storage-rules";
+import { m20ProcessUsageForScenario } from "../src/lib/material-consumption";
 
 // MongoDB(Atlas) 네이티브 드라이버로 시드. _id는 자연키(코드) 사용.
 const client = new MongoClient(process.env.DATABASE_URL as string);
@@ -232,9 +233,21 @@ async function main() {
   console.log(`✅ Inventory: ${inventoryData.length}건`);
 
   // ─── 6. 공정별 사용량 (Product × Process × Material) ──────
-  // HBM 월 사용량 = 전체의 약 35%, DRAM 45%, NAND 20% 기준 추산
-  // processUsage: 생산 규모 ×7 반영 (WH-D 관련 소모품은 ×4 — 교체주기 기준)
-  const processUsageData = [
+  // HBM은 FAB_MASTER_M20_V1의 NORMAL 117K WSPM × wafer당 원단위로 다시 생성한다.
+  // DRAM/NAND는 아직 LEGACY_DERIVED이며 M21/M22 마스터 도입 전까지 기존값을 유지한다.
+  type SeedProcessUsage = {
+    code: string;
+    proc: string;
+    product: "HBM" | "DRAM" | "NAND";
+    qty: number;
+    fabId?: "M20";
+    modelProduct?: string;
+    equivalentPerWafer?: number;
+    consumptionBasis?: string;
+    source?: string;
+    sourceVersion?: string;
+  };
+  const legacyProcessUsageData: SeedProcessUsage[] = [
     // N₂ — 전 공정 (HBM) ×7
     { code: "GAS-001", proc: "P01", product: "HBM",  qty: 11760 },
     { code: "GAS-001", proc: "P02", product: "HBM",  qty: 14700 },
@@ -421,12 +434,36 @@ async function main() {
     { code: "CSM-015", proc: "P04", product: "NAND", qty: 9.6  },
   ];
 
+  const processUsageData: SeedProcessUsage[] = [
+    ...legacyProcessUsageData.filter((row) => row.product !== "HBM"),
+    ...m20ProcessUsageForScenario("NORMAL").map((row) => ({
+      code: row.materialId,
+      proc: row.processCode,
+      product: row.product,
+      qty: row.monthlyQty,
+      fabId: row.fabId,
+      modelProduct: row.modelProduct,
+      equivalentPerWafer: row.equivalentPerWafer,
+      consumptionBasis: row.consumptionBasis,
+      source: row.source,
+      sourceVersion: row.sourceVersion,
+    })),
+  ];
+
   await col("processUsage").insertMany(
     processUsageData
       .filter((pu) => materials[pu.code])
       .map((pu) => ({
         _id: `${pu.code}__${pu.proc}__${pu.product}`,
         materialId: pu.code, processCode: pu.proc, product: pu.product, monthlyQty: pu.qty,
+        ...(pu.fabId ? {
+          fabId: pu.fabId,
+          modelProduct: pu.modelProduct,
+          equivalentPerWafer: pu.equivalentPerWafer,
+          consumptionBasis: pu.consumptionBasis,
+          source: pu.source,
+          sourceVersion: pu.sourceVersion,
+        } : {}),
       }))
   );
   console.log(`✅ ProcessUsage: ${processUsageData.length}건`);

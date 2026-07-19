@@ -15,7 +15,7 @@ async function main() {
   const returnedCodes = initialStates.map((s) => s.lot.foupCode).sort();
   assert.deepEqual(returnedCodes, [...FOUP_CODES].sort(), "FOUP-01~12 코드가 모두 존재해야 합니다");
   for (const state of initialStates) {
-    assert.equal(state.totalSteps, 130, `${state.lot.foupCode} totalSteps는 130이어야 합니다`);
+    assert.equal(state.totalSteps, 134, `${state.lot.foupCode} totalSteps는 HBM4 12-Hi 기준 134여야 합니다`);
   }
   console.log(`✅ 1) FOUP×12 활성 로트 확인 완료 (${returnedCodes.join(", ")})`);
 
@@ -56,14 +56,14 @@ async function main() {
   assert.equal(otherLotBefore._id, (await getOrCreateActiveLot("M20", "HBM", otherFoup, ACTOR))._id, `${otherFoup} 로트가 그대로 유지되어야 합니다`);
   console.log(`✅ 4) ${otherFoup}는 ${targetFoup}의 진행과 독립적으로 유지됨`);
 
-  // 5) FOUP-05를 끝까지(130스텝) 완주시킨 뒤, 재조회 시 새 로트(25장 재적재)로 리셋되는지 확인한다.
+  // 5) FOUP-05를 routeMaster 끝까지 완주시킨 뒤, 재조회 시 새 로트(25장 재적재)로 리셋되는지 확인한다.
   while (!state.isDone) {
     state = await advanceLotStep(lot._id, ACTOR, `${lot._id}:${randomUUID()}`);
     iterations++;
     if (iterations > 400) throw new Error("무한루프 방지: 반복 횟수 초과(완주 단계)");
   }
   assert.equal(state.isDone, true);
-  assert.equal(state.currentStepIndex, 130);
+  assert.equal(state.currentStepIndex, 134);
   const restartedLot = await getOrCreateActiveLot("M20", "HBM", targetFoup, ACTOR);
   assert.notEqual(restartedLot._id, lot._id, "완주 후 재조회하면 새로운 로트(FOUP 리필)가 생성되어야 합니다");
   assert.equal(restartedLot.status, "IN_PROGRESS");

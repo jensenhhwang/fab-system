@@ -13,7 +13,7 @@ const M20_NODES: RouteMasterNode[] = [
   { id: "backgrind", label: "백그라인딩(웨이퍼 뒷면 연마·박막화) 후 웨이퍼 뒤집기", cycle: ["P08"], repeatCount: 1, stage: "BACKGRIND" },
   { id: "tsv-back", label: "TSV 백사이드 — TSV 노출(리빌)·백사이드 절연/배리어·마이크로범프 형성", cycle: ["P08"], repeatCount: 1, stage: "TSV_BACK" },
   { id: "wafer-test-2", label: "2차 웨이퍼테스트 (적층 전 재검)", cycle: ["P09"], repeatCount: 1, stage: "TEST" },
-  { id: "packaging", label: "다이싱 → 다이 정렬·본딩(스택층수만큼 반복) → 몰딩 → 최종검사", cycle: ["P10"], repeatCount: 8, stage: "PACKAGING" },
+  { id: "packaging", label: "다이싱 → 다이 정렬·본딩(HBM4 12-Hi) → 몰딩 → 최종검사", cycle: ["P10"], repeatCount: 12, stage: "PACKAGING" },
 ];
 
 function sequentialEdges(nodes: RouteMasterNode[]): RouteMasterEdge[] {
@@ -46,7 +46,8 @@ async function main() {
   };
   await routeMasters.updateOne({ _id: doc._id }, { $set: doc }, { upsert: true });
   await routeMasters.createIndex({ fabId: 1, product: 1 }, { unique: true });
-  console.log(`✅ routeMaster 시딩 완료: ${doc._id} (노드 ${doc.nodes.length}개)`);
+  const totalSteps = doc.nodes.reduce((sum, node) => sum + node.cycle.length * node.repeatCount, 0);
+  console.log(`✅ routeMaster 시딩 완료: ${doc._id} (노드 ${doc.nodes.length}개, ${totalSteps}스텝)`);
   process.exit(0);
 }
 
