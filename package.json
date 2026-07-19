@@ -36,6 +36,7 @@
     "db:migrate-agent-policies": "tsx scripts/migrate-agent-policies.ts",
     "db:migrate-route-master": "tsx scripts/migrate-route-master.ts",
     "db:migrate-m20-consumption": "tsx scripts/migrate-m20-material-consumption.ts",
+    "db:migrate-wafer-lot-wip": "tsx scripts/migrate-wafer-lot-wip-indexes.ts",
     "db:validate": "tsx prisma/validate-data-consistency.ts",
     "db:audit-inventory": "tsx scripts/audit-inventory-doh.ts",
     "db:calibrate-inventory": "tsx scripts/calibrate-inventory-policy.ts"
