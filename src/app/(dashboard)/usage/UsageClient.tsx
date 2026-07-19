@@ -8,6 +8,7 @@ import { PROCESSES } from "@/lib/processes";
 import { FAB_IDS, type FabId } from "@/lib/fab-domain";
 import { getProcessGuide } from "@/lib/process-guide";
 import { buildTwinHref, type CameraPreset, type TwinMode } from "@/lib/twin-navigation";
+import FabThroughputDial from "./FabThroughputDial";
 import LotRouteTrackerCard from "./LotRouteTrackerCard";
 import type { LiveFoupView } from "@/components/ProcessFlow3D";
 
@@ -377,7 +378,12 @@ export default function UsageClient({
               )}
             </div>
           </div>
-          {selectedFab === "M20" && <LotRouteTrackerCard fabId="M20" product="HBM" onLiveFoupsChange={setLiveFoups} />}
+          {selectedFab === "M20" && (
+            <div className="flex flex-col gap-3">
+              <FabThroughputDial fabId="M20" />
+              <LotRouteTrackerCard fabId="M20" product="HBM" onLiveFoupsChange={setLiveFoups} />
+            </div>
+          )}
         </div>}
       </div>
 
