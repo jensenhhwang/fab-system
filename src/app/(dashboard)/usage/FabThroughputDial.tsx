@@ -44,10 +44,14 @@ export default function FabThroughputDial({ fabId }: { fabId: FabId }) {
   }, [fabId]);
 
   useEffect(() => {
-    void loadScenario();
+    const scenarioInitial = window.setTimeout(() => void loadScenario(), 0);
     const interval = window.setInterval(() => { if (!document.hidden) void loadWip(); }, 6_000);
-    const initial = window.setTimeout(() => void loadWip(), 0);
-    return () => { window.clearInterval(interval); window.clearTimeout(initial); };
+    const wipInitial = window.setTimeout(() => void loadWip(), 0);
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(scenarioInitial);
+      window.clearTimeout(wipInitial);
+    };
   }, [loadScenario, loadWip]);
 
   const commitUtilization = async (value: number) => {
