@@ -422,11 +422,16 @@ export interface WaferLotDoc {
   fabId: FabId;
   product: Product;
   routeMasterId: string; // `${fabId}:${product}`
-  foupCode: string; // 예: "FOUP-01"
+  foupCode: string; // 예: "FOUP-01" (VISUAL) 또는 "FOUP-WIP-xxxxx" (AGGREGATE)
   status: WaferLotStatus;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  // AGGREGATE 코호트 전용 필드 — undefined면 기존 12개 VISUAL(3D 개별 추적) 로트.
+  cohort?: "AGGREGATE";
+  currentStepIndex?: number; // waferLotStepEvents 감사 이벤트 없이 진행 상태를 로트 문서에 직접 비정규화
+  currentNodeId?: string;
+  lastEventAt?: Date;
 }
 
 export type WaferLotStepTriggerType = "OPERATOR_CONFIRM" | "MES_TELEMETRY";
