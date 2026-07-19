@@ -202,6 +202,7 @@ export async function advanceAggregateWip(fabId: FabId, product: Product): Promi
   if (!routeMaster) return { advanced: 0, completed: 0 };
   const visits = expandRouteMaster(routeMaster);
   const totalSteps = visits.length;
+  if (totalSteps === 0) return { advanced: 0, completed: 0 };
 
   const due = await waferLots.find({
     fabId, product, cohort: "AGGREGATE", status: "IN_PROGRESS",
