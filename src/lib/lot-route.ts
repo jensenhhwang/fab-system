@@ -188,3 +188,44 @@ export async function ensureAggregateWip(fabId: FabId, product: Product, actorId
   await waferLots.insertMany(docs);
   return { targetWip: target, currentWip: currentWip + toCreate, created: toCreate };
 }
+
+const AGGREGATE_ADVANCE_BATCH_MAX = 2_000;
+
+// AGGREGATE 코호트를 벌크로 한 스텝씩 진행시킨다. VISUAL 코호트(advanceLotStep)와 달리
+// waferLotStepEvents를 쓰지 않고, packaging 노드 진입 시에도 createM20PilotWorkOrder를 절대 호출하지 않는다
+// (자재 소비 트리거는 여전히 VISUAL 12개 전용 스코프).
+export async function advanceAggregateWip(fabId: FabId, product: Product): Promise<{ advanced: number; completed: number }> {
+  if (fabId !== "M20" || product !== "HBM") return { advanced: 0, completed: 0 };
+
+  const { waferLots } = await collections();
+  const routeMaster = await getRouteMaster(fabId, product);
+  if (!routeMaster) return { advanced: 0, completed: 0 };
+  const visits = expandRouteMaster(routeMaster);
+  const totalSteps = visits.length;
+
+  const due = await waferLots.find({
+    fabId, product, cohort: "AGGREGATE", status: "IN_PROGRESS",
+    lastEventAt: { $lte: new Date(Date.now() - AUTO_ADVANCE_INTERVAL_MS) },
+  }).limit(AGGREGATE_ADVANCE_BATCH_MAX).toArray();
+  if (due.length === 0) return { advanced: 0, completed: 0 };
+
+  const now = new Date();
+  let completed = 0;
+  const ops = due.map((lot) => {
+    const nextStep = (lot.currentStepIndex ?? 0) + 1;
+    const isDone = nextStep >= totalSteps;
+    if (isDone) completed++;
+    const nextNodeId = isDone ? visits[totalSteps - 1].nodeId : visits[nextStep].nodeId;
+    return {
+      updateOne: {
+        filter: { _id: lot._id, lastEventAt: lot.lastEventAt },
+        update: { $set: {
+          currentStepIndex: isDone ? totalSteps : nextStep, currentNodeId: nextNodeId,
+          lastEventAt: now, updatedAt: now, status: isDone ? "DONE" as const : "IN_PROGRESS" as const,
+        } },
+      },
+    };
+  });
+  const result = await waferLots.bulkWrite(ops, { ordered: false });
+  return { advanced: result.modifiedCount, completed };
+}
