@@ -96,17 +96,21 @@ export async function reserveM20PilotMaterial(input: {
   let lot = null;
   let handlingUnit = null;
   for (const candidate of lots) {
-    const unit = await handlingUnits.findOne({
-      inventoryLotId: candidate._id,
-      materialId: line.materialId,
-      status: "AVAILABLE",
-      quantity,
-      $or: [{ logisticsStatus: "STORED" }, { logisticsStatus: { $exists: false } }],
-    });
+    const unit = await handlingUnits.findOne(
+      {
+        inventoryLotId: candidate._id,
+        materialId: line.materialId,
+        status: "AVAILABLE",
+        quantity: { $gte: quantity },
+        $or: [{ logisticsStatus: "STORED" }, { logisticsStatus: { $exists: false } }],
+      },
+      { sort: { quantity: 1 } },
+    );
     if (unit) { lot = candidate; handlingUnit = unit; break; }
   }
-  if (!lot?.warehouseId || !handlingUnit) throw new Error(`FEFO 기준 정확히 ${quantity}${allocation.unit}인 가용 HU가 없습니다.`);
+  if (!lot?.warehouseId || !handlingUnit) throw new Error(`FEFO 기준 ${quantity}${allocation.unit} 이상인 가용 HU가 없습니다.`);
   const warehouseId = lot.warehouseId;
+  const remainderQty = Math.round((handlingUnit.quantity - quantity) * 100) / 100;
 
   const now = new Date();
   const client = await getMongoClient();
@@ -124,6 +128,7 @@ export async function reserveM20PilotMaterial(input: {
         { _id: handlingUnit!._id, status: "AVAILABLE", ...versionFilter, $or: [{ logisticsStatus: "STORED" }, { logisticsStatus: { $exists: false } }] },
         { $set: {
           logisticsStatus: "RESERVED",
+          quantity,
           currentFacilityId: warehouseId,
           currentLocationId: handlingUnit!.currentLocationId ?? handlingUnit!.locationId,
           reservedWorkOrderId: wo._id,
@@ -134,6 +139,20 @@ export async function reserveM20PilotMaterial(input: {
         { session },
       );
       if (!huResult.modifiedCount) throw new Error("AGENT_HU_CHANGED");
+      if (remainderQty > 0) {
+        await handlingUnits.insertOne({
+          _id: randomUUID(),
+          inventoryLotId: handlingUnit!.inventoryLotId,
+          materialId: handlingUnit!.materialId,
+          warehouseId: handlingUnit!.warehouseId,
+          locationId: handlingUnit!.locationId,
+          containerType: handlingUnit!.containerType,
+          quantity: remainderQty,
+          status: "AVAILABLE",
+          ...(handlingUnit!.logisticsStatus ? { logisticsStatus: handlingUnit!.logisticsStatus } : {}),
+          updatedAt: now,
+        }, { session });
+      }
       await materialAllocations.updateOne(
         { _id: allocation._id, status: allocation.status },
         { $set: { status: "RESERVED", inventoryLotIds: [lot!._id], sourceFacilityId: warehouseId, updatedAt: now } },
