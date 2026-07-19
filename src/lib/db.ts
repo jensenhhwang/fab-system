@@ -36,6 +36,10 @@ export interface UserDoc {
 export interface MaterialDoc {
   _id: string; code: string; name: string; nameEn?: string | null;
   category: Category; unit: string; safetyStock: number; ropDays: number; notes?: string | null;
+  materialType?: "CONSUMABLE" | "DIRECT_COMPONENT" | "REUSABLE_CARRIER";
+  purchaseUnit?: string;
+  purchaseToInventoryFactor?: number;
+  assumptionConfidence?: "HIGH" | "MEDIUM" | "LOW" | "CALIBRATION_REQUIRED";
   palletFactor?: number; // 파렛트 환산 예외 override (없으면 단위표 사용)
   supplyMode?: SupplyMode; // 공급 형태 (기존 문서는 분류 규칙으로 fallback)
   regulatoryClass?: string; // 실제 SDS/허가 데이터 연결용
@@ -101,9 +105,13 @@ export interface FacilityTelemetryDoc {
 export interface ProcessUsageDoc {
   _id: string; materialId: string; processCode: string; product: Product; monthlyQty: number;
   fabId?: FabId;
+  routeKey?: string;
+  routeVersion?: string;
+  operationCode?: string;
+  active?: boolean;
   modelProduct?: string;
   equivalentPerWafer?: number;
-  consumptionBasis?: "WAFER_VISIT" | "TOOL_USAGE" | "REPLACEMENT_LIFE" | "STACK_EQUIVALENT";
+  consumptionBasis?: "WAFER_VISIT" | "TOOL_USAGE" | "REPLACEMENT_LIFE" | "STACK_EQUIVALENT" | "DIRECT_COMPONENT";
   source?: "MODELED_BASELINE" | "MES_ACTUAL";
   sourceVersion?: string;
 }
@@ -239,9 +247,12 @@ export interface BomLine {
 }
 
 export interface BomTemplateDoc {
-  _id: string; // "{processCode}-{product}"
+  _id: string; // V1: "{processCode}-{product}", V2: route/version/operation namespace
   processCode: string;
   product: Product;
+  routeKey?: string;
+  routeVersion?: string;
+  operationCode?: string;
   lines: { materialId: string; qtyPerRun: number }[];
   updatedAt: Date;
 }
@@ -252,6 +263,9 @@ export interface WorkOrderDoc {
   _id: string; // "WO-{Date.now()}"
   fabId: FabId;
   processCode: string;
+  routeKey?: string;
+  routeVersion?: string;
+  operationCode?: string;
   product: Product;
   plannedQty: number;
   plannedQtyUnit?: "RUN" | "WAFER";
@@ -390,13 +404,16 @@ export interface MaterialRerouteDoc {
   decidedAt: Date;
 }
 
-export type RouteNodeStage = "FRONT_END" | "TSV_FRONT" | "BACKGRIND" | "TSV_BACK" | "TEST" | "PACKAGING" | "PERIPHERAL" | "CELL_STACK";
+export type RouteNodeStage = "FRONT_END" | "TSV_FRONT" | "BACKGRIND" | "TSV_BACK" | "TEST" | "SINGULATION" | "ASSEMBLY" | "PACKAGING" | "PERIPHERAL" | "CELL_STACK";
 export interface RouteMasterNode {
   id: string;
   label: string;
   cycle: string[]; // 이 노드에서 도는 공정 코드 순서 (예: ["P03","P04","P02","P07"])
   repeatCount: number; // cycle을 몇 번 반복하는지
   stage: RouteNodeStage;
+  operationCode?: string;
+  inputUnit?: "WAFER" | "MEMORY_KGD" | "BASE_KGD" | "STACK";
+  outputUnit?: "WAFER" | "MEMORY_KGD" | "STACK" | "GOOD_PACKAGE";
 }
 export interface RouteMasterEdge {
   from: string; // node id 또는 "START"
@@ -404,9 +421,11 @@ export interface RouteMasterEdge {
   condition?: string;
 }
 export interface RouteMasterDoc {
-  _id: string; // `${fabId}:${product}`
+  _id: string; // V1: `${fabId}:${product}`, V2+: `${fabId}:${product}:Vn`
   fabId: FabId;
   product: Product;
+  routeKey?: string;
+  isActive?: boolean;
   version: string;
   nodes: RouteMasterNode[];
   edges: RouteMasterEdge[];
@@ -417,6 +436,7 @@ export interface RouteMasterDoc {
 
 // "lots"는 이미 InventoryLotDoc(재고 로트)이 쓰고 있어서, 웨이퍼 생산 로트는 waferLots로 분리한다.
 export type WaferLotStatus = "IN_PROGRESS" | "DONE";
+export type WaferLotCohort = "AGGREGATE" | "LEGACY_AGGREGATE" | "MODELED_FOUP" | "WATCHED";
 export interface WaferLotDoc {
   _id: string;
   fabId: FabId;
@@ -428,10 +448,66 @@ export interface WaferLotDoc {
   createdAt: Date;
   updatedAt: Date;
   // AGGREGATE 코호트 전용 필드 — undefined면 기존 12개 VISUAL(3D 개별 추적) 로트.
-  cohort?: "AGGREGATE";
+  cohort?: WaferLotCohort;
   currentStepIndex?: number; // waferLotStepEvents 감사 이벤트 없이 진행 상태를 로트 문서에 직접 비정규화
   currentNodeId?: string;
   lastEventAt?: Date;
+  waferQty?: number;
+  watched?: boolean;
+  source?: "MODELED_BASELINE" | "MES_ACTUAL";
+  bootstrapVersion?: string;
+  modeledReleaseAt?: Date;
+  nextTransitionAt?: Date;
+  dwellModel?: "SIMPLIFIED_UNIFORM_DWELL";
+}
+
+export type ProductionCarrierType = "FOUP" | "DICING_FRAME" | "DIE_TRAY" | "STACK_TRAY";
+export type ProductionCarrierState = "AVAILABLE" | "ASSIGNED_IN_PROCESS" | "CLEANING" | "MAINTENANCE";
+export type ProductionCarrierMovementStatus = "STATIONARY" | "IN_TRANSIT" | "EMPTY_RETURN";
+export interface ProductionCarrierDoc {
+  _id: string;
+  fabId: FabId;
+  carrierType: ProductionCarrierType;
+  capacity: number;
+  capacityUnit: "WAFER" | "DIE" | "STACK";
+  state: ProductionCarrierState;
+  movementStatus: ProductionCarrierMovementStatus;
+  currentProcessCode?: string;
+  currentLocationId: string;
+  source: "MODELED_BASELINE" | "MES_ACTUAL";
+  bootstrapVersion?: string;
+  positionAccuracy: "ZONE_DERIVED" | "SENSOR_ACTUAL";
+  updatedAt: Date;
+}
+
+export interface LotCarrierAssignmentDoc {
+  _id: string;
+  fabId: FabId;
+  lotId: string;
+  carrierId: string;
+  carrierType: ProductionCarrierType;
+  status: "ACTIVE" | "RELEASED";
+  assignedAt: Date;
+  releasedAt?: Date;
+  source: "MODELED_BASELINE" | "MES_ACTUAL";
+  bootstrapVersion?: string;
+  updatedAt: Date;
+}
+
+export interface FoupWipBootstrapManifestDoc {
+  _id: string;
+  fabId: "M20";
+  routeMasterId: string;
+  status: "PREPARING" | "ACTIVE" | "FAILED";
+  mode: "STEADY_STATE_BOOTSTRAP";
+  dwellModel: "SIMPLIFIED_UNIFORM_DWELL";
+  bootstrapEndAt: Date;
+  targetCounts: { physicalFleet: number; occupied: number; reserve: number; watched: number };
+  actualCounts?: { physicalFleet: number; occupied: number; reserve: number; watched: number; activeLots: number; activeAssignments: number };
+  snapshotPath?: string;
+  error?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export type WaferLotStepTriggerType = "OPERATOR_CONFIRM" | "MES_TELEMETRY";
@@ -440,6 +516,7 @@ export interface WaferLotStepEventDoc {
   lotId: string;
   nodeId: string;
   processCode: string;
+  operationCode?: string;
   stepIndex: number; // routeMaster 전개 시퀀스에서 절대 순번 (0-based)
   visitIndex: number; // 해당 노드 안에서 몇 번째 반복인지 (0-based)
   enteredAt: Date;
@@ -480,6 +557,7 @@ export interface EquipmentMasterDoc {
   status: EquipmentStatus;
   ratedCapacity: number;
   capacityUnit: "WAFER_DAY";
+  capacityStage?: string;
   oee: number;
   source: "MODELED_BASELINE" | "MES_MASTER";
   updatedAt: Date;
@@ -663,6 +741,9 @@ export async function collections(): Promise<{
   routeMasters: Collection<RouteMasterDoc>;
   waferLots: Collection<WaferLotDoc>;
   waferLotStepEvents: Collection<WaferLotStepEventDoc>;
+  productionCarriers: Collection<ProductionCarrierDoc>;
+  lotCarrierAssignments: Collection<LotCarrierAssignmentDoc>;
+  foupWipBootstrapManifests: Collection<FoupWipBootstrapManifestDoc>;
   fabScenarios: Collection<FabScenarioDoc>;
 }> {
   const db = await getDb();
@@ -713,6 +794,9 @@ export async function collections(): Promise<{
     routeMasters: db.collection<RouteMasterDoc>("routeMasters"),
     waferLots: db.collection<WaferLotDoc>("waferLots"),
     waferLotStepEvents: db.collection<WaferLotStepEventDoc>("waferLotStepEvents"),
+    productionCarriers: db.collection<ProductionCarrierDoc>("productionCarriers"),
+    lotCarrierAssignments: db.collection<LotCarrierAssignmentDoc>("lotCarrierAssignments"),
+    foupWipBootstrapManifests: db.collection<FoupWipBootstrapManifestDoc>("foupWipBootstrapManifests"),
     fabScenarios: db.collection<FabScenarioDoc>("fabScenarios"),
   };
 }

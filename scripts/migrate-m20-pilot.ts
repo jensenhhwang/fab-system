@@ -1,22 +1,11 @@
 import "dotenv/config";
 import { collections } from "../src/lib/db";
-import type { EquipmentMasterDoc, HandlingUnitDoc, StorageLocationDoc, WarehouseZoneDoc } from "../src/lib/db";
-import { PROCESSES } from "../src/lib/processes";
-
-const M20_EQUIPMENT_COUNTS: Record<string, number> = {
-  P01: 32, P02: 48, P03: 64, P04: 72, P05: 24,
-  P06: 48, P07: 32, P08: 56, P09: 40, P10: 36,
-};
-
-const RATED_CAPACITY: Record<string, number> = {
-  P01: 115, P02: 105, P03: 92, P04: 108, P05: 120,
-  P06: 105, P07: 98, P08: 86, P09: 130, P10: 140,
-};
+import type { HandlingUnitDoc, StorageLocationDoc, WarehouseZoneDoc } from "../src/lib/db";
 
 async function main() {
   const {
     warehouseZones, storageLocations, inventoryLots, handlingUnits,
-    fabMaterialStocks, equipmentMaster, materialFlowEvents, transferOrders,
+    fabMaterialStocks, materialFlowEvents, transferOrders,
   } = await collections();
   const now = new Date();
   const zone: WarehouseZoneDoc = {
@@ -82,41 +71,13 @@ async function main() {
     );
   }
 
-  const equipment: EquipmentMasterDoc[] = [];
-  for (const [processIndex, process] of PROCESSES.entries()) {
-    const count = M20_EQUIPMENT_COUNTS[process.code] ?? 0;
-    for (let index = 0; index < count; index += 1) {
-      const sequence = index + 1;
-      const stateSelector = sequence % 100;
-      const status = stateSelector < 90 ? "RUN" : stateSelector < 95 ? "IDLE" : stateSelector < 98 ? "PM" : "DOWN";
-      equipment.push({
-        _id: `M20-${process.code}-${String(sequence).padStart(3, "0")}`,
-        fabId: "M20",
-        processCode: process.code,
-        model: `${process.nameEn.toUpperCase().replaceAll(" ", "-")}-M20`,
-        bay: `M20-${process.code}-B${String(Math.floor(index / 12) + 1).padStart(2, "0")}`,
-        position: { x: (index % 12) - 5.5, y: 0, z: processIndex * 4 + Math.floor(index / 12) * 0.55 },
-        status,
-        ratedCapacity: RATED_CAPACITY[process.code] ?? 100,
-        capacityUnit: "WAFER_DAY",
-        oee: Math.round((0.82 + (sequence % 8) * 0.01) * 100) / 100,
-        source: "MODELED_BASELINE",
-        updatedAt: now,
-      });
-    }
-  }
-  for (const tool of equipment) {
-    await equipmentMaster.updateOne({ _id: tool._id }, { $set: tool }, { upsert: true });
-  }
-
   await Promise.all([
-    equipmentMaster.createIndex({ fabId: 1, processCode: 1, status: 1 }),
     fabMaterialStocks.createIndex({ fabId: 1, processCode: 1, locationType: 1, materialId: 1 }, { unique: true }),
     handlingUnits.createIndex({ reservedTransferOrderId: 1 }, { sparse: true }),
     transferOrders.createIndex({ workOrderId: 1, materialId: 1, status: 1 }),
     materialFlowEvents.createIndex({ requestId: 1 }, { unique: true, partialFilterExpression: { requestId: { $type: "string" } } }),
   ]);
-  console.log(`✅ M20 pilot master ready: lot=${lot._id}, equipment=${equipment.length}, modeled baseline`);
+  console.log(`✅ M20 P10 pilot material flow ready: lot=${lot._id}; equipment는 db:migrate-m20-equipment-master에서 별도 관리`);
 }
 
 main().catch((error) => {

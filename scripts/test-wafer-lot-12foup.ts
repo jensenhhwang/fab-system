@@ -35,7 +35,7 @@ async function main() {
   }
   const lastEvent = state.history.at(-1);
   assert(lastEvent, "완료 이벤트가 있어야 합니다");
-  assert.equal(lastEvent.nodeId, "packaging", "마지막 완료 스텝은 packaging 노드여야 합니다");
+  assert.equal(lastEvent.nodeId, "hbm-final-test", "마지막 완료 스텝은 P10 final test 노드여야 합니다");
   assert.equal(lastEvent.visitIndex, 0, "패키징 첫 방문(visitIndex 0)이어야 합니다");
   assert.equal(lastEvent.stepIndex, 122, "패키징 첫 스텝의 절대 stepIndex는 122여야 합니다");
   console.log(`✅ 2) ${targetFoup} 패키징 첫 스텝(stepIndex=122) 도달 (${iterations}회 advance)`);

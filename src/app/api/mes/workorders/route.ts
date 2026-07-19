@@ -33,10 +33,13 @@ export async function POST(req: NextRequest) {
   const access = await requireRole(WRITE_ROLES.workOrderCreate);
   if (access.error) return access.error;
   const body = await req.json();
-  const { processCode, product, plannedQty, plannedStart, note, fabId, scope = "FULL_BOM", materialId: pilotMaterialId, requestId } = body as {
+  const { processCode, product, plannedQty, plannedStart, note, fabId, routeKey, routeVersion, operationCode, scope = "FULL_BOM", materialId: pilotMaterialId, requestId } = body as {
     processCode: string;
     product: Product;
     fabId?: FabId;
+    routeKey?: string;
+    routeVersion?: string;
+    operationCode?: string;
     plannedQty: number;
     plannedStart?: string;
     note?: string;
@@ -53,7 +56,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `${product} 작업지시는 ${resolvedFabId}에만 생성할 수 있습니다.` }, { status: 400 });
   }
   if (scope === "M20_PILOT" && (resolvedFabId !== "M20" || product !== "HBM" || processCode !== "P10" || !pilotMaterialId)) {
-    return NextResponse.json({ error: "M20 대표 흐름은 M20/HBM/P10과 대표 자재가 필요합니다." }, { status: 400 });
+    return NextResponse.json({ error: "M20 대표 흐름은 M20/HBM/P10.MUF_MOLDING_CURE와 대표 자재가 필요합니다." }, { status: 400 });
   }
   if (scope === "M20_PILOT") {
     try {
@@ -66,7 +69,9 @@ export async function POST(req: NextRequest) {
 
   const { workOrders, bomTemplates, materials, inventory, materialAllocations, transferOrders, materialFlowEvents } = await collections();
 
-  const templateId = `${processCode}-${product}`;
+  const templateId = routeVersion && operationCode
+    ? `${routeVersion}__${processCode}__${operationCode}__${product}`
+    : `${processCode}-${product}`;
   const template = await bomTemplates.findOne({ _id: templateId });
   if (!template?.lines.length) return NextResponse.json({ error: `${templateId} BOM 템플릿이 비어 있습니다.` }, { status: 409 });
   if (requestId) {
@@ -86,7 +91,7 @@ export async function POST(req: NextRequest) {
   const wo: WorkOrderDoc = {
     _id: `WO-${resolvedFabId}-${randomUUID()}`,
     fabId: resolvedFabId,
-    processCode,
+    processCode, routeKey, routeVersion, operationCode,
     product,
     plannedQty,
     plannedQtyUnit: "RUN",

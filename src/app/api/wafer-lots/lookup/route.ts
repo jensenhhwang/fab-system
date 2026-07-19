@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 import { collections } from "@/lib/db";
-import { getRouteMaster, expandRouteMaster } from "@/lib/route-master";
+import { getRouteMasterById, expandRouteMaster } from "@/lib/route-master";
 import { getLotRouteState } from "@/lib/lot-route";
 import { FAB_IDS, type FabId } from "@/lib/fab-domain";
 import type { Product } from "@/lib/db";
@@ -33,12 +33,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: `해당 foupCode를 찾을 수 없습니다: ${foupCode}` }, { status: 404 });
   }
 
-  if (lot.cohort === "AGGREGATE") {
-    const routeMaster = await getRouteMaster(fabId, product);
+  if (["AGGREGATE", "LEGACY_AGGREGATE", "MODELED_FOUP"].includes(lot.cohort ?? "")) {
+    const routeMaster = await getRouteMasterById(lot.routeMasterId);
     const totalSteps = routeMaster ? expandRouteMaster(routeMaster).length : 0;
     const nodeLabel = routeMaster?.nodes.find((node) => node.id === lot.currentNodeId)?.label ?? lot.currentNodeId ?? null;
     return NextResponse.json({
-      foupCode: lot.foupCode, status: lot.status, cohort: "AGGREGATE" as const,
+      foupCode: lot.foupCode, status: lot.status, cohort: lot.cohort,
       nodeId: lot.currentNodeId ?? null, nodeLabel,
       stepIndex: lot.currentStepIndex ?? null, totalSteps,
       lastEventAt: lot.lastEventAt ?? null,
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
   const visit = state.currentVisit ?? state.history.at(-1);
   const node = visit ? state.nodes.find((candidate) => candidate.id === visit.nodeId) : undefined;
   return NextResponse.json({
-    foupCode: lot.foupCode, status: lot.status, cohort: "VISUAL" as const,
+    foupCode: lot.foupCode, status: lot.status, cohort: lot.cohort === "WATCHED" ? "WATCHED" as const : "VISUAL" as const,
     nodeId: visit?.nodeId ?? null, nodeLabel: node?.label ?? visit?.nodeId ?? null,
     stepIndex: visit?.stepIndex ?? null, totalSteps: state.totalSteps,
     lastEventAt: state.history.at(-1)?.completedAt ?? null,

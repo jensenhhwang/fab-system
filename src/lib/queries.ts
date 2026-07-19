@@ -89,6 +89,7 @@ export type ProcessUsageWithMaterial = ProcessUsageDoc & { id: string; material:
 export async function getProcessUsagesWithMaterial(): Promise<ProcessUsageWithMaterial[]> {
   const { processUsage } = await collections();
   return processUsage.aggregate<ProcessUsageWithMaterial>([
+    { $match: { active: { $ne: false } } },
     { $lookup: { from: "materials", localField: "materialId", foreignField: "_id", as: "material" } },
     { $unwind: "$material" },
     { $sort: { processCode: 1, product: 1 } },
@@ -143,6 +144,7 @@ export type DailyUsage = { daily: number; monthlyQty: number; source: "process" 
 export async function getMaterialDailyUsage(): Promise<Map<string, DailyUsage>> {
   const { processUsage, inventory } = await collections();
   const proc = await processUsage.aggregate<{ _id: string; sum: number }>([
+    { $match: { active: { $ne: false } } },
     { $group: { _id: "$materialId", sum: { $sum: "$monthlyQty" } } },
   ]).toArray();
   const map = new Map<string, DailyUsage>();

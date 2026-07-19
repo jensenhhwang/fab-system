@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { FabId } from "@/lib/fab-domain";
+import type { FoupFleetProjection } from "@/lib/foup-wip-model";
 
 type ScenarioResponse = {
   scenario: { id: FabId; nominalWspm: number; utilization: number };
@@ -10,15 +11,16 @@ type ScenarioResponse = {
 };
 type AggregateWipResponse = {
   targetWip: number; currentWip: number; aggregateWip: number; visualWip: number;
+  occupiedTarget: number; downstreamWipEquivalent: number; downstreamStatus: "NOT_BOOTSTRAPPED";
   unit: "FOUP_EQUIVALENT"; readOnly: true;
 };
 type LotLookupResponse = {
-  foupCode: string; status: string; cohort: "AGGREGATE" | "VISUAL";
+  foupCode: string; status: string; cohort: "AGGREGATE" | "LEGACY_AGGREGATE" | "MODELED_FOUP" | "WATCHED" | "VISUAL";
   nodeId: string | null; nodeLabel: string | null;
   stepIndex: number | null; totalSteps: number; lastEventAt: string | null;
 };
 
-export default function FabThroughputDial({ fabId }: { fabId: FabId }) {
+export default function FabThroughputDial({ fabId, foupFleet }: { fabId: FabId; foupFleet?: FoupFleetProjection | null }) {
   const [scenario, setScenario] = useState<ScenarioResponse | null>(null);
   const [wip, setWip] = useState<AggregateWipResponse | null>(null);
   const [sliderValue, setSliderValue] = useState<number | null>(null);
@@ -93,8 +95,9 @@ export default function FabThroughputDial({ fabId }: { fabId: FabId }) {
 
   const displayUtilization = sliderValue ?? scenario.scenario.utilization;
   const targetWip = scenario.targetWip ?? 0;
-  const currentWip = wip?.currentWip ?? 0;
-  const wipRatio = targetWip > 0 ? Math.min(1, currentWip / targetWip) : 0;
+  const occupiedTarget = foupFleet?.target.occupied ?? wip?.occupiedTarget ?? 0;
+  const currentWip = foupFleet?.actual.occupied ?? wip?.currentWip ?? 0;
+  const wipRatio = occupiedTarget > 0 ? Math.min(1, currentWip / occupiedTarget) : 0;
   const wipColor = wipRatio > 0.9 ? "#00B96B" : wipRatio > 0.5 ? "#F7A600" : "#EA002C";
 
   return (
@@ -125,15 +128,20 @@ export default function FabThroughputDial({ fabId }: { fabId: FabId }) {
       </div>
       <div className="mt-3">
         <div className="flex items-center justify-between text-[10px]">
-          <span className="text-[#8A929A]">현재 WIP · FOUP-eq</span>
-          <span className="font-mono font-black" style={{ color: wipColor }}>{currentWip.toLocaleString()} / {targetWip.toLocaleString()}</span>
+          <span className="text-[#8A929A]">Occupied FOUP · Wafer 구간</span>
+          <span className="font-mono font-black" style={{ color: wipColor }}>{currentWip.toLocaleString()} / {occupiedTarget.toLocaleString()}</span>
         </div>
         <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[#F2F4F6]">
           <div className="h-full rounded-full transition-all" style={{ width: `${wipRatio * 100}%`, background: wipColor }} />
         </div>
       </div>
+      <div className="mt-2 grid grid-cols-3 gap-2 rounded-lg bg-[#F7F9FA] p-2 text-[9px]">
+        <div><div className="text-[#8A929A]">Physical Fleet</div><div className="font-mono font-black text-[#303840]">{(foupFleet?.actual.physicalFleet ?? 0).toLocaleString()}</div></div>
+        <div><div className="text-[#8A929A]">Reserve</div><div className="font-mono font-black text-[#303840]">{(foupFleet?.actual.reserve ?? 0).toLocaleString()}</div></div>
+        <div><div className="text-[#8A929A]">Watched</div><div className="font-mono font-black text-sky-600">{(foupFleet?.actual.watched ?? wip?.visualWip ?? 0).toLocaleString()}</div></div>
+      </div>
       <div className="mt-2 text-[9px] leading-4 text-[#8A929A]">
-        25-wafer 환산치 · VISUAL {wip?.visualWip ?? 0}개는 전체 WIP의 추적 표본이며 패키징 Die/Stack 물리 WIP와는 별도입니다.
+        전체 105일 WIP는 {targetWip.toLocaleString()} FOUP-eq입니다. P10 이후 {(wip?.downstreamWipEquivalent ?? 0).toLocaleString()} lot-eq는 아직 `NOT_BOOTSTRAPPED`이며 실물 FOUP 수가 아닙니다.
       </div>
       {error && <div className="mt-2 text-[10px] font-bold text-[#EA002C]">{error}</div>}
 
@@ -144,7 +152,7 @@ export default function FabThroughputDial({ fabId }: { fabId: FabId }) {
             type="text" value={lookupCode}
             onChange={(event) => setLookupCode(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Enter") void runLookup(); }}
-            placeholder="FOUP-01 또는 FOUP-WIP-xxxxxxxx"
+            placeholder="FOUP-01 또는 FOUP-M20-00001"
             className="flex-1 rounded-lg border border-[#D8DDE2] px-2 py-1.5 text-[11px] font-mono"
           />
           <button

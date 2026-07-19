@@ -1,18 +1,20 @@
-import { randomUUID } from "crypto";
 import { collections } from "@/lib/db";
 import type { WaferLotDoc, WaferLotStepEventDoc, WaferLotStepTriggerType, RouteMasterDoc, RouteMasterNode } from "@/lib/db";
 import type { FabId } from "@/lib/fab-domain";
 import type { Product } from "@/lib/db";
-import { getRouteMaster, expandRouteMaster, type RouteVisit } from "@/lib/route-master";
+import { getRouteMaster, getRouteMasterById, expandRouteMaster, type RouteVisit } from "@/lib/route-master";
 import { createM20PilotWorkOrder } from "@/lib/m20-agent-service";
-import { fabScenarioMetrics, M20_PRODUCTION_SCENARIOS, targetWipCount } from "@/lib/fab-scenario";
-import { getLiveFabScenario } from "@/lib/fab-scenario-live";
+import { M20_PRODUCTION_SCENARIOS, targetWipCount } from "@/lib/fab-scenario";
+import {
+  M20_DOWNSTREAM_WIP_EQUIVALENT,
+  M20_TARGET_OCCUPIED_FOUP,
+} from "@/lib/foup-wip-model";
 
 export const FOUP_CODES = Array.from({ length: 12 }, (_, i) => `FOUP-${String(i + 1).padStart(2, "0")}`);
 
 // MES 텔레메트리가 아직 없어서, 폴링될 때마다 "마지막 스텝 이후 이만큼 지났으면 다음 스텝으로 진행"하는 방식으로
 // 자동 진행을 흉내낸다. 실제 설비 신호가 붙으면 이 타이머 대신 MES_TELEMETRY 이벤트가 들어오면 된다.
-// 실제 웨이퍼 투입→패키징 완료는 약 3~4개월인데 HBM4 12-Hi 기준 134스텝을 5초 간격으로 돌리면 약 11.2분 — 약 1.2만~1.6만배 배속 타임랩스다.
+// 실제 웨이퍼 투입→패키징 완료는 약 3~4개월인데 HBM4 12-Hi V2 140스텝을 5초 간격으로 돌리면 약 11.7분 — 약 1.1만~1.5만배 배속 타임랩스다.
 // 균등 배분 가정이라 정밀한 시간 비례는 아님. 자세한 근거는 docs/route-master.md의 "시뮬레이션 배속 가정" 참고.
 export const AUTO_ADVANCE_INTERVAL_MS = 5_000;
 
@@ -21,7 +23,7 @@ export const M20_CYCLE_DAYS = M20_PRODUCTION_SCENARIOS.NORMAL.cycleTimeDays;
 
 export type LotRouteState = {
   lot: WaferLotDoc;
-  nodes: RouteMasterNode[]; // routeMaster 노드 목록 (9노드 세그먼트 표시용)
+  nodes: RouteMasterNode[]; // routeMaster 노드 목록 (V2는 15개 operation 세그먼트)
   totalSteps: number;
   currentStepIndex: number; // 다음에 완료해야 할(=아직 안 끝난) 스텝의 절대 순번
   currentVisit: RouteVisit | null; // isDone이면 null
@@ -31,7 +33,7 @@ export type LotRouteState = {
 };
 
 async function getLotRouteMaster(lot: WaferLotDoc): Promise<RouteMasterDoc> {
-  const routeMaster = await getRouteMaster(lot.fabId, lot.product);
+  const routeMaster = await getRouteMasterById(lot.routeMasterId) ?? await getRouteMaster(lot.fabId, lot.product);
   if (!routeMaster) throw new Error(`routeMaster가 없습니다: ${lot.routeMasterId}`);
   return routeMaster;
 }
@@ -40,12 +42,14 @@ export async function getOrCreateActiveLot(fabId: FabId, product: Product, foupC
   const { waferLots } = await collections();
   const existing = await waferLots.findOne({ fabId, product, foupCode, status: "IN_PROGRESS" }, { sort: { createdAt: -1 } });
   if (existing) return existing;
+  const routeMaster = await getRouteMaster(fabId, product);
+  if (!routeMaster) throw new Error(`활성 routeMaster가 없습니다: ${fabId}:${product}`);
   const now = new Date();
   const doc: WaferLotDoc = {
     _id: `WLOT:${fabId}:${product}:${foupCode}:${now.getTime()}`,
     fabId,
     product,
-    routeMasterId: `${fabId}:${product}`,
+    routeMasterId: routeMaster._id,
     foupCode,
     status: "IN_PROGRESS",
     createdBy: actorId,
@@ -120,6 +124,7 @@ export async function advanceLotStep(lotId: string, actorId: string, idempotency
     lotId,
     nodeId: visit.nodeId,
     processCode: visit.processCode,
+    operationCode: visit.operationCode,
     stepIndex: visit.stepIndex,
     visitIndex: visit.visitIndex,
     enteredAt: now,
@@ -132,10 +137,10 @@ export async function advanceLotStep(lotId: string, actorId: string, idempotency
   const isNowDone = currentStepIndex + 1 >= visits.length;
   await waferLots.updateOne({ _id: lotId }, { $set: { status: isNowDone ? "DONE" : "IN_PROGRESS", updatedAt: now } });
 
-  // 패키징 노드에 처음 진입하는 순간 = 실제 자재(PKG-001) 소비가 필요해지는 시점.
+  // P10 MUF/Molding operation에 처음 진입하는 순간 = 실제 자재(PKG-001) 소비가 필요해지는 시점.
   // M20 파일럿 워크오더를 새로 하나 만들어서(자재 준비 상태와 웨이퍼 라우팅 위치를 분리한 채로) WMS 소비 사이클을 트리거한다.
   // 워크오더 생성은 기존 /api/mes/workorders POST가 이미 하듯 orchestrateM20Agents를 자동 호출한다.
-  if (lot.fabId === "M20" && lot.product === "HBM" && visit.nodeId === "packaging" && visit.visitIndex === 0) {
+  if (lot.fabId === "M20" && lot.product === "HBM" && visit.operationCode === "MUF_MOLDING_CURE" && visit.visitIndex === 0) {
     try {
       await createM20PilotWorkOrder(actorId, `WLOT-PACKAGING:${lotId}:${visit.stepIndex}`, { lotId, foupCode: lot.foupCode });
     } catch {
@@ -146,84 +151,57 @@ export async function advanceLotStep(lotId: string, actorId: string, idempotency
   return getLotRouteState(lotId);
 }
 
-const AGGREGATE_WIP_CREATE_BATCH_MAX = 1_000; // 한 번 호출에 만들 최대 로트 수 — 대량 생성 시 요청 지연 방지, 여러 번 폴링에 걸쳐 목표치까지 수렴
-
 export type AggregateWipSummary = {
   targetWip: number;
   currentWip: number;
   aggregateWip: number;
   visualWip: number;
+  occupiedTarget: number;
+  downstreamWipEquivalent: number;
+  downstreamStatus: "NOT_BOOTSTRAPPED";
   unit: "FOUP_EQUIVALENT";
 };
 
 // 조회 전용 집계. VISUAL 12개는 전체 WIP 안의 추적 표본이므로 AGGREGATE에 더해 목표치를 초과 생성하지 않는다.
 export async function getAggregateWipSummary(fabId: FabId, product: Product): Promise<AggregateWipSummary> {
   if (fabId !== "M20" || product !== "HBM") {
-    return { targetWip: 0, currentWip: 0, aggregateWip: 0, visualWip: 0, unit: "FOUP_EQUIVALENT" };
+    return {
+      targetWip: 0, currentWip: 0, aggregateWip: 0, visualWip: 0,
+      occupiedTarget: 0, downstreamWipEquivalent: 0, downstreamStatus: "NOT_BOOTSTRAPPED",
+      unit: "FOUP_EQUIVALENT",
+    };
   }
 
   const { waferLots } = await collections();
-  const scenario = await getLiveFabScenario(fabId);
-  const targetWip = targetWipCount(fabScenarioMetrics(scenario).utilizedWspm, M20_CYCLE_DAYS);
+  const targetWip = targetWipCount(M20_PRODUCTION_SCENARIOS.NORMAL.waferStartsPerMonth, M20_CYCLE_DAYS);
   const [aggregateWip, visualWip] = await Promise.all([
-    waferLots.countDocuments({ fabId, product, cohort: "AGGREGATE", status: "IN_PROGRESS" }),
-    waferLots.countDocuments({ fabId, product, cohort: { $exists: false }, status: "IN_PROGRESS" }),
+    waferLots.countDocuments({ fabId, product, cohort: "MODELED_FOUP", status: "IN_PROGRESS" }),
+    waferLots.countDocuments({ fabId, product, cohort: "WATCHED", status: "IN_PROGRESS" }),
   ]);
   return {
     targetWip,
     currentWip: aggregateWip + visualWip,
     aggregateWip,
     visualWip,
+    occupiedTarget: M20_TARGET_OCCUPIED_FOUP,
+    downstreamWipEquivalent: M20_DOWNSTREAM_WIP_EQUIVALENT,
+    downstreamStatus: "NOT_BOOTSTRAPPED",
     unit: "FOUP_EQUIVALENT",
   };
 }
 
-// M20/HBM 한정: 실제 WSPM(가동률 포함)로부터 Little's Law로 계산한 목표 WIP까지 AGGREGATE 코호트 로트를 채운다.
-// 새로 만드는 로트는 균등 랜덤 스텝에 웜스타트(과거부터 가동 중이던 것처럼 currentStepIndex를 임의 배치)하고,
-// 3D 개별 렌더링(VISUAL 코호트)이나 M20 파일럿 워크오더/WMS 체인과는 완전히 분리된 통계적 집단이다.
+// Legacy API 호환용 no-op. 실제 FOUP 원장은 versioned bootstrap만 생성할 수 있다.
 export async function ensureAggregateWip(fabId: FabId, product: Product, actorId: string): Promise<{ targetWip: number; currentWip: number; created: number }> {
   if (fabId !== "M20" || product !== "HBM") return { targetWip: 0, currentWip: 0, created: 0 };
-
-  const { waferLots } = await collections();
-  const summary = await getAggregateWipSummary(fabId, product);
-  const target = summary.targetWip;
-
-  const routeMaster = await getRouteMaster(fabId, product);
-  if (!routeMaster) return { targetWip: target, currentWip: 0, created: 0 };
-  const visits = expandRouteMaster(routeMaster);
-  const totalSteps = visits.length;
-  if (totalSteps === 0) return { targetWip: target, currentWip: 0, created: 0 };
-
-  const currentWip = summary.currentWip;
-  const shortfall = Math.max(0, target - currentWip);
-  const toCreate = Math.min(shortfall, AGGREGATE_WIP_CREATE_BATCH_MAX);
-  if (toCreate === 0) return { targetWip: target, currentWip, created: 0 };
-
-  const now = new Date();
-  const docs: WaferLotDoc[] = Array.from({ length: toCreate }, () => {
-    const stepIndex = Math.floor(Math.random() * totalSteps);
-    const visit = visits[stepIndex];
-    const id = randomUUID();
-    return {
-      _id: `WLOT:${fabId}:${product}:AGG:${id}`,
-      fabId, product, routeMasterId: `${fabId}:${product}`,
-      foupCode: `FOUP-WIP-${id.slice(0, 8)}`,
-      status: "IN_PROGRESS",
-      cohort: "AGGREGATE",
-      currentStepIndex: stepIndex,
-      currentNodeId: visit.nodeId,
-      lastEventAt: now,
-      createdBy: actorId, createdAt: now, updatedAt: now,
-    };
-  });
-  await waferLots.insertMany(docs);
-  return { targetWip: target, currentWip: currentWip + toCreate, created: toCreate };
+  void actorId;
+  const modeledSummary = await getAggregateWipSummary(fabId, product);
+  return { targetWip: modeledSummary.occupiedTarget, currentWip: modeledSummary.currentWip, created: 0 };
 }
 
 const AGGREGATE_ADVANCE_BATCH_MAX = 2_000;
 
 // AGGREGATE 코호트를 벌크로 한 스텝씩 진행시킨다. VISUAL 코호트(advanceLotStep)와 달리
-// waferLotStepEvents를 쓰지 않고, packaging 노드 진입 시에도 createM20PilotWorkOrder를 절대 호출하지 않는다
+// waferLotStepEvents를 쓰지 않고, P10 package operation 진입 시에도 createM20PilotWorkOrder를 절대 호출하지 않는다
 // (자재 소비 트리거는 여전히 VISUAL 12개 전용 스코프).
 export async function advanceAggregateWip(fabId: FabId, product: Product): Promise<{ advanced: number; completed: number }> {
   if (fabId !== "M20" || product !== "HBM") return { advanced: 0, completed: 0 };

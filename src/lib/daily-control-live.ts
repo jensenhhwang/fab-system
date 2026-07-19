@@ -52,7 +52,7 @@ export async function buildLiveDailyControl(date: string): Promise<LiveMaterialR
     getActualsForDate(date),
     materials.find({}).toArray(),
     inventory.find({}).toArray(),
-    processUsage.find({}).toArray(),
+    processUsage.find({ active: { $ne: false } }).toArray(),
   ]);
 
   const inventoryByMaterial = new Map<string, { quantity: number; avgDailyUsage: number }>();

@@ -4,7 +4,13 @@ import type { FabId } from "@/lib/fab-domain";
 
 export async function getRouteMaster(fabId: FabId, product: Product): Promise<RouteMasterDoc | null> {
   const { routeMasters } = await collections();
-  return routeMasters.findOne({ _id: `${fabId}:${product}` });
+  const active = await routeMasters.findOne({ fabId, product, isActive: true }, { sort: { updatedAt: -1 } });
+  return active ?? routeMasters.findOne({ _id: `${fabId}:${product}` });
+}
+
+export async function getRouteMasterById(routeMasterId: string): Promise<RouteMasterDoc | null> {
+  const { routeMasters } = await collections();
+  return routeMasters.findOne({ _id: routeMasterId });
 }
 
 export type RouteVisit = {
@@ -12,6 +18,7 @@ export type RouteVisit = {
   label: string;
   processCode: string;
   stage: RouteMasterNode["stage"];
+  operationCode: string;
   visitIndex: number; // 이 노드 안에서 몇 번째 반복인지 (0-based)
   stepIndex: number; // 노드 전체 흐름에서 이 방문의 절대 순번 (0-based)
 };
@@ -27,6 +34,7 @@ export function expandRouteMaster(doc: RouteMasterDoc): RouteVisit[] {
           label: node.label,
           processCode,
           stage: node.stage,
+          operationCode: node.operationCode ?? "GENERAL",
           visitIndex: repeat,
           stepIndex: visits.length,
         });

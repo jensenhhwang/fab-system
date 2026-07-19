@@ -46,7 +46,7 @@ async function main() {
       containerType: "PALLET", quantity: huQuantity, status: "AVAILABLE", logisticsStatus: "STORED", updatedAt: now,
     });
     await workOrders.insertOne({
-      _id: woId, fabId: "M20", processCode: "P10", product: "HBM", plannedQty, scope: "M20_PILOT",
+      _id: woId, fabId: "M20", processCode: "P10", operationCode: "MUF_MOLDING_CURE", product: "HBM", plannedQty, scope: "M20_PILOT",
       status: "QUEUED", bomLines: [{ materialId, plannedQty, pickedQty: 0, consumedQty: 0, actualQty: 0, pickedLots: [] }],
       createdBy: ACTOR, createdAt: now, updatedAt: now,
     });

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentRole, AgentRoleMode, WorkOrderDoc, TransferOrderStatus } from "@/lib/db";
 import type { ProcessEquipmentSummary } from "@/lib/equipment-capacity";
+import type { M20FabEquipmentMaster } from "@/lib/m20-equipment-capacity-plan";
 
 type FlowData = {
   workOrder: WorkOrderDoc;
@@ -11,6 +12,7 @@ type FlowData = {
   handlingUnits: Array<{ _id: string; logisticsStatus?: string; currentLocationId?: string }>;
   stocks: Array<{ _id: string; locationType: "PRS" | "LINE_SIDE"; quantity: number; unit: string }>;
   equipment: ProcessEquipmentSummary[];
+  equipmentDefinition: M20FabEquipmentMaster | null;
   agents: null | {
     run: null | { status: string; stage: string; nextHumanAction?: string; blockedReason?: string | null; lastTrigger?: "AUTO" | "MANUAL"; updatedAt?: string };
     decisions: AgentDecisionView[];
@@ -57,7 +59,6 @@ export default function M20PilotFlowCard({ workOrder, onPick, onRefresh }: {
   const transfer = flow?.transfers[0];
   const liveWorkOrder = flow?.workOrder ?? workOrder;
   const line = liveWorkOrder.bomLines[0];
-  const p10 = flow?.equipment.find((process) => process.processCode === "P10");
   const totalEquipment = useMemo(() => flow?.equipment.reduce((sum, process) => sum + process.total, 0) ?? 0, [flow?.equipment]);
   const picked = flow?.events.some((event) => event.type === "PICKED") ?? false;
   const runOnHold = flow?.agents?.run?.status === "HUMAN_MODE_HOLD";
@@ -187,7 +188,7 @@ export default function M20PilotFlowCard({ workOrder, onPick, onRefresh }: {
         </div>
         <div className="text-right">
           <div className="text-[10px] font-black text-[#1D5F91]">{transfer ? STATUS_LABEL[transfer.status] : "원장 조회 중"}</div>
-          <div className="mt-1 text-[9px] text-[#72889A]">M20 장비 {totalEquipment.toLocaleString()}대 · P10 {p10?.total ?? 0}대 · {p10?.availableCapacity.toLocaleString() ?? 0} wafer/day</div>
+          <div className="mt-1 text-[9px] text-[#72889A]">M20 현재 원장 {totalEquipment.toLocaleString()}대 · 정의 {flow?.equipmentDefinition?.totalEquipment ?? "-"} modeled tools · Reserve 15%</div>
         </div>
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-4">

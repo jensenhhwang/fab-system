@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { collections } from "@/lib/db";
 import { getEquipmentCapacity } from "@/lib/equipment-capacity";
 import { getM20AgentSnapshot } from "@/lib/m20-agent-service";
+import { buildM20FabEquipmentMaster } from "@/lib/m20-equipment-capacity-plan";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -18,7 +19,10 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   ]);
   const handlingUnitIds = transfers.flatMap((transfer) => transfer.handlingUnitId ? [transfer.handlingUnitId] : []);
   const handlingUnitDocs = handlingUnitIds.length ? await handlingUnits.find({ _id: { $in: handlingUnitIds } }).toArray() : [];
-  return NextResponse.json({ workOrder, allocations, transfers, events, handlingUnits: handlingUnitDocs, stocks, equipment, agents }, {
+  return NextResponse.json({
+    workOrder, allocations, transfers, events, handlingUnits: handlingUnitDocs, stocks, equipment, agents,
+    equipmentDefinition: workOrder.fabId === "M20" ? buildM20FabEquipmentMaster() : null,
+  }, {
     headers: { "Cache-Control": "no-store" },
   });
 }

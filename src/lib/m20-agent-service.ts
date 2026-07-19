@@ -17,6 +17,7 @@ import {
   calculateM20Procurement,
   M20_AGENT_POLICY_VERSION,
 } from "@/lib/m20-agent-policy";
+import { M20_HBM_ROUTE_KEY, M20_HBM_ROUTE_VERSION } from "@/lib/route-contract";
 
 const runIdFor = (workOrderId: string) => `M20:${workOrderId}`;
 const decisionId = (key: string) => `DECISION:${key}`;
@@ -593,6 +594,7 @@ export async function createM20PilotWorkOrder(actorId: string, requestId: string
   const fabId = "M20" as const;
   const product = "HBM" as const;
   const processCode = "P10";
+  const operationCode = "MUF_MOLDING_CURE";
   const plannedQty = 1;
 
   const { workOrders, bomTemplates, materials, inventory, materialAllocations, transferOrders, materialFlowEvents } = await collections();
@@ -600,8 +602,10 @@ export async function createM20PilotWorkOrder(actorId: string, requestId: string
   const existing = await workOrders.findOne({ requestId });
   if (existing) return existing;
 
-  const templateId = `${processCode}-${product}`;
-  const template = await bomTemplates.findOne({ _id: templateId });
+  const templateId = `${M20_HBM_ROUTE_VERSION}__${processCode}__${operationCode}__${product}`;
+  const template = await bomTemplates.findOne({ _id: templateId })
+    ?? await bomTemplates.findOne({ _id: `${processCode}-${product}` })
+    ?? await bomTemplates.findOne({ _id: `P10-${product}` });
   if (!template?.lines.length) throw new Error(`${templateId} BOM 템플릿이 비어 있습니다.`);
   const selectedLines = template.lines.filter((line) => line.materialId === M20_PILOT_MATERIAL_ID);
   if (!selectedLines.length) throw new Error(`${M20_PILOT_MATERIAL_ID}가 ${templateId} BOM에 없습니다.`);
@@ -614,7 +618,7 @@ export async function createM20PilotWorkOrder(actorId: string, requestId: string
   const now = new Date();
   const wo: WorkOrderDoc = {
     _id: `WO-${fabId}-${randomUUID()}`,
-    fabId, processCode, product, plannedQty, plannedQtyUnit: "RUN",
+    fabId, processCode, product, routeKey: M20_HBM_ROUTE_KEY, routeVersion: M20_HBM_ROUTE_VERSION, operationCode, plannedQty, plannedQtyUnit: "RUN",
     scope: "M20_PILOT", requestId, status: "MATERIAL_WAIT", bomLines,
     lotId: source?.lotId, foupCode: source?.foupCode,
     createdBy: actorId, createdAt: now, updatedAt: now,

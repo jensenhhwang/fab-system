@@ -103,7 +103,7 @@ export default function MesClient({
       const response = await fetch("/api/mes/workorders", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          processCode: "P10", product: "HBM", fabId: "M20", plannedQty: 1,
+          processCode: "P10", operationCode: "MUF_MOLDING_CURE", product: "HBM", fabId: "M20", plannedQty: 1,
           scope: "M20_PILOT", materialId: "PKG-001", requestId: crypto.randomUUID(),
           note: "M20 대표 수직 흐름 · 자재 1종/Lot 1개/HU 1개",
         }),

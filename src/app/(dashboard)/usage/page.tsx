@@ -5,6 +5,7 @@ import { getUsageTwinData } from "@/lib/usage-twin-data";
 import UsageClient from "./UsageClient";
 import { getEquipmentCapacity } from "@/lib/equipment-capacity";
 import { FAB_IDS, type FabId } from "@/lib/fab-domain";
+import { buildM20FabEquipmentMaster } from "@/lib/m20-equipment-capacity-plan";
 
 // Fab·공정·자재별 계획과 실제 소비를 비교하는 독립 분석 화면.
 export default async function UsagePage() {
@@ -16,9 +17,10 @@ export default async function UsagePage() {
     fabId,
     Object.fromEntries(equipmentRows[index].map((process) => [process.processCode, process.total])),
   ])) as Record<FabId, Record<string, number>>;
+  const m20EquipmentMaster = buildM20FabEquipmentMaster();
   return (
     <Suspense fallback={<div className="p-8 text-sm text-gray-400">로딩 중...</div>}>
-      <UsageClient materials={data.materials} warehouseLinks={data.links} warehouses={data.warehouses} equipmentByFab={equipmentByFab} />
+      <UsageClient materials={data.materials} warehouseLinks={data.links} warehouses={data.warehouses} equipmentByFab={equipmentByFab} m20EquipmentMaster={m20EquipmentMaster} />
     </Suspense>
   );
 }

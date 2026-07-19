@@ -1,20 +1,30 @@
 import { M20_PRODUCTION_SCENARIOS, type M20ProductionScenarioId } from "@/lib/fab-scenario";
+import {
+  M20_BASE_DIE_ASSUMPTION,
+  M20_HBM_MODEL_PRODUCT,
+  M20_HBM_ROUTE_KEY,
+  M20_HBM_ROUTE_VERSION,
+  routeMaterialUsageId,
+  type RouteOperationCode,
+} from "@/lib/route-contract";
 
-export const M20_MATERIAL_CONSUMPTION_VERSION = "MATERIAL_CONSUMPTION_M20_V1" as const;
-export const M20_MODEL_PRODUCT = "M20-HBM4-12H-V1" as const;
+export const M20_MATERIAL_CONSUMPTION_VERSION = "MATERIAL_CONSUMPTION_M20_V3" as const;
+export const M20_MODEL_PRODUCT = M20_HBM_MODEL_PRODUCT;
 
 export type MaterialConsumptionBasis =
   | "WAFER_VISIT"
   | "TOOL_USAGE"
   | "REPLACEMENT_LIFE"
-  | "STACK_EQUIVALENT";
+  | "STACK_EQUIVALENT"
+  | "DIRECT_COMPONENT";
 
 export type M20MaterialConsumptionRow = {
   materialId: string;
   processCode: string;
+  operationCode: RouteOperationCode;
   nativeBasis: MaterialConsumptionBasis;
   equivalentPerWafer: number;
-  source: "LEGACY_DERIVED";
+  source: "LEGACY_DERIVED" | "MODELED_ASSUMPTION";
   confidence: "LOW";
   version: typeof M20_MATERIAL_CONSUMPTION_VERSION;
   modelProduct: typeof M20_MODEL_PRODUCT;
@@ -25,6 +35,7 @@ type BaselineInput = [materialId: string, processCode: string, normalMonthlyQty:
 // 이전 FAB_SCENARIO의 M20 50K nameplate × 90% 가동률에서 processUsage가 작성됐다.
 // 원단위는 이 45K wafer-start 기준에서 역산하고, 현 NORMAL 117K에 적용한다.
 const LEGACY_REFERENCE_WAFER_STARTS = 45_000;
+const M20_KGD_PER_WAFER = 650;
 
 // docs/material-consumption-master.md의 M20 V1 표를 코드로 연결한다.
 // legacyMonthlyQty는 이전 45K 기준값이며, 런타임 월소요량의 기준은 equivalentPerWafer다.
@@ -79,10 +90,22 @@ const M20_BASELINE_INPUTS: readonly BaselineInput[] = [
   ["CSM-015", "P04", 16.8, "REPLACEMENT_LIFE"],
 ] as const;
 
-export const M20_MATERIAL_CONSUMPTION: readonly M20MaterialConsumptionRow[] = M20_BASELINE_INPUTS.map(
+function operationCodeFor(materialId: string, processCode: string): RouteOperationCode {
+  if (processCode === "P09") return "WAFER_TEST";
+  if (processCode === "P08") return materialId === "CSM-013" ? "BACKGRIND_THINNING" : "TSV_FRONT";
+  if (processCode === "P10") {
+    if (materialId === "PKG-001") return "MUF_MOLDING_CURE";
+    if (materialId === "PKG-002") return "BASE_DIE_ATTACH";
+    return "DRAM_BOND_12H";
+  }
+  return "GENERAL";
+}
+
+const LEGACY_ROWS: readonly M20MaterialConsumptionRow[] = M20_BASELINE_INPUTS.map(
   ([materialId, processCode, legacyMonthlyQty, nativeBasis]) => ({
     materialId,
     processCode,
+    operationCode: operationCodeFor(materialId, processCode),
     nativeBasis,
     equivalentPerWafer: legacyMonthlyQty / LEGACY_REFERENCE_WAFER_STARTS,
     source: "LEGACY_DERIVED",
@@ -92,6 +115,25 @@ export const M20_MATERIAL_CONSUMPTION: readonly M20MaterialConsumptionRow[] = M2
   }),
 );
 
+const BASE_DIE_PURCHASE_PER_WAFER = M20_KGD_PER_WAFER
+  / 12
+  / M20_BASE_DIE_ASSUMPTION.incomingAcceptanceYield;
+
+export const M20_MATERIAL_CONSUMPTION: readonly M20MaterialConsumptionRow[] = [
+  ...LEGACY_ROWS,
+  {
+    materialId: M20_BASE_DIE_ASSUMPTION.materialId,
+    processCode: "P10",
+    operationCode: "BASE_DIE_ATTACH",
+    nativeBasis: "DIRECT_COMPONENT",
+    equivalentPerWafer: BASE_DIE_PURCHASE_PER_WAFER,
+    source: "MODELED_ASSUMPTION",
+    confidence: "LOW",
+    version: M20_MATERIAL_CONSUMPTION_VERSION,
+    modelProduct: M20_MODEL_PRODUCT,
+  },
+] as const;
+
 function roundDemand(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
@@ -99,11 +141,22 @@ function roundDemand(value: number): number {
 export function m20ProcessUsageForScenario(scenarioId: M20ProductionScenarioId) {
   const scenario = M20_PRODUCTION_SCENARIOS[scenarioId];
   return M20_MATERIAL_CONSUMPTION.map((row) => ({
-    _id: `${row.materialId}__${row.processCode}__HBM`,
+    _id: routeMaterialUsageId({
+      fabId: "M20",
+      product: "HBM",
+      routeKey: M20_HBM_ROUTE_KEY,
+      routeVersion: M20_HBM_ROUTE_VERSION,
+      processCode: row.processCode,
+      operationCode: row.operationCode,
+    }, row.materialId),
     fabId: "M20" as const,
     product: "HBM" as const,
     materialId: row.materialId,
     processCode: row.processCode,
+    routeKey: M20_HBM_ROUTE_KEY,
+    routeVersion: M20_HBM_ROUTE_VERSION,
+    operationCode: row.operationCode,
+    active: true,
     monthlyQty: roundDemand(row.equivalentPerWafer * scenario.waferStartsPerMonth),
     equivalentPerWafer: row.equivalentPerWafer,
     consumptionBasis: row.nativeBasis,

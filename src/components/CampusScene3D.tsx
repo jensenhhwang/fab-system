@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Line, OrbitControls, Text } from "@react-three/drei";
 import type { ThreeEvent } from "@react-three/fiber";
@@ -11,6 +11,7 @@ import type { FabId } from "@/lib/fab-domain";
 import type { UsageWarehouse } from "@/lib/usage-twin-data";
 import { positionForTransfer, POSITION_MODE_LABEL, type LiveTransfer } from "@/lib/live-transfer";
 import type { SceneClockMode } from "@/lib/scene-clock";
+import { buildCampusEquipmentLayout } from "@/lib/equipment-3d-layout";
 
 const CATEGORY_COLOR: Record<string, string> = {
   GAS: "#B91C1C",
@@ -150,6 +151,53 @@ function CampusWarehouse({ warehouse, position, active, operating, quantity, uni
   );
 }
 
+function CampusEquipmentInstances({ fabId, count, highlighted, color, processCode }: {
+  fabId: FabId;
+  count: number;
+  highlighted: boolean;
+  color: string;
+  processCode: string;
+}) {
+  const bodyRef = useRef<THREE.InstancedMesh>(null);
+  const markerRef = useRef<THREE.InstancedMesh>(null);
+  const layout = useMemo(() => buildCampusEquipmentLayout(count), [count]);
+
+  useLayoutEffect(() => {
+    const body = bodyRef.current;
+    const marker = markerRef.current;
+    if (!body || !marker) return;
+    const matrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3(1, 1, 1);
+    layout.forEach((tool, index) => {
+      matrix.compose(position.set(tool.x, 0.22, tool.z), quaternion, scale);
+      body.setMatrixAt(index, matrix);
+      matrix.compose(position.set(tool.x, 0.44, tool.z), quaternion, scale);
+      marker.setMatrixAt(index, matrix);
+    });
+    for (const mesh of [body, marker]) {
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    }
+  }, [layout]);
+
+  return <group userData={{ equipmentInstanceCount: count, processCode }}>
+    <instancedMesh ref={bodyRef} args={[undefined, undefined, count]}>
+      {fabId === "M21"
+        ? <cylinderGeometry args={[0.065, 0.075, 0.38, 8]} />
+        : <boxGeometry args={fabId === "M22" ? [0.13, 0.28, 0.12] : [0.13, 0.38, 0.12]} />}
+      <meshStandardMaterial color={highlighted ? color : "#B8C3CC"} metalness={0.24} roughness={0.36}
+        emissive={highlighted ? color : "#000000"} emissiveIntensity={highlighted ? 0.15 : 0} />
+    </instancedMesh>
+    <instancedMesh ref={markerRef} args={[undefined, undefined, count]}>
+      <boxGeometry args={[0.09, 0.05, 0.08]} />
+      <meshStandardMaterial color={highlighted ? color : "#7F8C97"}
+        emissive={highlighted ? color : "#000000"} emissiveIntensity={highlighted ? 0.45 : 0} />
+    </instancedMesh>
+  </group>;
+}
+
 function CampusFabEquipment({ fabId, activeProcesses, equipmentCounts, color, onProcessClick }: {
   fabId: FabId;
   activeProcesses: string[];
@@ -165,31 +213,14 @@ function CampusFabEquipment({ fabId, activeProcesses, equipmentCounts, color, on
       const x = column === 0 ? -1.55 : 1.55;
       const z = (row - 2) * 1.65;
       const actualCount = equipmentCounts?.[processCode] ?? CAMPUS_EQUIPMENT_FALLBACK[fabId][processCode];
-      const representativeCount = Math.min(3, Math.max(1, Math.ceil(actualCount / 12)));
       const highlighted = activeProcesses.includes(processCode);
       return <group key={processCode} position={[x, 0, z]} onClick={(event: ThreeEvent<MouseEvent>) => { event.stopPropagation(); onProcessClick(processCode); }}>
         <mesh position={[0, 0.025, 0]}>
           <boxGeometry args={[2.55, 0.05, 1.25]} />
           <meshStandardMaterial color={highlighted ? color : "#9EABB6"} transparent opacity={highlighted ? 0.24 : 0.1} />
         </mesh>
-        {Array.from({ length: representativeCount }, (_, toolIndex) => {
-          const toolX = (toolIndex - (representativeCount - 1) / 2) * 0.72;
-          if (fabId === "M21") return <mesh key={toolIndex} position={[toolX, 0.48, 0]}>
-            <cylinderGeometry args={[0.27, 0.32, 0.9, 8]} />
-            <meshStandardMaterial color={highlighted ? color : "#B9C4CD"} metalness={0.24} roughness={0.36} emissive={highlighted ? color : "#000000"} emissiveIntensity={highlighted ? 0.15 : 0} />
-          </mesh>;
-          if (fabId === "M22") return <group key={toolIndex} position={[toolX, 0, 0]}>
-            {[0.22, 0.52, 0.82].map((y) => <mesh key={y} position={[0, y, 0]}>
-              <boxGeometry args={[0.5, 0.22, 0.66]} />
-              <meshStandardMaterial color={highlighted ? color : "#AEB9C4"} metalness={0.18} roughness={0.42} />
-            </mesh>)}
-          </group>;
-          return <group key={toolIndex} position={[toolX, 0, 0]}>
-            <mesh position={[0, 0.48, 0]}><boxGeometry args={[0.52, 0.92, 0.64]} /><meshStandardMaterial color={highlighted ? color : "#BCC6CF"} metalness={0.28} roughness={0.34} /></mesh>
-            <mesh position={[0, 1.0, 0]}><boxGeometry args={[0.34, 0.12, 0.4]} /><meshStandardMaterial color={highlighted ? "#EA002C" : "#83909C"} emissive={highlighted ? "#EA002C" : "#000000"} emissiveIntensity={highlighted ? 0.35 : 0} /></mesh>
-          </group>;
-        })}
-        <Text position={[0, 1.34, 0]} fontSize={0.22} color={highlighted ? color : "#596672"} anchorX="center">{`${processCode} · ×${actualCount}`}</Text>
+        <CampusEquipmentInstances fabId={fabId} count={actualCount} highlighted={highlighted} color={color} processCode={processCode} />
+        <Text position={[0, 0.78, 0]} fontSize={0.18} color={highlighted ? color : "#596672"} anchorX="center">{`${processCode} · 3D ×${actualCount}`}</Text>
       </group>;
     })}
   </group>;

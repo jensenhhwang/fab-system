@@ -135,6 +135,11 @@ async function main() {
     { code: "CSM-014", name: "HBM 언더필 (TC-NCF)", nameEn: "Non-Conductive Film (TC-NCF)", category: "CSM", unit: "롤", safetyStock: 30, ropDays: 30, notes: "HBM 스택 열압착 본딩용 비전도성 필름. HBM 전용" },
     { code: "CSM-015", name: "챔버 석영 파츠 (Quartz Kit)", nameEn: "Quartz Chamber Parts", category: "CSM", unit: "세트", safetyStock: 12, ropDays: 45, notes: "식각·증착 챔버 소모성 석영/세라믹 파츠. PM 시 교체" },
     { code: "PKG-002", name: "다이접착필름 (DAF)", nameEn: "Die Attach Film", category: "PKG", unit: "롤", safetyStock: 120, ropDays: 21, notes: "다이 적층 접착 필름. HBM 다단 스택 본딩" },
+    { code: "PKG-LBD-001", name: "HBM4 로직 베이스 다이 KGD", nameEn: "HBM4 Logic Base Die KGD", category: "PKG", unit: "KGD_DIE", safetyStock: 0, ropDays: 30, materialType: "DIRECT_COMPONENT", purchaseUnit: "TRAY", purchaseToInventoryFactor: 1000, assumptionConfidence: "LOW", notes: "외부 Logic Fab/Foundry 조달 가정. P10.BASE_DIE_ATTACH에서 gross stack당 1개 투입; 1,000 die/tray와 입고합격률 99%는 미검증 계획 가정" },
+    { code: "CSM-016", name: "Edge Trim Blade/Wheel", nameEn: "Wafer Edge Trim Blade/Wheel", category: "CSM", unit: "개", safetyStock: 0, ropDays: 30, assumptionConfidence: "CALIBRATION_REQUIRED", notes: "P08.EDGE_TRIM 조건부 소모재. 수명 원단위 RATE_TBD" },
+    { code: "CSM-017", name: "Dicing Blade", nameEn: "Wafer Dicing Blade", category: "CSM", unit: "개", safetyStock: 0, ropDays: 30, assumptionConfidence: "CALIBRATION_REQUIRED", notes: "P10.DICING blade-saw 방식 전용. Edge Trim blade와 별도 자재" },
+    { code: "CSM-018", name: "Dicing UV Tape", nameEn: "Dicing UV Tape", category: "CSM", unit: "롤", safetyStock: 0, ropDays: 30, assumptionConfidence: "CALIBRATION_REQUIRED", notes: "P10.DICING wafer/frame 기준 소모. 원단위 RATE_TBD" },
+    { code: "CSM-019", name: "Memory KGD Die Tray", nameEn: "Memory KGD Die Tray", category: "CSM", unit: "TRAY", safetyStock: 0, ropDays: 30, materialType: "REUSABLE_CARRIER", assumptionConfidence: "CALIBRATION_REQUIRED", notes: "P10.DIE_SORT_KGD 산출 carrier. 적재량·회수율 RATE_TBD" },
   ];
 
   await col("materials").insertMany(

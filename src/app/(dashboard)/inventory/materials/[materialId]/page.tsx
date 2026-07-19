@@ -30,7 +30,7 @@ export default async function MaterialDetailPage({ params }: { params: Promise<{
   const [inventoryDocs, lotDocs, usageDocs, links, supplierDocs, templates, usageMap, policy] = await Promise.all([
     inventory.find({ materialId }).toArray(),
     inventoryLots.find({ materialId, qualityStatus: { $ne: "CONSUMED" } }).sort({ expiryDate: 1, receivedAt: 1 }).toArray(),
-    processUsage.find({ materialId }).sort({ processCode: 1, product: 1 }).toArray(),
+    processUsage.find({ materialId, active: { $ne: false } }).sort({ processCode: 1, product: 1 }).toArray(),
     materialSuppliers.find({ materialId }).sort({ isPrimary: -1 }).toArray(),
     suppliers.find({}).sort({ name: 1 }).toArray(),
     bomTemplates.find({ "lines.materialId": materialId }).sort({ processCode: 1, product: 1 }).toArray(),

@@ -27,7 +27,7 @@ export async function GET() {
   const { processUsage, materials, processMetadata } = await collections();
 
   const [usages, inventoryRows, mats, metaDocs] = await Promise.all([
-    processUsage.find({}).toArray(),
+    processUsage.find({ active: { $ne: false } }).toArray(),
     getInventoryRows(),
     materials.find({}).toArray(),
     processMetadata.find({}).toArray(),

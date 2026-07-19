@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useCallback, useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -11,6 +11,9 @@ import { buildTwinHref, type CameraPreset, type TwinMode } from "@/lib/twin-navi
 import FabThroughputDial from "./FabThroughputDial";
 import LotRouteTrackerCard from "./LotRouteTrackerCard";
 import type { LiveFoupView } from "@/components/ProcessFlow3D";
+import type { M20FabEquipmentMaster } from "@/lib/m20-equipment-capacity-plan";
+import M20FabEquipmentMasterCard from "./M20FabEquipmentMasterCard";
+import type { FoupFleetProjection } from "@/lib/foup-wip-model";
 
 const ProcessFlow3D = dynamic(() => import("@/components/ProcessFlow3D"), { ssr: false });
 
@@ -67,12 +70,13 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 }
 
 export default function UsageClient({
-  materials, warehouseLinks = [], warehouses = [], equipmentByFab,
+  materials, warehouseLinks = [], warehouses = [], equipmentByFab, m20EquipmentMaster,
 }: {
   materials: Material[];
   warehouseLinks?: WarehouseLink[];
   warehouses?: WarehouseInfo[];
   equipmentByFab: Record<FabId, Record<string, number>>;
+  m20EquipmentMaster: M20FabEquipmentMaster;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -86,10 +90,23 @@ export default function UsageClient({
   const [selectedProc, setSelectedProc] = useState<string | null>(() => searchParams.get("process"));
   const [selectedFab, setSelectedFab] = useState<"ALL" | FabId>(() => twinFab ?? "ALL");
   const [liveFoups, setLiveFoups] = useState<LiveFoupView[]>([]);
+  const [foupFleet, setFoupFleet] = useState<FoupFleetProjection | null>(null);
   const [filterCat, setFilterCat] = useState<string>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const filterProduct = selectedFab === "ALL" ? "ALL" : FAB_PRODUCT[selectedFab];
+
+  const loadFoupFleet = useCallback(async () => {
+    const response = await fetch("/api/wafer-lots/foup-fleet", { cache: "no-store" });
+    if (!response.ok) return;
+    setFoupFleet(await response.json() as FoupFleetProjection);
+  }, []);
+
+  useEffect(() => {
+    const initial = window.setTimeout(() => void loadFoupFleet(), 0);
+    const interval = window.setInterval(() => { if (!document.hidden) void loadFoupFleet(); }, 10_000);
+    return () => { window.clearTimeout(initial); window.clearInterval(interval); };
+  }, [loadFoupFleet]);
 
   function handleSort(col: SortKey) {
     if (sortKey === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -327,8 +344,8 @@ export default function UsageClient({
               </button>;
             })}
           </div>
-        ) : <div className={selectedFab === "M20" ? "grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]" : undefined}>
-          <div className="relative" style={{ height: 480 }}>
+        ) : <div className="space-y-3">
+          <div className="relative h-[clamp(480px,62dvh,720px)] w-full">
             <Suspense fallback={<div className="w-full h-full bg-[#e8f0f8] rounded-2xl flex items-center justify-center text-sm text-[#999]">3D 로딩 중…</div>}>
               <ProcessFlow3D
                 fabId={selectedFab}
@@ -348,6 +365,7 @@ export default function UsageClient({
                 warehouseLinks={warehouseLinks}
                 equipmentCounts={equipmentByFab[selectedFab]}
                 liveFoups={selectedFab === "M20" ? liveFoups : []}
+                foupFleet={selectedFab === "M20" ? foupFleet : null}
               />
             </Suspense>
 
@@ -379,9 +397,21 @@ export default function UsageClient({
             </div>
           </div>
           {selectedFab === "M20" && (
-            <div className="flex flex-col gap-3">
-              <FabThroughputDial fabId="M20" />
-              <LotRouteTrackerCard fabId="M20" product="HBM" onLiveFoupsChange={setLiveFoups} />
+            <div className="space-y-3">
+              <M20FabEquipmentMasterCard
+                master={m20EquipmentMaster}
+                ledgerCounts={equipmentByFab.M20}
+                selectedProcess={selectedProc}
+                onProcessSelect={(processCode) => {
+                  setPinnedMatId(null);
+                  setHoveredMat(null);
+                  setSelectedProc((current) => current === processCode ? null : processCode);
+                }}
+              />
+              <div className="grid items-start gap-3 xl:grid-cols-2">
+                <FabThroughputDial fabId="M20" foupFleet={foupFleet} />
+                <LotRouteTrackerCard fabId="M20" product="HBM" occupiedFoup={foupFleet?.actual.occupied} onLiveFoupsChange={setLiveFoups} />
+              </div>
             </div>
           )}
         </div>}

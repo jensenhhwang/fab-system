@@ -83,6 +83,19 @@ const LOGS = [
     "docs/vision.md에 시뮬레이션 배속(약 1.2만~1.6만배, 균등 배분 가정)을 기록하고 '타임 액셀러레이터 제외' 원칙이 Phase 4 What-if 트윈에 한정됨을 명시",
     "실 DB 시나리오 스크립트(test:wafer-lot-12foup)로 FOUP 독립성·패키징 트리거·재적재 순환을 검증하고 TypeScript·ESLint·브라우저 콘솔 0 에러 확인",
   ] },
+  { day: 12, date: "2026-07-19", label: "M20 생산능력·설비·FOUP 실행 원장 통합", color: "#EA002C", items: [
+    "M20 NORMAL 생산능력을 117,000 WSPM으로 확정하고 HBM4 12-Hi 36GB 기준 월 5,703,750개 계획 생산량과 wafer당 KGD·stack 수율 계산 계약 수립",
+    "M21·M22는 미정으로 분리하고 fab-master·route-master·material-consumption-master를 가정·신뢰도·변경관리 기준이 있는 단일 문서 체계로 정리",
+    "P10 Packaging 안에 Dicing·Die Sort·Base Die Attach·12단 DRAM Bonding·MUF·Final Test를 통합하고 외부 조달 Base Die KGD와 후공정 자재·BOM 연결",
+    "M20 117K WSPM을 업계형 여유율로 감당하도록 공정별 Equipment Master를 494대로 확정하고 장비 Capacity·OEE·가동률·병목 여유를 화면과 API에 연결",
+    "3D에 494대 설비를 대표 샘플이 아닌 전수 instance로 반영하고 P09 Test와 P10 Packaging을 하나의 후공정 라인으로 연결해 OHT·AGV 동선을 단축",
+    "Little's Law 기준 일 156 Lot, Wafer/FOUP 체류 90일, Occupied 14,040대, Physical FOUP Fleet 15,600대, Reserve 1,560대 실행 계약 수립",
+    "M20:HBM:V3 Route에 14,040개 활성 Wafer Lot·15,600개 FOUP·14,040개 활성 Assignment를 멱등 bootstrap하고 기존 Aggregate WIP 20,828개는 완료 이력으로 보존",
+    "전체 Lot 실행 원장 API와 검색·10개 단위 페이지 조회를 추가해 Modeled 14,028개와 Watched 12개를 동일 화면에서 Lot·FOUP·공정·Carrier 기준으로 추적",
+    "3D는 설비와 겹치는 압축 FOUP density를 제거하고 이동 의미가 있는 Watched 12개만 표시하며 전체 수량은 LEDGER_EXACT 원장과 수량판을 기준으로 분리",
+    "실행추적의 전체 원장 선택과 Watched 상세 선택을 하나로 통합해 서로 다른 FOUP 정보가 동시에 표시되던 이중 선택 UX 제거",
+    "FOUP bootstrap 재실행 추가 생성 0건, 14,040 Lot/Assignment 불변식, 494대 3D, 생산 시나리오, TypeScript, ESLint 및 Next.js 프로덕션 빌드 검증 완료",
+  ] },
 ];
 
 export default function DevlogPage() {

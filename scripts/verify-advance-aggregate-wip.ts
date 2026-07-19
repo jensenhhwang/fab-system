@@ -37,7 +37,7 @@ async function main() {
   const routeMaster = await getRouteMaster("M20", "HBM");
   assert(routeMaster, "M20/HBM routeMaster가 없습니다");
   const visits = expandRouteMaster(routeMaster);
-  const packagingVisit = visits.find((v) => v.nodeId === "packaging");
+  const packagingVisit = visits.find((v) => v.operationCode === "MUF_MOLDING_CURE");
   assert(packagingVisit, "routeMaster에 packaging 노드가 없습니다");
   const packagingStepIndex = packagingVisit.stepIndex;
   assert(packagingStepIndex > 0, "packaging 노드가 첫 스텝이면 경계 이전 스텝을 만들 수 없습니다");
@@ -57,7 +57,7 @@ async function main() {
   const boundaryLot = await waferLots.findOne({ _id: boundaryLotId });
   assert(boundaryLot, "경계 테스트 로트를 찾을 수 없습니다");
   assert.equal(boundaryLot.currentStepIndex, packagingStepIndex, "packaging 스텝으로 진입해야 합니다");
-  assert.equal(boundaryLot.currentNodeId, "packaging", "currentNodeId가 packaging이어야 경계를 실제로 넘은 것입니다");
+  assert.equal(boundaryLot.currentNodeId, "hbm-muf-molding", "currentNodeId가 P10 MUF/Molding이어야 경계를 실제로 넘은 것입니다");
 
   const pilotWorkOrderCount = await workOrders.countDocuments({ scope: "M20_PILOT", lotId: boundaryLotId });
   assert.equal(pilotWorkOrderCount, 0, "advanceAggregateWip은 packaging 진입 시에도 M20_PILOT 워크오더를 만들면 안 됩니다");

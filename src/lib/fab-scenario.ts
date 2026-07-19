@@ -14,9 +14,12 @@ export type M20ProductionScenarioId = keyof typeof M20_PRODUCTION_SCENARIOS;
 // M20-HBM4-12H-V1 완제품 환산 가정. 실제 die map/수율이 아닌 planning baseline이다.
 export const M20_HBM_OUTPUT_MODEL = {
   modelProduct: "M20-HBM4-12H-V1",
+  capacityGbPerStack: 36,
   grossDiesPerWafer: 765,
   knownGoodDiesPerWafer: 650,
   stackDieCount: 12,
+  baseDiePerGrossStack: 1,
+  baseDieIncomingAcceptanceYield: 0.99,
   assemblyYield: 0.90,
 } as const;
 
@@ -107,7 +110,15 @@ export function m20ProductionScenarioMetrics(scenarioId: M20ProductionScenarioId
     grossDiesPerWafer: M20_HBM_OUTPUT_MODEL.grossDiesPerWafer,
     knownGoodDiesPerWafer: M20_HBM_OUTPUT_MODEL.knownGoodDiesPerWafer,
     theoreticalStacksPerWafer: M20_HBM_OUTPUT_MODEL.knownGoodDiesPerWafer / M20_HBM_OUTPUT_MODEL.stackDieCount,
+    grossStackStarts: Math.floor(scenario.waferStartsPerMonth * M20_HBM_OUTPUT_MODEL.knownGoodDiesPerWafer / M20_HBM_OUTPUT_MODEL.stackDieCount),
+    baseDieKgdsForAssembly: Math.floor(scenario.waferStartsPerMonth * M20_HBM_OUTPUT_MODEL.knownGoodDiesPerWafer / M20_HBM_OUTPUT_MODEL.stackDieCount) * M20_HBM_OUTPUT_MODEL.baseDiePerGrossStack,
+    baseDiePurchaseRequirement: Math.ceil(
+      Math.floor(scenario.waferStartsPerMonth * M20_HBM_OUTPUT_MODEL.knownGoodDiesPerWafer / M20_HBM_OUTPUT_MODEL.stackDieCount)
+      / M20_HBM_OUTPUT_MODEL.baseDieIncomingAcceptanceYield,
+    ),
     finishedHbmStacksPerWafer,
     finishedHbmStacks: Math.round(scenario.waferStartsPerMonth * finishedHbmStacksPerWafer),
+    finishedHbmCapacityGb: Math.round(scenario.waferStartsPerMonth * finishedHbmStacksPerWafer * M20_HBM_OUTPUT_MODEL.capacityGbPerStack),
+    finishedHbmCapacityPbDecimal: scenario.waferStartsPerMonth * finishedHbmStacksPerWafer * M20_HBM_OUTPUT_MODEL.capacityGbPerStack / 1_000_000,
   };
 }

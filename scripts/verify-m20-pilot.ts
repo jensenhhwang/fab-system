@@ -36,7 +36,7 @@ async function main() {
   assert.equal(lot.availableQuantity + (consumedFromLot?.quantity ?? 0), unitTotal, "Lot 가용량+누적소비량과 HU 총량이 보존되지 않았습니다");
   const stocks = await fabMaterialStocks.find({ fabId: "M20", processCode: "P10", materialId: "PKG-001" }).toArray();
   assert.equal(stocks.reduce((sum, stock) => sum + stock.quantity, 0), 0, "완료 후 PRS/Line-side 잔량이 0이 아닙니다");
-  assert.equal(await equipmentMaster.countDocuments({ fabId: "M20" }), 452, "M20 Equipment Master 대수가 일치하지 않습니다");
+  assert.equal(await equipmentMaster.countDocuments({ fabId: "M20" }), 494, "M20 Equipment Master 대수가 일치하지 않습니다");
   const run = await agentRuns.findOne({ workOrderId: workOrder._id });
   assert.equal(run?.status, "COMPLETED", "M20 AgentRun이 완료되지 않았습니다");
   const roles = await agentDecisions.distinct("agentRole", { workOrderId: workOrder._id });
@@ -45,7 +45,7 @@ async function main() {
   assert.equal(po?.status, "OUTBOXED", "발주 초안이 승인·Outbox 적재되지 않았습니다");
   assert(await integrationOutbox.findOne({ aggregateId: po?._id }), "승인된 PO의 Outbox가 없습니다");
   assert.equal((await equipmentAssignments.findOne({ workOrderId: workOrder._id }))?.status, "COMPLETED", "장비 배정이 완료되지 않았습니다");
-  console.log(`✅ M20 agent ledger verified: ${workOrder._id}, 98kg, 8 events, 4 agents, 452 tools`);
+  console.log(`✅ M20 agent ledger verified: ${workOrder._id}, 98kg, 8 events, 4 agents, 494 tools`);
   process.exit(0);
 }
 

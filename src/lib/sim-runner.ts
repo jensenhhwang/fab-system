@@ -27,7 +27,7 @@ export async function executeTickAndPersist(): Promise<TickResult> {
   if (!state) throw new Error("simState 없음");
 
   // 자재별 일일 소비량 집계
-  const usages = await processUsage.find({}).toArray();
+  const usages = await processUsage.find({ active: { $ne: false } }).toArray();
   const materialDocs = await materials.find({}).toArray();
   const matMap = new Map(materialDocs.map(m => [m._id, m]));
 

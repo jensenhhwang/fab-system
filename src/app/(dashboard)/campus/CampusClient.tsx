@@ -269,7 +269,7 @@ export default function CampusClient({ snapshot, usageTwin, initialTransfers, in
         <div>
           <div className="mb-2 text-[10px] font-black uppercase tracking-[0.15em] text-[#716C66]">{snapshot.layoutVersion} / 1WMS · 3FAB</div>
           <h1 className="text-[30px] font-black tracking-[-0.045em] text-[#181715]">Campus Material Twin</h1>
-          <p className="mt-1 text-xs text-[#6F6A64]">중앙 WMS의 적치·이송과 M20·M21·M22 내부 P01~P10·FOUP을 하나의 운영 장면으로 연결</p>
+          <p className="mt-1 text-xs text-[#6F6A64]">중앙 WMS의 적치·이송과 M20·M21·M22 내부 P01~P10·FOUP/Die Tray를 하나의 운영 장면으로 연결</p>
         </div>
         <div className="flex items-center gap-2">
           <span className={`border px-3 py-2 text-[10px] font-black ${materialHasLiveOperation ? "border-[#8FD2BB] bg-[#E9F8F2] text-[#087A55]" : "border-[#E5B65C] bg-[#FFF4D8] text-[#8A5A00]"}`}>

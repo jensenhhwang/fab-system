@@ -2,16 +2,20 @@
 
 ## 목적
 
-`src/lib/processes.ts`의 `PROCESSES`는 P01~P10이라는 공통 공정 코드를 정의하지만, 실제 팹은 제품마다 이 공정을 **몇 번, 어떤 순서로, 어디서 갈라지며** 도는지가 다르다. 이 문서는 그 반복·분기 구조를 제품별로 정의하고, `routeMaster` 컬렉션(DB)과 공정 시각화의 기준으로 사용한다.
+`src/lib/processes.ts`의 `PROCESSES`는 P01~P10 대공정 capability를 정의하지만, 실제 팹은 제품마다 이 공정을 **몇 번, 어떤 순서로, 어떤 operation으로** 사용하는지가 다르다. 이 문서는 그 반복·분기 구조를 제품별로 정의하고, `routeMaster` 컬렉션(DB)과 공정 시각화의 기준으로 사용한다.
 
 연결된 기준 문서:
 
 - [`fab-master.md`](./fab-master.md): M20 평균 WSPM, 정상 WIP, 증산 경계
+- [`foup-wip-master.md`](./foup-wip-master.md): P10 Dicing 경계의 FOUP 해제와 Lot·Carrier·Genealogy 계약
+- [`fab-equipment-master.md`](./fab-equipment-master.md): Fab별 표준 설비 대수와 Capacity reserve
 - [`material-consumption-master.md`](./material-consumption-master.md): M20 wafer 1장당 자재 원단위와 시나리오 소요량
 
 **표기 원칙**: 여기 적힌 스텝 순서·자재·구조는 문서 하단 [출처](#출처)에 정리한 업계 공개 자료(Applied Materials, SK하이닉스 뉴스룸, Samsung Newsroom, imec, SemiEngineering, Micron 공식 교육 자료 등)에 근거한다. 반복 횟수는 이 자료들이 공개한 범위 안에서 잡은 **대표값(MODELED_BASELINE)**이며, 사내 고유 엔지니어링 라우트 시트를 재현한 것은 아니다. 구조(무엇이 왜 반복·분기하는지)의 정확도를 우선했다.
 
-> 이 문서의 `전체 공정`은 실제 수백 개 장비 레시피를 모두 나열한 것이 아니라, P01~P10 공정 코드로 묶은 **시스템 모델 라우트**다. 아래 스텝 수는 시뮬레이션 방문 횟수이며 실제 장비 공정 수와 같지 않다.
+> 이 문서의 `전체 공정`은 실제 수백 개 장비 레시피를 모두 나열한 것이 아니라, P01~P10 대공정 코드와 operation code로 묶은 **시스템 모델 라우트**다. 아래 스텝 수는 시뮬레이션 방문 횟수이며 실제 장비 공정 수와 같지 않다.
+
+설비 Capacity를 계산할 때 이 반복수를 그대로 `wafer-pass`로 사용하지 않는다. 장비군·레시피별 실제 `capacityVisitsPerWafer`는 [`fab-equipment-master.md`](./fab-equipment-master.md)의 계약으로 별도 승인한다.
 
 ## 공통 축약 표기
 
@@ -24,9 +28,9 @@
 | P05 | 이온주입 (Ion Implant) | 도펀트 주입, 트랜지스터 특성 형성 |
 | P06 | 금속배선1 (Metallization) | 금속막 증착·패터닝 |
 | P07 | CMP | 표면 평탄화 |
-| P08 | TSV/배선2 | 관통전극·상부 금속배선 |
+| P08 | TSV/박막화 | 관통전극·조건부 Edge Trim·Backgrind/Reveal |
 | P09 | 웨이퍼테스트 | 전기특성 검사, 양/불량 분류 |
-| P10 | 패키징 | 다이싱·본딩·봉지·최종검사 |
+| P10 | Packaging | Dicing·Singulation·Die Sort·제품별 조립·몰딩·최종검사; M20에서는 Base Die와 Memory KGD 합류 |
 
 ---
 
@@ -34,11 +38,11 @@
 
 | Fab | 기준 제품 | 핵심 흐름 | 현재 모델 상태 | 총 모델 스텝 |
 |---|---|---|---|---:|
-| M20 | HBM4 12-Hi | DRAM Front-end → TSV Front/Back → 재검 → 다이싱·12단 적층 | **DB 연결 / ROUTE_MASTER_V1** | **134** |
-| M21 | DRAM | DRAM Front-end → EDS → 단일 다이 패키징 | 문서 초안 / DB 미연결 | **119 PROVISIONAL** |
+| M20 | HBM4 12-Hi | DRAM Front-end → TSV/박막화 → 재검 → P10 패키징(싱귤레이션·Base Die 합류·12단 적층) | **DB 연결 / M20:HBM:V3** | **140** |
+| M21 | DRAM | DRAM Front-end → EDS → Singulation → 단일 다이 패키징 | 문서 초안 / DB 미연결 | **120 PROVISIONAL** |
 | M22 | 3D NAND | CMOS → 수직 스택 → 채널홀·Staircase → EDS → NAND 패키징 | 변수 모델 / DB 미연결 | **TBD** |
 
-M20만 현재 실행 가능한 Route Master다. M21의 119스텝은 M20과 같은 대표 Front-end 반복값을 적용한 비교용 초안이고, M22는 제품 단수와 구조가 정해져야 총 스텝을 계산할 수 있다.
+M20만 현재 실행 가능한 Route Master다. M21의 120스텝은 M20과 같은 대표 Front-end 반복값을 적용한 비교용 초안이고, M22는 제품 단수와 구조가 정해져야 총 스텝을 계산할 수 있다.
 
 ---
 
@@ -55,15 +59,21 @@ HBM 다이는 곧 DRAM 다이다. 즉 **일반 DRAM 프런트엔드 공정(약 7
 | 3 | BEOL 금속배선 | P02 → P03 → P04 → P06 → P07 | 5회 | 25 | 93~117 | FOUP / wafer |
 | 4 | 1차 웨이퍼 테스트 | P09 | 1회 | 1 | 118 | FOUP / wafer |
 | 5 | TSV 프런트사이드 | P08 | 1회 | 1 | 119 | FOUP / wafer |
-| 6 | 백그라인딩 | P08 프록시 | 1회 | 1 | 120 | FOUP / wafer |
-| 7 | TSV 백사이드 | P08 | 1회 | 1 | 121 | FOUP / wafer |
-| 8 | 2차 웨이퍼 테스트 | P09 | 1회 | 1 | 122 | FOUP / wafer |
-| 9 | HBM4 12-Hi 패키징 | P10 | **12회** | 12 | **123~134** | die → 조립 중 stack → 완성 stack |
-| 합계 |  |  |  | **134** | **1~134** |  |
+| 6 | Edge Trim | P08.`EDGE_TRIM` | 1회 | 1 | 120 | FOUP / wafer |
+| 7 | 백그라인딩·박막화 | P08.`BACKGRIND_THINNING` | 1회 | 1 | 121 | FOUP / wafer |
+| 8 | TSV 백사이드 | P08.`TSV_BACK` | 1회 | 1 | 122 | FOUP / wafer |
+| 9 | 2차 웨이퍼 테스트 | P09.`WAFER_TEST` | 1회 | 1 | 123 | FOUP / wafer |
+| 10 | Dicing / Singulation | P10.`DICING` | 1회 | 1 | 124 | wafer → Memory KGD |
+| 11 | Die Sort / KGD staging | P10.`DIE_SORT_KGD` | 1회 | 1 | 125 | Memory KGD / tray |
+| 12 | Base Die Attach | P10.`BASE_DIE_ATTACH` | 1회 | 1 | 126 | Memory KGD + 외부 Base KGD → stack |
+| 13 | DRAM 12-Hi Bond | P10.`DRAM_BOND_12H` | **12회** | 12 | 127~138 | stack |
+| 14 | MUF·Molding·Cure | P10.`MUF_MOLDING_CURE` | 1회 | 1 | 139 | stack |
+| 15 | Final Test | P10.`FINAL_TEST` | 1회 | 1 | 140 | good package |
+| 합계 |  |  |  | **140** | **1~140** |  |
 
-따라서 현재 Route Master에는 **HBM4 12단 적층 기준이 반영되어 있다.** DB의 `M20:HBM` 패키징 노드는 `P10 × 12`이며, 전체 라우트는 134스텝이다.
+`M20:HBM:V3`는 12단이 **DRAM Memory Die 12개**라는 뜻임을 명시한다. Logic Base Die 1개는 외부 Logic Fab/Foundry에서 KGD로 입고되고 P10.`BASE_DIE_ATTACH`에서 합류한다. M20 117K WSPM에는 Base Die wafer starts·전공정 설비·수율을 포함하지 않는다.
 
-다만 123~134번은 패키징의 실제 세부 레시피를 각각 구현한 것이 아니라, `다이싱 1회 → 다이 정렬·본딩 반복 → 몰딩 1회 → 최종검사 1회`를 **P10 12회로 축약한 12-Hi 모델 프록시**다. 현재 실행 원장은 패키징 구간에서도 동일한 `WaferLotDoc`과 `foupCode`를 134번까지 유지한다. 물리적으로는 다이싱부터 die/stack 단위로 바뀌지만, Die/Stack 개별 실행 원장과 carrier 전환은 아직 구현되지 않았다.
+기존 `M20:HBM` V1과 분리형 V2(P11)는 과거 진행 lot 재현용으로 보존한다. 신규 lot은 active V3를 사용하며 자재 소비점은 `processCode` 단독이 아니라 `routeKey + routeVersion + operationCode`로 식별한다. 화면은 V2의 P11 이력을 P10으로 정규화해 표시한다.
 
 문서의 스텝 번호는 읽기 쉬운 1-based다. 코드의 `stepIndex`는 0-based이므로 문서 123번은 코드에서 `stepIndex: 122`다.
 
@@ -93,7 +103,11 @@ P09(웨이퍼테스트) — 2차, 적층 전 재검 (불량 다이가 스택에 
 
 [2단계 · 3D 적층 패키징]
   ↓
-P10(패키징): 다이싱 → { 다이 정렬·본딩 } × 12회(HBM4 12-Hi 기준) → 몰딩(MR-MUF) → 최종검사
+P10(Dicing/Singulation → Die Sort/KGD)
+  ↓
+외부 Logic Base Die KGD 1개 + Memory KGD 12개 동시 예약
+  ↓
+P10(Base Die Attach → DRAM Bond ×12 → MR-MUF/Molding/Cure → Final Test)
 ```
 
 **분기 요약**: P09(1차) 이후 프런트사이드 P08 → 백그라인딩 → 백사이드 P08 → P09(2차)로 이어지는 것이 HBM 고유 경로다. DRAM/NAND는 이 경로를 타지 않는다.
@@ -112,10 +126,11 @@ M20 1단계(프론트엔드)와 구조가 동일하다 — HBM 다이 자체가 
 | 2 | DRAM 셀 어레이 | P03 → P04 → P02 → P07 | 22회 | 88 | 5~92 | FOUP / wafer |
 | 3 | BEOL 금속배선 | P02 → P03 → P04 → P06 → P07 | 5회 | 25 | 93~117 | FOUP / wafer |
 | 4 | 웨이퍼 테스트 | P09 | 1회 | 1 | 118 | FOUP / wafer |
-| 5 | 단일 다이 패키징 | P10 | 1회 | 1 | 119 | die → package |
-| 합계 |  |  |  | **119 PROVISIONAL** | **1~119** |  |
+| 5 | Dicing / Singulation | P10.`DICING` | 1회 | 1 | 119 | wafer → die |
+| 6 | 단일 다이 패키징 | P10.`SINGLE_DIE_PACKAGE` | 1회 | 1 | 120 | die → package |
+| 합계 |  |  |  | **120 PROVISIONAL** | **1~120** |  |
 
-이 119스텝은 M20 Front-end의 대표 반복값을 재사용한 **PROVISIONAL 모델**이다. M21 Route Master는 아직 DB에 연결되지 않았으며, 실제 기준 제품과 반복 횟수가 확정되면 별도 버전으로 승인해야 한다.
+이 120스텝은 M20 Front-end의 대표 반복값을 재사용한 **PROVISIONAL 모델**이다. M21 Route Master는 아직 DB에 연결되지 않았으며, 실제 기준 제품과 반복 횟수가 확정되면 별도 버전으로 승인해야 한다.
 
 ```
 P01(산화막) × 3~5회
@@ -128,11 +143,11 @@ P01(산화막) × 3~5회
   ↓
 P09(웨이퍼테스트) — EDS
   ↓
-P10(패키징): 다이싱 → 단일 다이 실장(와이어본딩 또는 플립칩) → 몰딩 → 최종검사
+P10(싱귤레이션 → 단일 다이 실장 → 몰딩 → 최종검사)
   — 적층 반복 없음 (1회), P08 없음
 ```
 
-**M20 대비 차이**: P09 이후 P08(TSV) 분기가 통째로 없고, P10에서 다이 적층 반복(× N) 대신 단일 다이 실장으로 바로 끝난다.
+**M20 대비 차이**: P09 이후 P08(TSV) 분기가 통째로 없고, P10 내부에서 12단 적층 대신 단일 다이 실장으로 끝난다.
 
 ---
 
@@ -155,7 +170,8 @@ P10(패키징): 다이싱 → 단일 다이 실장(와이어본딩 또는 플립
 | 7 | Slit·게이트 치환 | P04 → P06 | `R_gate`회 | `2 × R_gate` | 희생막 제거·텅스텐 충진 |
 | 8 | 평탄화 | P07 | `C_cmp`회 | `C_cmp` | 주요 충진 이후 CMP |
 | 9 | 웨이퍼 테스트 | P09 | 1회 | 1 | EDS |
-| 10 | NAND 패키징 | P10 | `P_pkg`회 | `P_pkg` | 다이싱·와이어본딩 계열 적층·검사 |
+| 10 | NAND Singulation | P10.`DICING` | 1회 | 1 | wafer → NAND die |
+| 11 | NAND 패키징 | P10.`NAND_PACKAGE` | `P_pkg`회 | `P_pkg` | 와이어본딩 계열 적층·검사 |
 | 합계 |  |  |  | **TBD / NOT MODELED** | 제품 단수·구조 확정 후 산출 |
 
 `D_pair`는 단순 비교용으로 NAND 적층 단수의 약 절반 수준으로 볼 수 있지만, 실제 장비 레시피 횟수와 동일하다는 뜻은 아니다. M22는 기준 제품의 적층 단수, String Stacking 방식, Staircase 분할과 패키지 적층 수가 정해진 뒤 총 스텝을 확정한다.
@@ -183,7 +199,7 @@ P07(CMP) — 매 증착·충진 단계마다 반복
   ↓
 P09(웨이퍼테스트) — EDS
   ↓
-P10(패키징): 다이싱 → 단일 또는 와이어본딩 기반 다이 적층(밀도용, TSV 아님) → 몰딩 → 최종검사
+P10(싱귤레이션 → 단일 또는 와이어본딩 기반 다이 적층 → 몰딩 → 최종검사)
   — P08(TSV) 없음
 ```
 
@@ -195,11 +211,11 @@ P10(패키징): 다이싱 → 단일 또는 와이어본딩 기반 다이 적층
 
 | 구분 | M20 · HBM4 12-Hi | M21 · DRAM | M22 · NAND |
 |---|---|---|---|
-| 현재 구현 상태 | DB 연결, 134스텝 | 문서 초안, DB 미연결 | 변수 모델, DB 미연결 |
-| 반복이 가장 큰 구간 | 셀 22회 + BEOL 5회 + P10 12회 | 셀 22회 + BEOL 5회 | P02 스택 증착 + Staircase |
+| 현재 구현 상태 | DB 연결, V3 140스텝 | 문서 초안, DB 미연결 | 변수 모델, DB 미연결 |
+| 반복이 가장 큰 구간 | 셀 22회 + BEOL 5회 + P10 Bond 12회 | 셀 22회 + BEOL 5회 | P02 스택 증착 + Staircase |
 | P08(TSV) 분기 | 있음 (프런트사이드 + 백사이드, 총 2회) | 없음 | 없음 |
 | P09(웨이퍼테스트) 횟수 | 2회 (1차 EDS + 2차 적층 전) | 1회 (EDS) | 1회 (EDS) |
-| P10 적층 방식 | `P10 × 12` 패키징 프록시 | 단일 다이 | 와이어본딩 계열, 반복 TBD |
+| P10 Packaging | Singulation 후 HBM 전용 Base Die merge·12-Hi | Singulation 후 단일 다이 package | Singulation 후 와이어본딩 계열 |
 | 금속배선(P06) 특징 | 프론트엔드 BEOL 3~6층 | 프론트엔드 BEOL 3~6층 | 워드라인 게이트 리플레이스먼트(텅스텐), 층수는 200~300+ |
 
 ---
@@ -208,21 +224,22 @@ P10(패키징): 다이싱 → 단일 또는 와이어본딩 기반 다이 적층
 
 | 항목 | 상태 |
 |---|---|
-| M20 `routeMaster` (`M20:HBM`) | 구현됨 — ROUTE_MASTER_V1, 9개 매크로 노드, 134스텝 |
-| HBM4 12-Hi | 구현됨 — 패키징 노드 `P10`, `repeatCount: 12` |
+| M20 `routeMaster` | 구현됨 — active `M20:HBM:V3`, 15개 노드, 140스텝; V1/V2 보존 |
+| HBM4 12-Hi | 구현됨 — `P10.DRAM_BOND_12H`, `repeatCount: 12` |
 | M20 실행 원장 | 구현됨 — `waferLots`, `waferLotStepEvents`, 12개 FOUP 타임랩스 추적 |
-| 패키징 자재 연결 | 구현됨 — 첫 P10 진입 시 M20 파일럿 워크오더 트리거 |
+| 패키징 자재 연결 | 구현됨 — `route/version/operation` scope, P10 MUF 진입 시 파일럿 트리거 |
 | M21·M22 `routeMaster` | 미구현 — 본 문서의 초안/변수 모델만 존재 |
-| FOUP → Die/Stack carrier 전환 | 미구현 — 현재는 패키징 완료까지 `foupCode` 유지 |
-| 다이싱·본딩·몰딩·최종검사 세부 노드 | 미구현 — 현재 `P10 × 12` 프록시 |
+| M20 설비 Capacity 연결 | 구현됨 — M20 494대; P10 Packaging 36대의 5개 native-stage capacity |
+| FOUP → Die/Stack carrier 전환 | Route 단위 전환은 정의됨; 물리 Die/Stack 개별 원장은 후속 구현 |
+| 다이싱·본딩·몰딩·최종검사 세부 노드 | V3 P10 operation node로 구현됨 |
 
-다음 구현 우선순위는 M21·M22 기준 제품 확정과 DB Route Master 연결, M20 패키징 세부 노드 분리, FOUP WIP와 Die/Stack WIP 실행 원장 분리다. 3D 화면의 5초 간격 이동은 실제 가공시간이 아니라 정의된 라우트를 순서대로 보여주는 타임랩스다.
+다음 구현 우선순위는 M20의 모델 반복수와 설비용 capacity visit 분리, P05 물리 방문 전개, 패키징 세부 노드 및 FOUP/Die/Stack WIP 분리, M21·M22 기준 제품 확정과 DB Route Master 연결이다. 3D 화면의 5초 간격 이동은 실제 가공시간이 아니라 정의된 라우트를 순서대로 보여주는 타임랩스다.
 
 ### 모델 해석 각주
 
-- M20 대표 셀 사이클에 P05가 없다고 해서 이온주입 물리 공정이 없다는 뜻은 아니다. `ROUTE_MASTER_V1`이 P02 경로를 대표 사이클로 선택하고 P05 방문을 별도로 전개하지 않은 것이다.
+- M20 대표 셀 사이클에 P05가 없다고 해서 이온주입 물리 공정이 없다는 뜻은 아니다. V3도 P02/P05 선택 분기를 선형 대표 경로로 단순화했으며 P05 capacity는 별도로 정의한다.
 - 문서 스텝은 1-based이고 코드 `stepIndex`는 0-based다.
-- 물리적 운반 단위와 시스템 추적 식별자를 구분한다. 물리적으로는 다이싱 후 wafer가 die/stack으로 바뀌지만, 현재 시스템은 134번까지 같은 웨이퍼 로트와 `foupCode`를 유지한다.
+- 물리적 운반 단위와 시스템 추적 식별자를 구분한다. V3 Route는 P10 내부 operation 경계에서 wafer→Memory KGD→stack 전환을 정의하지만 현재 실행 원장은 물리 carrier별 개별 lot ledger까지 분리하지 않았다.
 
 ---
 
@@ -233,10 +250,10 @@ P10(패키징): 다이싱 → 단일 또는 와이어본딩 기반 다이 적층
 | 구분 | 값 |
 |---|---|
 | 실제 웨이퍼 투입 → 패키징 완료 (업계 공개 자료 기준 대략치) | 약 3~4개월 (90~120일) |
-| 이 시스템의 HBM4 12-Hi 라우팅 134스텝 완주 시간 (5초/스텝 × 134) | 약 11.2분 (670초) |
+| 이 시스템의 HBM4 12-Hi V3 라우팅 140스텝 완주 시간 (5초/스텝 × 140) | 약 11.7분 (700초) |
 | 배속 | 약 **12,000 ~ 16,000배** |
 
-**가정과 한계**: 위 배속은 134스텝에 5초씩 균등하게 배분했다는 가정 위에서 나온 평균치다. 실제로는 스텝마다 걸리는 시간이 균일하지 않고(설비 대기·큐잉이 실가공 시간보다 훨씬 크게 작용), 노드별(예: TSV 구간 vs 셀 어레이 반복 구간) 상대적 소요 비중도 이 시뮬레이션엔 반영돼 있지 않다. 노드별로 다른 간격을 주는 건 향후 개선 과제로 남겨둔다.
+**가정과 한계**: 위 배속은 140스텝에 5초씩 균등하게 배분했다는 가정 위에서 나온 평균치다. 실제로는 스텝마다 걸리는 시간이 균일하지 않고(설비 대기·큐잉이 실가공 시간보다 훨씬 크게 작용), 노드별 상대적 소요 비중도 이 시뮬레이션엔 반영돼 있지 않다.
 
 ---
 
