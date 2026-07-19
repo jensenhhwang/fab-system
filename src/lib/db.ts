@@ -443,6 +443,14 @@ export interface WaferLotStepEventDoc {
   idempotencyKey: string;
 }
 
+export interface FabScenarioDoc {
+  _id: FabId; // "M20" | "M21" | "M22"
+  product: Product;
+  utilization: number; // 실시간 조절 가능한 가동률(0~1). nominalWspm은 fab-scenario.ts의 정적 값을 그대로 씀.
+  updatedAt: Date;
+  updatedBy: string;
+}
+
 export type FabStockLocationType = "PRS" | "LINE_SIDE";
 export interface FabMaterialStockDoc {
   _id: string;
@@ -650,6 +658,7 @@ export async function collections(): Promise<{
   routeMasters: Collection<RouteMasterDoc>;
   waferLots: Collection<WaferLotDoc>;
   waferLotStepEvents: Collection<WaferLotStepEventDoc>;
+  fabScenarios: Collection<FabScenarioDoc>;
 }> {
   const db = await getDb();
   return {
@@ -699,5 +708,6 @@ export async function collections(): Promise<{
     routeMasters: db.collection<RouteMasterDoc>("routeMasters"),
     waferLots: db.collection<WaferLotDoc>("waferLots"),
     waferLotStepEvents: db.collection<WaferLotStepEventDoc>("waferLotStepEvents"),
+    fabScenarios: db.collection<FabScenarioDoc>("fabScenarios"),
   };
 }
