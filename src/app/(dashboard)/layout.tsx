@@ -5,20 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
 import { ControlContextProvider, FabScopeControl } from "@/components/ControlContext";
-
-const ROLE_COLORS: Record<string, string> = {
-  ADMIN: "#EA002C",
-  MATERIALS: "#0078D4",
-  PRODUCTION: "#00B96B",
-  LOGISTICS: "#F7A600",
-};
-
-const ROLE_LABELS: Record<string, string> = {
-  ADMIN: "Admin",
-  MATERIALS: "자재관리팀",
-  PRODUCTION: "생산관리팀",
-  LOGISTICS: "물류/인프라팀",
-};
+import RoleSwitcher from "@/components/RoleSwitcher";
+import { ROLE_COLOR, ROLE_LABEL, type DemoRole } from "@/lib/demo-accounts";
 
 const NAV = [
   { group: "오늘의 운영", items: [
@@ -50,9 +38,9 @@ const NAV = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
   const pathname = usePathname();
-  const user = session?.user as { name?: string; role?: string; department?: string } | undefined;
+  const user = session?.user as { name?: string; role?: DemoRole; department?: string } | undefined;
   const role = user?.role ?? "MATERIALS";
-  const roleColor = ROLE_COLORS[role] ?? "#EA002C";
+  const roleColor = ROLE_COLOR[role] ?? "#EA002C";
 
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
@@ -80,7 +68,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             className="inline-block mt-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full text-white"
             style={{ backgroundColor: roleColor }}
           >
-            {ROLE_LABELS[role] ?? role}
+            {ROLE_LABEL[role] ?? role}
           </span>
         </div>
 
@@ -148,12 +136,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               DATA CONNECTED
             </div>
             <span className="hidden text-xs xl:inline" style={{ color: "var(--text-3)" }}>이천 M20 / M21 / M22</span>
-            <div
-              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
-              style={{ backgroundColor: roleColor }}
-            >
-              {user?.name?.slice(0, 1) ?? "?"}
-            </div>
+            <RoleSwitcher />
           </div>
         </header>
 
