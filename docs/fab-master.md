@@ -1,29 +1,39 @@
-# Fab Production Master — M20 생산능력 · WIP · 증산 경계
+# Fab Production Master — M20·M21·M22 생산능력 · WIP · 증산 경계
 
-상태: `APPROVED_MODELED_BASELINE`  
-버전: `FAB_MASTER_M20_V1`  
-기준일: 2026-07-19
+| Fab | 상태 | 버전 |
+|---|---|---|
+| M20 | `APPROVED_MODELED_BASELINE` | `FAB_MASTER_M20_V1` |
+| M21 | `APPROVED_MODELED_BASELINE` | `FAB_MASTER_M21_V1` |
+| M22 | `APPROVED_MODELED_BASELINE` | `FAB_MASTER_M22_V1` |
+
+기준일: 2026-07-21 (M21·M22 신규 정의 반영)
 
 ## 1. 문서 목적
 
-이 문서는 M20이 **평균적으로 얼마나 생산하고, 정상 상태에서 얼마의 WIP를 유지하며, 어떤 증산 시나리오를 계획하는지**를 정의하는 생산 규모의 기준 문서다. 각 시나리오를 현재 설비가 실제로 지원하는지는 별도 Equipment Capacity Master에서 판정한다.
+이 문서는 M20·M21·M22이 **평균적으로 얼마나 생산하고, 정상 상태에서 얼마의 WIP를 유지하며, 어떤 증산 시나리오를 계획하는지**를 정의하는 생산 규모의 기준 문서다. 각 시나리오를 현재 설비가 실제로 지원하는지는 별도 Equipment Capacity Master에서 판정한다.
 
 - [`route-master.md`](./route-master.md): 웨이퍼가 어떤 공정을 몇 번 통과하는가
-- 이 문서: M20이 얼마나 투입·생산하고 어느 정도 WIP를 보유하는가
-- [`foup-wip-master.md`](./foup-wip-master.md): 16,380 FOUP-equivalent를 Occupied FOUP·Physical Fleet·후공정 WIP로 분리
+- 이 문서: 각 Fab이 얼마나 투입·생산하고 어느 정도 WIP를 보유하는가
+- [`foup-wip-master.md`](./foup-wip-master.md): 목표 WIP를 Occupied FOUP·Physical Fleet·후공정 WIP로 분리
 - [`fab-equipment-master.md`](./fab-equipment-master.md): Fab별 표준 설비 대수와 NORMAL 15% reserve
 - [`material-consumption-master.md`](./material-consumption-master.md): 웨이퍼 1장에 어떤 자재가 얼마나 필요한가
 
-이 다섯 문서의 값이 충돌하면 임의로 숫자를 맞추지 않는다. 생산 규모는 이 문서, 공정 방문수는 `route-master.md`, FOUP·Carrier 수량은 `foup-wip-master.md`, 설비 대수는 `fab-equipment-master.md`, 자재 원단위는 `material-consumption-master.md`를 각각 단일 기준으로 사용한다.
+이 다섯 문서의 값이 충돌하면 임의로 숫자를 맞추지 않는다. 생산 규모는 이 문서, 공정 방문수는 `route-master.md`, FOUP·Carrier 수량은 `foup-wip-master.md`, 설비 대수는 `fab-equipment-master.md`, 자재 원단위는 `material-consumption-master.md`를 각각 단일 기준으로 사용한다. **M21·M22는 M20의 WSPM·수율·cycle time·자재 원단위를 복사하지 않고 각 제품·공정 구조에서 독립적으로 도출한다.**
 
-## 2. 사실과 가정의 경계
+## 2. 사실과 가정의 경계 — 공개자료로 확인되는 범위
 
-### 공개자료로 확인되는 범위
+- SK hynix M16은 EUV 장비를 도입한 1a nm DRAM 생산 거점으로 공개되었고, M10·M14·M16 세 Fab이 이천 본사에서 주로 DRAM을 생산한다. ([SK hynix Newsroom](https://news.skhynix.com/semiconductor-101-sk-hynix-on-where-chips-are-used/))
+- HBM용 웨이퍼는 일반 DRAM의 700개 이상 공정 스텝을 공유하고 TSV·범프·박화·적층 관련 공정 약 19개(프런트 10 + 백 9)가 추가된다. HBM 전용 다이는 TSV keep-out 영역 때문에 동일 세대 standalone DRAM보다 셀 밀도가 낮아질 수 있다. ([Applied Materials](https://www.appliedmaterials.com/us/en/newsroom/blogs/hbm--materials-innovation-propels-high-bandwidth-memory-into-the.html))
+- 순수 DRAM 웨이퍼 사이클타임은 스케줄링 최적화만으로 80일에서 30일 미만까지 단축된 실측 사례가 있어, 산업 평균(12주=84일)보다 훨씬 짧게도 운영될 수 있다. ([Leachman & Kang, SLIM — Interfaces 2002](https://pubsonline.informs.org/doi/10.1287/inte.32.1.61.15))
+- SK hynix 321단 4D NAND(V9, 2025년 양산)는 **3-deck 구조**(deck당 약 107층)이며, 단일 식각 장비가 한 번에 처리 가능한 층수 한계(~100층) 때문에 channel-hole plug 식각을 deck마다 별도로 3회 수행한다. ([SK hynix Newsroom](https://news.skhynix.com/how-sk-hynixs-advanced-4d-nand-technologies-are-overcoming-stacking-limitations/), [TechInsights](https://www.techinsights.com/blog/sk-hynix-h25gtd0-321-layer-v9-1-tb-tlc-3d-nand-process-flow-analysis))
+- NAND는 층수가 늘수록 스텝 수·공정 강도가 뚜렷이 증가한다. SK hynix는 V8→V9 세대 전환에서 전체 공정 스텝 30% 증가, 식각 스텝 20% 증가를 공개했다. ([SemiAnalysis](https://newsletter.semianalysis.com/p/interconnects-beyond-copper-1000), [Lam Research](https://newsroom.lamresearch.com/learning-from-nand-3d-dram-transition-ai-era))
+- Fab 가동률 80% 초과는 높은 가동 구간이며 개별 Fab은 수요기에 90~100%까지 운전할 수 있다. ([SIA](https://www.semiconductors.org/wp-content/uploads/2021/06/SIA-Final-submission-to-FCC-on-Impact-of-Global-Semiconductor-Shortage-on-the-U.S.-Communications-Sector-June-10-2021.pdf))
 
-- SK hynix M16은 EUV 장비를 도입한 1a nm DRAM 생산 거점으로 공개되었다.
-- HBM용 웨이퍼는 일반 DRAM의 700개 이상 공정 스텝을 공유하고 TSV, 범프, 박화, 적층 관련 공정이 추가된다.
-- 업계 자료에서 웨이퍼 제조 사이클은 평균 약 12주, 첨단 공정은 약 14~20주까지로 설명된다.
-- Fab 가동률 80% 초과는 높은 가동 구간이며 개별 Fab은 수요기에 90~100%까지 운전할 수 있다.
+각 Fab 절의 "공개 근거"에서 더 구체적인 출처를 정리한다.
+
+---
+
+## M20 · HBM4 12-Hi
 
 ### 이 시스템이 채택한 가정
 
@@ -39,7 +49,6 @@ M20의 실제 설치 캐파, 제품 믹스, 수율, 사이클타임은 공개자
 | 평균 운영 투입량 | 117,000 WSPM | 평상시 월 wafer starts |
 | 일평균 투입량 | 3,900 wafer/day | 30일 연속운전 기준 |
 | 웨이퍼 수율 | 85% | 양품 wafer-equivalent 계산용 전역 가정 |
-| 평균 유효 산출 | 99,450 good wafer-eq/month | 자재 투입량 계산에는 사용하지 않음 |
 | Gross die/wafer | 765 dies | die 면적·edge loss를 단순화한 HBM4 참조값 |
 | KGD/wafer | 650 known-good dies | die 수율·TSV test를 합친 완제품 환산값 |
 | HBM 적층수 | 12 DRAM dies/stack | `M20-HBM4-12H-V1`; base die는 별도 미모델 |
@@ -50,37 +59,20 @@ M20의 실제 설치 캐파, 제품 믹스, 수율, 사이클타임은 공개자
 
 `WSPM`은 HBM 완제품 개수가 아니라 **한 달에 공정에 투입하는 300 mm 웨이퍼 수**다. `130,000 WSPM`을 HBM 13만 개로 읽으면 안 된다.
 
-## 3. 평균 운영점과 생산량
-
-M20 V1의 기본 운영점은 명목 상한 130K가 아니라 **117K WSPM**이다.
+### 평균 운영점과 생산량
 
 ```text
-평균 운영 WSPM = 명목 WSPM × 평균 가동률
-                 = 130,000 × 0.90
-                 = 117,000 wafer starts/month
-
+평균 운영 WSPM = 130,000 × 0.90 = 117,000 wafer starts/month
 일평균 wafer starts = 117,000 ÷ 30 = 3,900 wafers/day
 일평균 FOUP starts  = 3,900 ÷ 25 = 156 FOUP/day
 유효 wafer 산출     = 117,000 × 0.85 = 99,450 good wafer-equivalent/month
 ```
 
-수율은 양품 환산과 완제품 산출 계산에 적용한다. 가스, 케미컬, PR처럼 공정에 먼저 투입되는 자재는 불량이 나중에 판정되더라도 이미 소비되므로 기본 소요량은 `good wafer`가 아니라 `wafer starts`에서 계산한다.
-
-## 4. 정상 WIP 정의
-
-정상 WIP는 Little's Law를 FOUP 단위로 환산한다.
+### 정상 WIP 정의
 
 ```text
-목표 WIP(FOUP-equivalent)
-  = 월 wafer starts ÷ 30일 × cycleTimeDays ÷ 25 wafers/FOUP
-
-NORMAL
-  = 117,000 ÷ 30 × 105 ÷ 25
-  = 16,380 FOUP-equivalent
-  = 409,500 wafers in process
+목표 WIP(FOUP-equivalent) = 117,000 ÷ 30 × 105 ÷ 25 = 16,380 FOUP-equivalent
 ```
-
-`16,380 FOUP-equivalent`는 105일 전체 Route WIP의 25-wafer release-lot 환산값이며 실물 FOUP 보유량이 아니다. Wafer/FOUP 90일과 후공정 15일의 초안 분리, Occupied FOUP 14,040대와 계획 Physical Fleet 15,600대의 정의는 [`foup-wip-master.md`](./foup-wip-master.md)를 따른다.
 
 운영 화면에서 정상 WIP의 목표 밴드는 중심값의 ±5%로 둔다.
 
@@ -90,32 +82,228 @@ NORMAL
 | 정상 밴드 | 15,561~17,199 | NORMAL 안정 운영 |
 | 상한 초과 | > 17,199 | 큐잉·병목·사이클타임 증가 점검 |
 
-이 밴드는 품질 규격이 아니라 운영 경보 기준이다. 공정별 WIP 분포는 향후 노드별 체류시간 마스터가 생기기 전까지 균등 분포를 가정한다.
+### 증산 시나리오
 
-## 5. 증산 시나리오와 커버 가능 범위
+| 시나리오 | 월 투입 WSPM | 가동률 | NORMAL 대비 | 계획 cycle time | 계획 WIP(FOUP-eq) | HBM4 12-Hi 36GB/월 | 판정 |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `NORMAL` | 117,000 | 90% | 기준 | 105일 | 16,380 | 5,703,750 | 평균 운영 기준 |
+| `UPLIFT` | 123,500 | 95% | +5.6% | 112일 | 18,443 | 6,020,625 | 단기 증산 계획, 설비 미검증 |
+| `NAMEPLATE` | 130,000 | 100% | +11.1% | 126일 | 21,840 | — | 스트레스 계획, 설비 미검증 |
+| `EXPANSION` | 143,000 | 110%(명목 대비) | +22.2% | 105일 | 20,020 | 6,971,250 | 디보틀넥·설비증설 후 미래 상태 |
 
-증산은 WSPM만 올리는 문제가 아니다. 가동률이 높아질수록 대기열과 재진입 공정의 간섭으로 사이클타임이 늘 수 있으므로 `waferStarts`, `utilization`, `cycleTimeDays`를 독립 변수로 관리한다.
+설비 대수는 [`fab-equipment-master.md`](./fab-equipment-master.md)를 따른다. M20은 NORMAL 15% reserve 기준 **494 modeled tools**로 정의됐다.
 
-| 시나리오 | 월 투입 WSPM | 현재 명목 대비 가동률 | NORMAL 대비 | 105일 고정 참조 WIP(FOUP-eq) | 계획 cycle time | 계획 WIP(FOUP-eq) | HBM4 12-Hi 36GB/월 | 운영 판정 |
-|---|---:|---:|---:|---:|---:|---:|---:|---|
-| `NORMAL` | 117,000 | 90% | 기준 | 16,380 | 105일 | 16,380 | 5,703,750 | 평균 운영 기준 |
-| `UPLIFT` | 123,500 | 95% | +5.6% | 17,290 | 112일 | 18,443 | 6,020,625 | 단기 증산 계획, 설비 미검증 |
-| `NAMEPLATE` | 130,000 | 100% | +11.1% | 18,200 | 126일 | 21,840 | 스트레스 계획, 설비 미검증 |
-| `EXPANSION` | 143,000 | 현 명목의 110% | +22.2% | 20,020 | 105일 | 20,020 | 6,971,250 | 디보틀넥·설비증설 후 미래 상태 |
+### HBM 완제품 환산
 
-### 해석 규칙
+| 단계 | 계산 | wafer 1장당 결과 |
+|---|---:|---:|
+| Gross DRAM die | die 면적·edge loss 모델 | 765 dies |
+| 양품 DRAM die(KGD) | gross die에서 die·TSV test 손실 반영 | 650 good dies |
+| 이론 HBM4 12-Hi stack | 650 ÷ 12 | 약 54.167 stacks |
+| 양품 HBM4 12-Hi 36GB | 54.167 × 90% | **48.75 stacks/wafer** |
 
-- `UPLIFT` 123.5K WSPM은 NORMAL 대비 5.6%의 **단기 증산 계획 시나리오**다. M20 494대 정의에서는 모델 병목 부하 약 89.3%다.
-- 130K는 생산계획상의 이름표·스트레스 상한이다. 현 설비가 도달할 수 있다고 검증된 값이 아니며 100% 가동과 105일 사이클을 동시에 지속할 수 있다고 가정하지 않는다.
-- 143K는 현재 설비로 가능한 생산량이 아니다. 병목 장비 증설, PM 전략 변경, 물류·유틸리티 증강이 완료된 뒤의 미래 비교 시나리오다.
-- 105일 고정 참조 WIP는 생산량만 비교하기 위한 값이다. 자재·창고·라인사이드 검토에는 `계획 WIP`를 사용한다.
-- 실제 설비 신호와 MES cycle time이 연결되면 계획 cycle time을 실측 이동평균으로 교체한다.
+```text
+NORMAL HBM4 12-Hi stacks/month = 117,000 × 650 ÷ 12 × 0.90 = 5,703,750 stacks/month
+NORMAL HBM4 12-Hi 36GB capacity/month = 5,703,750 × 36 GB = 205,335,000 GB = 205.335 PB/month (decimal)
+```
 
-설비 대수는 [`fab-equipment-master.md`](./fab-equipment-master.md)를 따른다. M20은 공개 업계 운전범위를 참고한 NORMAL 15% reserve 기준 **494 modeled tools**로 정의됐다. P10 Packaging 36대의 5개 native-stage 부하는 모델링됐지만 Base Die Attach와 실제 MES 정격 검증 전까지 `REAL_CAPACITY_VALIDATED`로 표시하지 않는다.
+Route 기준: `M20:HBM:V3`, 15개 노드, 140 모델 스텝. 상세는 [`route-master.md`](./route-master.md#m20--hbm)를 따른다.
 
-계획 cycle time 112일과 126일은 고가동 큐잉 위험을 보수적으로 드러내기 위한 M20 V1 가정이다. 공개된 M20 실측값이 아니며 시뮬레이션 결과로 자동 보정되기 전까지 `MODELED_BASELINE`으로 표시한다.
+---
 
-## 6. 시나리오 계산 계약
+## M21 · DRAM
+
+### 이 시스템이 채택한 가정
+
+M21은 TSV·3D 적층이 없는 standalone DRAM 위주 Fab으로 모델링한다. HBM 다이 자체가 DRAM 다이라는 사실에 근거해([Applied Materials](https://www.appliedmaterials.com/us/en/newsroom/blogs/hbm--materials-innovation-propels-high-bandwidth-memory-into-the.html)) 프런트엔드 반복 구조는 M20과 동일하게 두되, TSV 관련 19스텝과 HBM 전용 P10 패키징은 제거하고 conventional 단일 다이 패키징으로 대체한다.
+
+| 항목 | M21 V1 가정 | 의미 |
+|---|---:|---|
+| Fab | M21 | 이천 3FAB의 DRAM 전용 위성 Fab |
+| 기준 생산품 | `M21-DDR5-16Gb-V1` | SK hynix DDR5 16Gb 다이(H5CNAG8NM 계열) 참조 모델 |
+| 웨이퍼 직경 | 300 mm | M20과 동일 |
+| 명목 생산능력 | 80,000 WSPM | `src/lib/fab-scenario.ts`의 기존 M21 상수. M16급 대형 DRAM Fab(월 17만~19만 장 추정, 미검증 SNS 소스)보다는 작은 위성 Fab 규모로 자리매김하며, 역사적 DRAM 팹 표준 규모(약 6만 WSPM, [The Memory Guy](https://thememoryguy.com/why-are-nand-flash-fabs-so-huge/))보다는 약간 크게 설정한 절충값 |
+| 평균 가동률 | 92% | `fab-scenario.ts` 기존 상수 |
+| 평균 운영 투입량 | 73,600 WSPM | 파생값 |
+| 일평균 투입량 | 2,453.3 wafer/day | 30일 연속운전 기준 |
+| 웨이퍼 수율 | 90% | `fab-scenario.ts` 기존 상수. TSV·적층 오버헤드가 없어 M20(85%)보다 높게 설정 |
+| Die 면적 | 75.21 mm² | SK hynix DDR5 16Gb 다이 공개 비교값 |
+| Gross die/wafer | 863 dies | 300 mm wafer, edge-loss 보정 공식 적용 |
+| 양품 DRAM die/wafer | 759 dies | die-level 양품 수율 88% 가정(LOW·MODELED_BASELINE) |
+| 패키지 형태 | Single-Die Package(SDP) | 적층 없음, 1 die = 1 package |
+| 패키징 조립수율 | 98% | conventional wire-bond/flip-chip 패키징, 스택 정렬 리스크 없어 M20(90%)보다 높게 설정 |
+| FOUP 적재량 | 25 wafers/FOUP | M20과 동일 물리 규격 |
+| NORMAL 사이클타임 | 80일 | 아래 근거 참고 |
+| NORMAL 목표 WIP | 7,850 FOUP-equivalent | Little's Law 결과 |
+
+### 평균 운영점과 생산량
+
+```text
+평균 운영 WSPM = 80,000 × 0.92 = 73,600 wafer starts/month
+일평균 wafer starts = 73,600 ÷ 30 = 2,453.3 wafers/day
+일평균 FOUP starts  = 2,453.3 ÷ 25 = 98.1 FOUP/day
+유효 wafer 산출     = 73,600 × 0.90 = 66,240 good wafer-equivalent/month
+```
+
+### 사이클타임 근거
+
+SIA 자료의 "평균 12주(84일)"는 반도체 전체 평균이며 DRAM 전용 수치가 아니다. Leachman & Kang(Samsung SLIM, Interfaces 2002)은 스케줄링 최적화만으로 DRAM 웨이퍼 사이클타임을 80일에서 30일 미만까지 단축한 실측 사례를 보고했다. M21은 이 범위의 상단 근처인 **80일**을 NORMAL 기준으로 채택한다 — 공격적 최적화(30일)를 가정하지 않되, TSV·2차 웨이퍼테스트·백그라인딩 왕복이 없는 만큼 M20의 105일보다는 명확히 짧다. `LOW · CALIBRATION_REQUIRED`.
+
+- Wafer/FOUP 구간(P01~P09, `route-master.md` M21 1~118 스텝) : **70일**
+- Back-end 구간(Dicing~Final Test, conventional 단일 다이 패키징) : **10일**
+
+### 정상 WIP 정의
+
+```text
+Daily Wafer Lot release = 2,453.3 ÷ 25 = 98.1 lots/day
+
+Occupied FOUP target  = 98.1 × 70 = 6,869 FOUP
+Physical Fleet target = 6,869 ÷ 90% target occupancy ratio = 7,632 FOUP
+Non-process pool      = 7,632 − 6,869 = 763 FOUP
+
+Back-end WIP equivalent  = 98.1 × 10 = 981 lot-equivalent
+End-to-end WIP equivalent = 6,869 + 981 = 7,850 FOUP-equivalent
+```
+
+목표 밴드는 M20과 동일하게 중심값의 ±5%로 둔다: 정상 밴드 **7,458~8,243 FOUP-equivalent**.
+
+### 증산 시나리오
+
+| 시나리오 | 월 투입 WSPM | 가동률 | NORMAL 대비 | 계획 cycle time | 계획 WIP(FOUP-eq) | 판정 |
+|---|---:|---:|---:|---:|---:|---|
+| `NORMAL` | 73,600 | 92% | 기준 | 80일 | 7,850 | 평균 운영 기준 |
+| `UPLIFT` | 76,800 | 96% | +4.3% | 84일 | 8,602 | 단기 증산 계획, 설비 미검증 |
+| `NAMEPLATE` | 80,000 | 100% | +8.7% | 90일 | 9,600 | 스트레스 계획, 설비 미검증 |
+| `EXPANSION` | 88,000 | 110%(명목 대비) | +19.6% | 80일 | 9,387 | 디보틀넥 후 미래 상태 |
+
+설비 대수는 [`fab-equipment-master.md`](./fab-equipment-master.md#m21--dram)의 **198 modeled tools**(NORMAL 15% reserve 기준)를 따른다.
+
+### DRAM 완제품 환산
+
+`73,600 WSPM`은 DDR5 16Gb 완제품 73,600개가 아니다. wafer 1장에서 여러 다이를 만들고, 각 다이가 그대로 패키지 1개가 된다(적층 없음).
+
+| 단계 | 계산 | wafer 1장당 결과 |
+|---|---:|---:|
+| Gross DRAM die | 300 mm wafer, die 75.21 mm², edge-loss 보정 | 863 dies |
+| 양품 DRAM die | gross × 88% die-level 수율 | 759 dies |
+| 양품 SDP 패키지 | 759 × 98% 패키징 조립수율 | **743.8 packages/wafer** |
+
+```text
+NORMAL good DDR5 16Gb packages/month = 73,600 × 759 × 0.98 = 54,745,152 packages/month
+NORMAL DDR5 16Gb capacity/month = 54,745,152 × 2 GB = 109,490,304 GB = 109.49 PB/month (decimal)
+```
+
+Gross die 863, 양품 die-level 수율 88%, 패키징 조립수율 98%는 모두 `MODELED_BASELINE`이며 SK hynix의 실제 M21 내부 수율이 아니다. 16Gb DDR5는 최신 세대의 64Gb SDP([Lenovo Press](https://lenovopress.lenovo.com/lp1618-introduction-to-ddr5-memory))보다 보수적인 대표 밀도이며, 더 큰 밀도 제품은 별도 `modelProduct`로 추가한다.
+
+Route 기준: `M21:DRAM:V1`, 프런트엔드는 M20과 동일 구조, 120 모델 스텝. 상세는 [`route-master.md`](./route-master.md#m21--dram)를 따른다.
+
+---
+
+## M22 · NAND
+
+### 이 시스템이 채택한 가정
+
+M22는 SK hynix 321단(V9) 4D NAND를 대표 기준 제품으로 채택한다. 321단은 **3-deck 구조**(deck당 약 107층)이며, 단일 식각 장비의 층수 한계(~100층) 때문에 채널홀 식각·계단 패터닝·게이트 리플레이스먼트가 deck마다 독립적으로 반복된다. ([SK hynix Newsroom](https://news.skhynix.com/how-sk-hynixs-advanced-4d-nand-technologies-are-overcoming-stacking-limitations/), [TechInsights](https://www.techinsights.com/blog/sk-hynix-h25gtd0-321-layer-v9-1-tb-tlc-3d-nand-process-flow-analysis))
+
+| 항목 | M22 V1 가정 | 의미 |
+|---|---:|---|
+| Fab | M22 | 이천 3FAB의 3D NAND 전용 Fab |
+| 기준 생산품 | `M22-NAND321L-1Tb-TLC-V1` | SK hynix 321단(V9) 1Tb TLC 참조 모델 |
+| 웨이퍼 직경 | 300 mm | M20·M21과 동일 |
+| 명목 생산능력 | 100,000 WSPM | `src/lib/fab-scenario.ts` 기존 M22 상수 |
+| 평균 가동률 | 90% | `fab-scenario.ts` 기존 상수 |
+| 평균 운영 투입량 | 90,000 WSPM | 파생값 |
+| 일평균 투입량 | 3,000 wafer/day | 30일 연속운전 기준 |
+| 웨이퍼 수율 | 88% | `fab-scenario.ts` 기존 상수 |
+| 적층 단수 | 321단, 3-deck × ~107층 | SK hynix V9 공개 구조 |
+| Die 면적 | 43.54 mm² | TechInsights 1Tb TLC V9 실측 |
+| Gross die/wafer | 1,523 dies | 300 mm wafer, edge-loss 보정 공식 |
+| 양품 NAND die/wafer | 1,249 dies | die-level 양품 수율 82% 가정(LOW·MODELED_BASELINE) |
+| 패키지 적층수 | 16단 와이어본딩 | IEEE 공개 사례 상한 |
+| 패키징 조립수율 | 96% | 16-die 와이어본딩 스택, M21(98%)보다 낮게 설정(본딩 수 증가) |
+| FOUP 적재량 | 25 wafers/FOUP | M20·M21과 동일 물리 규격 |
+| NORMAL 사이클타임 | 150일 | 아래 근거 참고 |
+| NORMAL 목표 WIP | 18,000 FOUP-equivalent | Little's Law 결과 |
+
+### 평균 운영점과 생산량
+
+```text
+평균 운영 WSPM = 100,000 × 0.90 = 90,000 wafer starts/month
+일평균 wafer starts = 90,000 ÷ 30 = 3,000 wafers/day
+일평균 FOUP starts  = 3,000 ÷ 25 = 120 FOUP/day
+유효 wafer 산출     = 90,000 × 0.88 = 79,200 good wafer-equivalent/month
+```
+
+### 사이클타임 근거
+
+3D NAND의 정확한 사이클타임 절대치는 제조사가 공개하지 않는다. 다만 SK hynix는 V8→V9(321단) 전환에서 전체 공정 스텝 30% 증가·식각 스텝 20% 증가를 공개했고([SemiAnalysis](https://newsletter.semianalysis.com/p/interconnects-beyond-copper-1000)), Lam Research는 "적층이 높아질수록 wafer당 공정 스텝이 늘어난다"는 정성적 근거를 제공한다([Lam Research](https://newsroom.lamresearch.com/learning-from-nand-3d-dram-transition-ai-era)). M22의 route 모델 스텝 수(256)가 M20(140)·M21(120)보다 훨씬 많다는 사실과 방향이 일치하므로, `MODELED_BASELINE`으로 M20보다 뚜렷이 긴 사이클타임을 채택한다. `LOW · CALIBRATION_REQUIRED`.
+
+- Wafer/FOUP 구간(P01~P09, `route-master.md` M22 1~239 스텝) : **130일**
+- Back-end 구간(Dicing~16단 와이어본딩 패키징) : **20일**
+
+### 정상 WIP 정의
+
+```text
+Daily Wafer Lot release = 3,000 ÷ 25 = 120 lots/day
+
+Occupied FOUP target  = 120 × 130 = 15,600 FOUP
+Physical Fleet target = 15,600 ÷ 90% target occupancy ratio = 17,333 FOUP
+Non-process pool      = 17,333 − 15,600 = 1,733 FOUP
+
+Back-end WIP equivalent  = 120 × 20 = 2,400 lot-equivalent
+End-to-end WIP equivalent = 15,600 + 2,400 = 18,000 FOUP-equivalent
+```
+
+목표 밴드는 M20과 동일하게 중심값의 ±5%로 둔다: 정상 밴드 **17,100~18,900 FOUP-equivalent**.
+
+### 증산 시나리오
+
+| 시나리오 | 월 투입 WSPM | 가동률 | NORMAL 대비 | 계획 cycle time | 계획 WIP(FOUP-eq) | 판정 |
+|---|---:|---:|---:|---:|---:|---|
+| `NORMAL` | 90,000 | 90% | 기준 | 150일 | 18,000 | 평균 운영 기준 |
+| `UPLIFT` | 95,000 | 95% | +5.6% | 158일 | 20,017 | 단기 증산 계획, 설비 미검증 |
+| `NAMEPLATE` | 100,000 | 100% | +11.1% | 168일 | 22,400 | 스트레스 계획, 설비 미검증 |
+| `EXPANSION` | 110,000 | 110%(명목 대비) | +22.2% | 150일 | 22,000 | 디보틀넥 후 미래 상태 |
+
+설비 대수는 [`fab-equipment-master.md`](./fab-equipment-master.md#m22--nand)의 **427 modeled tools**(NORMAL 15% reserve 기준)를 따른다. M20(494대)보다 WSPM은 낮지만 층수·반복 공정이 훨씬 많아 P02(증착)·P03(포토)·P04(식각) 설비 밀도가 M20보다 높다.
+
+### NAND 완제품 환산
+
+| 단계 | 계산 | wafer 1장당 결과 |
+|---|---:|---:|
+| Gross NAND die | 300 mm wafer, die 43.54 mm², edge-loss 보정 | 1,523 dies |
+| 양품 NAND die | gross × 82% die-level 수율 | 1,249 dies |
+| 16단 와이어본딩 패키지 | 1,249 ÷ 16 × 96% 조립수율 | **74.94 packages/wafer** |
+
+```text
+NORMAL good 16-die 1Tb-stack packages/month = 90,000 × 1,249 ÷ 16 × 0.96 = 6,744,600 packages/month
+NORMAL NAND capacity/month = 6,744,600 × 2,000 GB(16Tb=2TB decimal) = 13,489,200,000 GB
+                            = 13,489.2 PB/month ≈ 13.49 EB/month (decimal)
+```
+
+Gross die 1,523, die-level 양품수율 82%, 패키징 조립수율 96%는 모두 `MODELED_BASELINE`이며 SK hynix의 실제 M22 내부 수율이 아니다. 375단 이후 세대에서 텅스텐이 몰리브덴으로 일부 대체될 계획이 공개되었으나([wccftech](https://wccftech.com/sk-hynix-races-samsung-to-400-layer-nand-must-abandon-tungsten-as-stacking-hits-a-wall/)) 321단(V9)은 여전히 텅스텐 워드라인을 사용하므로 이 버전에서는 반영하지 않는다.
+
+Route 기준: `M22:NAND:V1`, 3-deck 321단, 256 모델 스텝. 상세는 [`route-master.md`](./route-master.md#m22--nand)를 따른다.
+
+---
+
+## 3팹 비교 요약
+
+| 구분 | M20 · HBM4 12-Hi | M21 · DDR5 16Gb | M22 · NAND 321L 1Tb |
+|---|---:|---:|---:|
+| 명목 WSPM | 130,000 | 80,000 | 100,000 |
+| NORMAL 가동률 | 90% | 92% | 90% |
+| NORMAL WSPM | 117,000 | 73,600 | 90,000 |
+| 웨이퍼 수율 | 85% | 90% | 88% |
+| NORMAL 사이클타임 | 105일 | 80일 | 150일 |
+| NORMAL 목표 WIP(FOUP-eq) | 16,380 | 7,850 | 18,000 |
+| 적층/패키징 방식 | TSV 12단 적층 | 단일 다이(SDP) | 와이어본딩 16단 |
+| Route 모델 스텝 | 140 | 120 | 256 |
+| 설비 대수(NORMAL 15% reserve) | 494 | 198 | 427 |
+
+M22가 M20보다 WSPM은 낮지만 설비 대수·모델 스텝이 크게 많은 것은 321단 적층으로 인한 증착·식각 반복 횟수 증가 때문이며, 오류가 아니다.
+
+## 4. 시나리오 계산 계약
 
 모든 생산·자재 시나리오는 다음 필드를 가진다.
 
@@ -123,105 +311,58 @@ NORMAL
 |---|---|---|
 | `scenarioId` | enum | `NORMAL`, `UPLIFT`, `NAMEPLATE`, `EXPANSION` |
 | `waferStartsPerMonth` | wafer/month | 시나리오의 직접 입력값 |
-| `utilization` | ratio | 현 명목 130K 대비 가동률. EXPANSION은 비교값 1.10 |
+| `utilization` | ratio | 각 Fab 명목 WSPM 대비 가동률 |
 | `cycleTimeDays` | day | WIP 계산용 독립 입력값 |
 | `waferYield` | ratio | 양품 wafer-equivalent 계산용 |
-| `wafersPerFoup` | wafer/FOUP | 현재 25 |
-| `productMix` | ratio map | 12-Hi/16-Hi 등 제품 믹스. V1은 HBM4 12-Hi 100% |
+| `wafersPerFoup` | wafer/FOUP | 25 (3팹 공통) |
+| `productMix` | ratio map | Fab별 기준 제품 100% (V1) |
 
-NORMAL 대비 선형 자재의 수요 배율은 다음과 같다.
+## 5. 현재 구현 상태
 
-| 시나리오 | 수요 배율 `WSPM ÷ 117,000` |
-|---|---:|
-| NORMAL | 1.0000 |
-| UPLIFT | 1.0556 |
-| NAMEPLATE | 1.1111 |
-| EXPANSION | 1.2222 |
+- M20: 생산 기준 NORMAL 117K / 명목 130K / 정상 WIP 16,380 FOUP-equivalent. 코드·DB 연결 완료.
+- M21·M22: 이 문서(V1)로 생산 규모가 승인됐으나, `fab-scenario.ts`의 `M20_PRODUCTION_SCENARIOS`처럼 UPLIFT/NAMEPLATE/EXPANSION 시나리오 상수와 route/equipment DB 연결은 아직 구현되지 않았다. 코드 연결 전까지 이 문서의 표를 단일 기준으로 사용한다.
+- 금지: 기존 HBM 월사용량을 일괄 배율하거나, FOUP-equivalent를 실물 FOUP 보유량으로 해석하거나, M21·M22 값을 M20에서 비율로 역산하는 것.
 
-이 배율은 가스·케미컬처럼 처리 wafer에 대체로 비례하는 자재에만 직접 적용한다. Probe Card, CMP Pad, PVD Target 같은 교체성 자재는 수명 임계치에 따라 정수 단위로 올림하고, 패키징 자재는 KGD·스택 수율과 제품 믹스를 추가 적용한다.
+## 6. 변경 관리
 
-## 7. HBM 완제품 환산
-
-`117,000 WSPM`은 HBM4 117,000개가 아니다. 한 장의 300 mm wafer에서 여러 DRAM die를 만들고, 양품 die 12개를 적층해야 HBM4 12-Hi stack 하나가 된다.
-
-### wafer 1장 기준 환산
-
-| 단계 | 계산 | wafer 1장당 결과 |
-|---|---:|---:|
-| Gross DRAM die | die 면적·edge loss 모델 | 765 dies |
-| 양품 DRAM die(KGD) | gross die에서 die·TSV test 손실 반영 | 650 good dies |
-| KGD 환산수율 | 650 ÷ 765 | 약 85.0% |
-| 이론 HBM4 12-Hi 36GB stack | 650 ÷ 12 DRAM dies | 약 54.167 stacks |
-| 양품 HBM4 12-Hi 36GB | 54.167 × 적층·조립수율 90% | **48.75 stacks/wafer** |
-
-따라서 M20 V1은 **wafer 1장당 평균 양품 DRAM die 650개, 최종 양품 HBM4 12-Hi 36GB 48.75개**를 생산하는 것으로 가정한다. 소수점은 Fab 전체에서 평균화된 기대값이며 실제 wafer 한 장에서 HBM4 0.75개를 물리적으로 만든다는 뜻이 아니다.
-
-```text
-known-good dies/month
-  = wafer starts × knownGoodDiesPerWafer
-
-HBM stacks/month
-  = known-good dies/month ÷ DRAM dies/stack × assembly yield
-
-NORMAL HBM4 12-Hi stacks/month
-  = 117,000 wafer × 48.75 good stacks/wafer
-  = 117,000 × 650 ÷ 12 × 0.90
-  = 5,703,750 stacks/month
-
-NORMAL HBM4 12-Hi 36GB capacity/month
-  = 5,703,750 stacks × 36 GB/stack
-  = 205,335,000 GB/month
-  = 205.335 PB/month (decimal)
-```
-
-따라서 M20 NORMAL 117K의 계획 월 생산량은 **HBM4 12-Hi 36GB 5,703,750개**, 총 메모리 용량은 **205.335 PB/월**이다. PB는 `1 PB = 1,000,000 GB`인 10진 단위다.
-
-이 수량은 105일 생산 파이프라인이 이미 채워진 정상상태의 월 throughput이다. 첫 wafer start 직후 같은 달에 완제품이 나온다는 뜻이 아니다.
-
-Gross 765 dies/wafer, KGD 650 dies/wafer, assembly yield 90%는 모두 `MODELED_BASELINE`이다. 12개는 용량을 구성하는 24Gb(3GB) DRAM die 수이며 HBM4 base die의 별도 공급·수율·Capacity는 이 산식에 포함하지 않았다. 실제 die map, edge exclusion, wafer sort, TSV test, 적층수율이 들어오면 교체한다. 그 전까지 화면에서는 `계획 HBM4 12-Hi 36GB stack 환산`이라고 표시하며 실제 출하량으로 부르지 않는다.
-
-16-Hi 또는 다른 용량 제품은 별도 `modelProduct`로 추가하며 12-Hi의 생산량이나 패키징 소재 원단위를 단순 비례시키지 않는다. die 면적, KGD/wafer, TSV 수율, 적층수율, NCF·EMC 구조를 별도로 가진다.
-
-## 8. M21·M22 처리
-
-| Fab | 상태 | 규칙 |
-|---|---|---|
-| M20 | `MODELED_BASELINE` | 이 문서의 V1 값을 사용 |
-| M21 | `TBD / NOT_MODELED` | 현재 코드 숫자를 실제 생산능력으로 해석하지 않음 |
-| M22 | `TBD / NOT_MODELED` | 현재 코드 숫자를 실제 생산능력으로 해석하지 않음 |
-
-M21·M22가 추가될 때 같은 필드와 공식은 재사용하되 M20의 WSPM, 수율, cycle time 또는 자재 원단위를 복사하지 않는다.
-
-## 9. 현재 구현 상태
-
-이 문서는 M20 생산 정의의 최신 기준이며 코드와 DB 연결도 같은 버전을 사용한다.
-
-- 생산 기준: M20 NORMAL 117K / 명목 130K / 정상 WIP 16,380 FOUP-equivalent
-- 설비 기준: M20 494대 `FAB_EQUIPMENT_MASTER_M20_V3`; NORMAL 15% reserve, `INDUSTRY_RANGE_INFORMED_MODELED_BASELINE`
-- Route 기준: `M20:HBM:V3` / P10 Packaging 내부 Singulation 2 operation·Base Attach·DRAM Bond 12회·MUF·Final Test / 총 140 모델 스텝
-- 실행 모델: 12개 VISUAL 로트는 전체 WIP 안의 추적 표본이며, AGGREGATE 로트와 합쳐 목표 FOUP-equivalent를 표현
-- 조회 API: 읽기 전용이며, WIP 보정·진행은 명시적인 POST 작업으로 분리
-- 자재 기준: wafer당 원단위 마스터에서 시나리오 월소요량을 파생
-- 금지: 기존 HBM 월사용량을 일괄 2.6배 하거나 FOUP-equivalent를 실물 FOUP 보유량으로 해석하는 것
-
-## 10. 변경 관리
-
-다음 값이 바뀌면 `FAB_MASTER_M20_V2`로 올리고 파생값을 모두 재생성한다.
+다음 값이 바뀌면 해당 Fab 문서를 V2로 올리고 파생값을 모두 재생성한다.
 
 - 명목 WSPM 또는 평균 가동률
 - NORMAL/UPLIFT/NAMEPLATE/EXPANSION 경계
 - cycle time 또는 FOUP 적재량
-- wafer yield 또는 기준 HBM 제품
+- wafer yield 또는 기준 제품
 - Route Master의 반복수와 공정 분기
 
 실측 MES 값이 들어오면 가정보다 우선하지만 과거 시나리오 재현을 위해 V1 문서는 삭제하지 않는다.
 
-## 11. 공개 근거
+## 7. 공개 근거
 
-- [SK hynix — M16 Plant Construction Completion](https://news.skhynix.com/sk-hynix-announces-the-completion-of-m16-plant-construction/) — M16의 EUV 도입과 1a nm DRAM 생산 역할
-- [Applied Materials — Wafer Fab Equipment Market Briefing, HBM Materials Engineering](https://ir.appliedmaterials.com/static-files/2f334f9c-6170-42ed-98b5-24dc11d946e9) — DRAM 700+ 스텝과 HBM TSV·범프 추가 공정
-- [SIA — Impact of Global Semiconductor Shortage](https://www.semiconductors.org/wp-content/uploads/2021/06/SIA-Final-submission-to-FCC-on-Impact-of-Global-Semiconductor-Shortage-on-the-U.S.-Communications-Sector-June-10-2021.pdf) — 80% 초과 고가동, 90~100% 사례, 평균 12주·첨단 14~20주 cycle time
-- [SEMI — 2026 300 mm Memory Capacity Outlook](https://www.semi.org/en/semi-press-release/semi-projects-300mm-memory-equipment-investment-to-surpass-50-billion-dollars-in-2026) — 2026년 전 세계 300 mm 메모리 4.1M WPM 전망
-- [SK hynix — World's First 12-Layer HBM4 Samples](https://news.skhynix.com/sk-hynix-ships-world-first-12-layer-hbm4-samples-to-customers/) — HBM4 12단, 36GB, Advanced MR-MUF
-- [Samsung — Commercial HBM4 Shipment](https://news.samsung.com/global/samsung-ships-industry-first-commercial-hbm4-with-ultimate-performance-for-ai-computing) — HBM4 12단 상용 출하와 24~36GB 제품 구성
-- [Micron — HBM4](https://www.micron.com/products/memory/hbm/hbm4) — HBM4 36GB 12-Hi 양산 제품
+### 공통·M20
+- [SK hynix — M16 Plant Construction Completion](https://news.skhynix.com/sk-hynix-announces-the-completion-of-m16-plant-construction/)
+- [SK hynix — Semiconductor 101: Where Chips Are Made and Used](https://news.skhynix.com/semiconductor-101-sk-hynix-on-where-chips-are-used/) — M10·M14·M16 DRAM 위주 이천 Fab 구성
+- [Applied Materials — Wafer Fab Equipment Market Briefing, HBM Materials Engineering](https://ir.appliedmaterials.com/static-files/2f334f9c-6170-42ed-98b5-24dc11d946e9)
+- [SIA — Impact of Global Semiconductor Shortage](https://www.semiconductors.org/wp-content/uploads/2021/06/SIA-Final-submission-to-FCC-on-Impact-of-Global-Semiconductor-Shortage-on-the-U.S.-Communications-Sector-June-10-2021.pdf)
+- [SEMI — 2026 300 mm Memory Capacity Outlook](https://www.semi.org/en/semi-press-release/semi-projects-300mm-memory-equipment-investment-to-surpass-50-billion-dollars-in-2026)
+- [SK hynix — World's First 12-Layer HBM4 Samples](https://news.skhynix.com/sk-hynix-ships-world-first-12-layer-hbm4-samples-to-customers/)
+- [Samsung — Commercial HBM4 Shipment](https://news.samsung.com/global/samsung-ships-industry-first-commercial-hbm4-with-ultimate-performance-for-ai-computing)
+- [Micron — HBM4](https://www.micron.com/products/memory/hbm/hbm4)
+
+### M21
+- [Applied Materials — HBM Materials Innovation](https://www.appliedmaterials.com/us/en/newsroom/blogs/hbm--materials-innovation-propels-high-bandwidth-memory-into-the.html) — DRAM 700+ 스텝과 HBM 전용 추가 19스텝
+- [Leachman & Kang — SLIM: Short Cycle Time and Low Inventory in Manufacturing at Samsung Electronics (Interfaces, 2002)](https://pubsonline.informs.org/doi/10.1287/inte.32.1.61.15) — DRAM 사이클타임 80일→30일 미만 실측 단축 사례
+- [The Memory Guy — Why are NAND Flash Fabs so Huge?](https://thememoryguy.com/why-are-nand-flash-fabs-so-huge/) — 역사적 DRAM 팹 표준 규모 참고치
+- [TechInsights / EE Times — DDR5 Micron vs Samsung vs SK hynix 다이 비교](https://www.eetimes.com/comparing-ddr5-memory-from-micron-samsung-sk-hynix/) — SK hynix 16Gb DDR5 다이 면적 75.21 mm²
+- [Lenovo Press — Introduction to DDR5 Memory](https://lenovopress.lenovo.com/lp1618-introduction-to-ddr5-memory) — SDP 최대 밀도 64Gb
+- [SK hynix Newsroom — Semiconductor Back-End Process Episode 6: Conventional Packages](https://news.skhynix.com/semiconductor-back-end-process-episode-6-conventional-packages/) — 8단계 conventional 패키징 흐름
+- [AnySilicon — Die Per Wafer Calculator](https://anysilicon.com/die-per-wafer-formula-free-calculators/) — gross die/wafer edge-loss 보정 공식
+
+### M22
+- [SK hynix Newsroom — How SK hynix's Advanced 4D NAND Technologies Are Overcoming Stacking Limitations](https://news.skhynix.com/how-sk-hynixs-advanced-4d-nand-technologies-are-overcoming-stacking-limitations/) — 3-plug(3-deck) 구조, deck당 channel-hole 식각
+- [TechInsights — SK hynix H25GTD0 321-Layer V9 1Tb TLC 3D NAND Process Flow Analysis](https://www.techinsights.com/blog/sk-hynix-h25gtd0-321-layer-v9-1-tb-tlc-3d-nand-process-flow-analysis) — die area 43.54 mm², bit density 23.52 Gb/mm²
+- [Blocks & Files — SK hynix begins mass production of 321-layer 3D NAND](https://www.blocksandfiles.com/ai-ml/2024/11/21/sk-hynix-begins-mass-production-of-321-layer-3d-nand/1605947)
+- [SemiEngineering — 3D NAND's Vertical Scaling Race](https://semiengineering.com/3d-nands-vertical-scaling-race/) — multi-deck 구조와 channel hole 정렬 난제
+- [SemiAnalysis — Interconnects: Beyond Copper](https://newsletter.semianalysis.com/p/interconnects-beyond-copper-1000) — V8→V9 스텝 수 30% 증가
+- [Lam Research — Learning From NAND](https://newsroom.lamresearch.com/learning-from-nand-3d-dram-transition-ai-era) — 적층 증가에 따른 공정 강도 증가
+- [IEEE — Yauw et al., Leading Edge Die Stacking and Wire Bonding Technologies](https://ieeexplore.ieee.org/document/8277544/) — 16단 와이어본딩 스택 사례
+- [AZoM — 3D NAND Fabrication and Hot Phosphoric Acid Nitride Strip](https://www.azom.com/article.aspx?ArticleID=20124) — 게이트 리플레이스먼트 공정
+- [wccftech — SK Hynix 400+ Layer NAND, Tungsten to Molybdenum](https://wccftech.com/sk-hynix-races-samsung-to-400-layer-nand-must-abandon-tungsten-as-stacking-hits-a-wall/) — 텅스텐→몰리브덴 전환은 375단 이후

@@ -1,24 +1,27 @@
-# M20 FOUP & Lot Execution Master — WIP·Carrier·실행 추적 기준
+# FOUP & Lot Execution Master — M20·M21·M22 WIP·Carrier·실행 추적 기준
 
-상태: `APPROVED_MODELED_BASELINE`  
-버전: `FOUP_WIP_MASTER_M20_V1`  
-기준일: 2026-07-19  
-Fab/시나리오: `M20 / NORMAL`  
-Route 의존성: `M20:HBM:V3 / P10.DICING`  
-모델 원장 연결: `ACTIVE · FOUP_WIP_STEADY_STATE_M20_V1`  
-실물 Fleet·MES 검증: `PENDING`
+| Fab | 상태 | 버전 | 모델 원장 연결 |
+|---|---|---|---|
+| M20 | `APPROVED_MODELED_BASELINE` | `FOUP_WIP_MASTER_M20_V1` | `ACTIVE · FOUP_WIP_STEADY_STATE_M20_V1` |
+| M21 | `APPROVED_MODELED_BASELINE` | `FOUP_WIP_MASTER_M21_V1` | 미구현 |
+| M22 | `APPROVED_MODELED_BASELINE` | `FOUP_WIP_MASTER_M22_V1` | 미구현 |
+
+기준일: 2026-07-21 (M21·M22 신규 정의 반영)  
+실물 Fleet·MES 검증: `PENDING` (3팹 공통)
 
 ## 1. 목적과 적용 범위
 
-이 문서는 M20의 Lot 실행 추적에서 사용하는 **논리 Wafer Lot, 공정 중 점유 FOUP, 전체 물리 FOUP Fleet, Singulation 이후 WIP**를 구분하고 수량·생애주기·표현 방법을 정의한다.
+이 문서는 M20·M21·M22의 Lot 실행 추적에서 사용하는 **논리 Wafer Lot, 공정 중 점유 FOUP, 전체 물리 FOUP Fleet, Dicing 이후 WIP**를 구분하고 수량·생애주기·표현 방법을 정의한다.
 
 연결된 기준 문서:
 
-- [`fab-master.md`](./fab-master.md): M20 NORMAL 117K WSPM, 전체 105일 Cycle Time, 16,380 FOUP-equivalent
-- [`route-master.md`](./route-master.md): M20 HBM4 12-Hi V3 Route와 P10 Packaging operation
-- [`fab-equipment-master.md`](./fab-equipment-master.md): M20 공정별 설비 대수와 Capacity reserve
+- [`fab-master.md`](./fab-master.md): Fab별 NORMAL WSPM·Cycle Time·목표 WIP
+- [`route-master.md`](./route-master.md): Fab별 Route와 FOUP 해제(Dicing) 경계
+- [`fab-equipment-master.md`](./fab-equipment-master.md): Fab별 공정별 설비 대수와 Capacity reserve
 
-이 V1은 실행 모델의 승인 기준이며 14,040개 활성 Wafer Lot·15,600개 FOUP Carrier 원장과 Watched 12개 3D live view에 연결되어 있다. 다만 `MODELED_BASELINE`이므로 실제 Fab의 실물 FOUP 보유량이나 MES 실적으로 해석하지 않는다. 실측 연결 전까지 수량은 이 문서의 계획 가정을 따른다.
+M20 V1은 실행 모델의 승인 기준이며 14,040개 활성 Wafer Lot·15,600개 FOUP Carrier 원장과 Watched 12개 3D live view에 연결되어 있다. M21·M22 V1은 이 문서로 목표 수량이 승인됐으나 실행 원장·bootstrap은 아직 구현되지 않았다. 다만 `MODELED_BASELINE`이므로 실제 Fab의 실물 FOUP 보유량이나 MES 실적으로 해석하지 않는다.
+
+이 문서의 §2~§13은 M20을 기준으로 서술한다. M21·M22의 fab-specific 수량·carrier 차이는 §14~§15에서 별도로 정의하며, 나머지 계약(FOUP 상태 머신, 원자적 전환, GET polling 불변식 등)은 3팹 공통이다.
 
 ## 2. 용어 정의
 
@@ -314,31 +317,160 @@ Watched Lot           12 (Occupied 안에 포함)
 
 현재 3D는 이동 의미가 있는 Watched 12개만 개별 객체로 표현한다. 나머지 15,588개를 좁은 장면에 압축 배치하면 실제 설비와 겹쳐 물리 배치로 오해될 수 있으므로 3D density 객체는 표시하지 않는다. Physical Fleet 15,600개와 Occupied 14,040개의 기준은 DB 원장 `LEDGER_EXACT`이며, 전체 Lot은 실행 추적 화면에서 10개씩 페이지 조회한다.
 
+## M21 FOUP·Lot 수량
+
+M21은 [`fab-master.md`](./fab-master.md#m21--dram)이 확정한 NORMAL 73,600 WSPM, 80일 cycle time(Wafer/FOUP 구간 70일 + Back-end 10일)에서 동일한 Little's Law 계약을 적용한다. FOUP 해제 경계는 M20과 동일하게 **P10.`DICING` 진입 시점**이다([`route-master.md`](./route-master.md#m21--dram) 문서 스텝 119).
+
+```text
+Daily Wafer Lot release   = 73,600 ÷ 30 ÷ 25 = 98.1 lots/day
+
+Target Occupied FOUP      = 98.1 × 70 = 6,869 FOUP
+Target Physical Fleet     = 6,869 ÷ 90% target occupancy ratio = 7,632 FOUP
+Non-process Pool          = 7,632 − 6,869 = 763 FOUP
+
+Back-end WIP equivalent   = 98.1 × 10 = 981 lot-equivalent
+End-to-end WIP equivalent = 6,869 + 981 = 7,850 FOUP-equivalent
+```
+
+| 지표 | M21 Target |
+|---|---:|
+| Occupied FOUP | 6,869 |
+| Physical FOUP Fleet | 7,632 |
+| Non-process Pool | 763 |
+| End-to-end WIP equivalent | 7,850 |
+
+### M21 Carrier 전환 경계
+
+M21은 스택 조립이 없으므로 M20의 `DICING_FRAME → DIE_TRAY → STACK_TRAY` 체인 대신 **`DICING_FRAME → DIE_TRAY → LEADFRAME_OR_SUBSTRATE`**로 끝난다.
+
+```text
+P09 Final Wafer Test (EDS)
+→ P10.DICING entry
+→ FOUP에서 wafer unload, DICING_FRAME에 mount
+→ FOUP empty return·cleaning·reuse
+→ Dicing / Singulation
+→ 양품 die를 DIE_TRAY로 이동
+→ LEADFRAME 또는 SUBSTRATE에 Die Attach
+→ Finished conventional package carrier(strip)
+```
+
+`CarrierMaster.carrierType`에 `LEADFRAME`·`SUBSTRATE`를 M21 전용으로 추가한다. M20의 `STACK_TRAY`, Base Die 합류 이벤트는 M21에 존재하지 않는다.
+
+### M21 수량 보존
+
+적층이 없으므로 M20의 "12 Memory KGD + 1 Base Die → 1 gross Stack" 같은 배수 관계가 없다. **1 양품 die = 1 package**로 수량이 그대로 보존되며, genealogy는 `parentLotId(wafer lot) → childLotId(die/package batch)` 단일 엣지로 충분하다.
+
+```text
+FOUP 1개(25 wafers) 기준 계획 기대값
+  = 25 × 759 양품 die/wafer × 98% 패키징 조립수율
+  = 18,595.5 양품 package 기대값
+```
+
+---
+
+## M22 FOUP·Lot 수량
+
+M22는 [`fab-master.md`](./fab-master.md#m22--nand)가 확정한 NORMAL 90,000 WSPM, 150일 cycle time(Wafer/FOUP 구간 130일 + Back-end 20일)에서 동일한 Little's Law 계약을 적용한다. FOUP 해제 경계는 M20·M21과 동일하게 **P10.`DICING` 진입 시점**이다([`route-master.md`](./route-master.md#m22--nand) 문서 스텝 240).
+
+```text
+Daily Wafer Lot release   = 90,000 ÷ 30 ÷ 25 = 120 lots/day
+
+Target Occupied FOUP      = 120 × 130 = 15,600 FOUP
+Target Physical Fleet     = 15,600 ÷ 90% target occupancy ratio = 17,333 FOUP
+Non-process Pool          = 17,333 − 15,600 = 1,733 FOUP
+
+Back-end WIP equivalent   = 120 × 20 = 2,400 lot-equivalent
+End-to-end WIP equivalent = 15,600 + 2,400 = 18,000 FOUP-equivalent
+```
+
+| 지표 | M22 Target |
+|---|---:|
+| Occupied FOUP | 15,600 |
+| Physical FOUP Fleet | 17,333 |
+| Non-process Pool | 1,733 |
+| End-to-end WIP equivalent | 18,000 |
+
+Wafer/FOUP 구간이 M20(90일)·M21(70일)보다 훨씬 긴 130일인 것은 321단 적층의 반복 공정 스텝 수(239스텝, `route-master.md` 참고)가 두 Fab보다 훨씬 많기 때문이며, Occupied FOUP·Physical Fleet가 M20보다 큰 것도 같은 이유다 — M22의 NORMAL WSPM(90,000)은 M20(117,000)보다 낮지만 WIP는 더 크다.
+
+### M22 Carrier 전환 경계
+
+M22는 M20처럼 다이 적층이 있지만 TSV가 아니라 와이어본딩 기반이다. `DICING_FRAME → DIE_TRAY → WIREBOND_STACK_CARRIER`로 전환한다.
+
+```text
+P09 Final Wafer Test (EDS)
+→ P10.DICING entry
+→ FOUP에서 wafer unload, DICING_FRAME에 mount
+→ FOUP empty return·cleaning·reuse
+→ Dicing / Singulation
+→ 양품 die를 DIE_TRAY로 이동
+→ 16개 양품 die를 WIREBOND_STACK_CARRIER에 순차 Die Attach·Wire Bond
+→ Finished 16-die package carrier
+```
+
+`CarrierMaster.carrierType`에 `WIREBOND_STACK_CARRIER`를 M22 전용으로 추가한다. M20의 Base Die 외부조달·합류 이벤트는 M22에 없다 — 16개 die는 모두 동일 wafer 계열의 양품 die다.
+
+### M22 수량 보존
+
+```text
+assemblablePackages = floor(availableGoodDie ÷ 16)
+remainingGoodDie     = availableGoodDie % 16
+
+FOUP 1개(25 wafers) 기준 계획 기대값
+  = 25 × 1,249 양품 die/wafer = 31,225 양품 die
+  assemblablePackages = floor(31,225 ÷ 16) = 1,951
+  remainingGoodDie     = 31,225 % 16 = 9
+  양품 package(96% 조립수율 적용) = 1,951 × 0.96 ≈ 1,873
+```
+
+잔여 die는 M20의 잔여 KGD와 동일하게 폐기하지 않고 다음 조립 batch로 genealogy를 이어간다.
+
+---
+
 ## 13. 검증 기준
+
+### M20
 
 - 일평균 신규 Wafer Lot은 156개, 월 release는 4,680개다.
 - 정상상태 Target Occupied FOUP는 14,040개다.
 - Modeled Physical Fleet 상태 합계는 15,600개다.
 - Watched 12개는 활성 Lot 14,040개에 포함된다.
-- Carrier별 활성 assignment는 최대 1개다.
-- P10 Dicing unload 이후 활성 FOUP assignment는 0개다.
-- FOUP은 empty return·cleaning 이후 다시 `AVAILABLE`이 될 수 있다.
 - 12 Memory KGD와 1 Base Die KGD가 1 gross Stack으로 수량 보존된다.
 - 90일 Wafer 구간과 15일 Back-end 구간의 합은 105일이다.
+
+### M21
+
+- 일평균 신규 Wafer Lot은 98.1개다.
+- 정상상태 Target Occupied FOUP는 6,869개, Physical Fleet는 7,632개다.
+- 1 양품 die = 1 package로 수량이 보존된다(적층 없음).
+- 70일 Wafer 구간과 10일 Back-end 구간의 합은 80일이다.
+
+### M22
+
+- 일평균 신규 Wafer Lot은 120개다.
+- 정상상태 Target Occupied FOUP는 15,600개, Physical Fleet는 17,333개다.
+- 16개 양품 die가 1 package로 수량 보존되며 잔여 die는 폐기하지 않는다.
+- 130일 Wafer 구간과 20일 Back-end 구간의 합은 150일이다.
+
+### 3팹 공통
+
+- Carrier별 활성 assignment는 최대 1개다.
+- Wafer Lot 하나에는 활성 FOUP assignment가 최대 1개다.
+- P10 Dicing unload 이후 활성 FOUP assignment는 0개다.
+- FOUP은 empty return·cleaning 이후 다시 `AVAILABLE`이 될 수 있다.
 - GET polling은 Lot·Carrier·Event 원장을 변경하지 않는다.
-- Steady-state bootstrap 재실행 시 중복 생성은 0개다.
+- Steady-state bootstrap 재실행 시 중복 생성은 0개다(구현 시).
 
 ## 14. 변경 관리
 
-다음 값이나 경계가 바뀌면 `FOUP_WIP_MASTER_M20_V2`로 올리고 Target·bootstrap·3D 집계를 함께 재생성한다.
+다음 값이나 경계가 바뀌면 해당 Fab의 버전(`FOUP_WIP_MASTER_M20_V2`/`_M21_V2`/`_M22_V2`)으로 올리고 Target·bootstrap·3D 집계를 함께 재생성한다.
 
-- NORMAL 117K WSPM 또는 모델 월 일수 30일
+- NORMAL WSPM 또는 모델 월 일수 30일
 - FOUP 적재량 25장
-- Wafer/FOUP 체류 90일 또는 Back-end 체류 15일
+- Wafer/FOUP 체류일수 또는 Back-end 체류일수
 - Target Fleet 점유율 90%
 - P10 Dicing carrier 해제 operation
-- 650 KGD/wafer, 12 dies/stack, assembly yield 90%
+- 완제품 환산 가정(M20: 650 KGD/wafer·12 dies/stack·조립수율 90% / M21: 759 양품 die/wafer·조립수율 98% / M22: 1,249 양품 die/wafer·16 dies/package·조립수율 96%)
 - 실제 FOUP inventory·scan·MES Cycle Time 연결
 - Lot·Carrier·Genealogy 스키마 또는 bootstrap 정책
 
-실측값이 연결되면 `MES_ACTUAL`을 Target 가정보다 우선하되 과거 시나리오 재현을 위해 V1 문서와 계산 계약은 보존한다.
+실측값이 연결되면 `MES_ACTUAL`을 Target 가정보다 우선하되 과거 시나리오 재현을 위해 V1 문서와 계산 계약은 보존한다. M21·M22는 이 문서로 목표 수량이 승인됐으나, §9(실행·이벤트 처리 계약)·§10(Bootstrap 정책)에 해당하는 실행 원장·`waferLots`/`lotCarrierAssignments` 컬렉션 연결은 별도 마이그레이션 구현이 필요하다.

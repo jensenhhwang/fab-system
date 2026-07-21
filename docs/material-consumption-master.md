@@ -21,17 +21,16 @@ M20 시나리오 WSPM
 
 ## 2. 적용 범위와 제품
 
-| 항목 | V3 기준 |
-|---|---|
-| Fab | M20 |
-| 기준 제품 | `M20-HBM4-12H-V2` |
-| 생산 기준 | NORMAL 117,000 wafer starts/month |
-| 웨이퍼 | 300 mm |
-| Route | `M20:HBM:V3`, `ROUTE_MASTER_M20_HBM_V3` |
-| 활성 자재 | 기존 HBM 공정사용량 43종 + Base Die 직접 구성품 1종 + utility 2종 |
-| M21·M22 | `TBD / NOT_MODELED` |
+| 항목 | M20 V3 기준 | M21 V1 기준 | M22 V1 기준 |
+|---|---|---|---|
+| Fab | M20 | M21 | M22 |
+| 기준 제품 | `M20-HBM4-12H-V2` | `M21-DDR5-16Gb-V1` | `M22-NAND321L-1Tb-TLC-V1` |
+| 생산 기준 | NORMAL 117,000 wafer starts/month | NORMAL 73,600 wafer starts/month | NORMAL 90,000 wafer starts/month |
+| 웨이퍼 | 300 mm | 300 mm | 300 mm |
+| Route | `M20:HBM:V3` | `M21:DRAM:V1` | `M22:NAND:V1` |
+| 활성 자재 | 기존 HBM 공정사용량 43종 + Base Die 1종 + utility 2종 | M20 프런트엔드 공유 자재 + conventional 패키징 신규 자재 | M20 프런트엔드 공유 자재(스케일 조정) + NAND 스택 전용 신규 자재 |
 
-V3 마이그레이션은 기존 마스터에 Base Die와 P08/P10 후공정 자재 5종을 추가한다. Base Die는 활성 수요를 계산하고, blade·tape·tray 4종은 원단위 검증 전 `RATE_TBD`로 등록한다.
+V3 마이그레이션은 기존 마스터에 Base Die와 P08/P10 후공정 자재 5종을 추가한다. Base Die는 활성 수요를 계산하고, blade·tape·tray 4종은 원단위 검증 전 `RATE_TBD`로 등록한다. M21·M22는 이 문서 §M21·§M22에서 최초로 정의하며, M20 §5의 값을 그대로 복사하지 않고 각 Fab의 route pass count로 재도출하거나(P02·P03·P04 등 방문수가 다른 자재) 물리 공정이 동일한 항목만 재사용한다(P01·P05·P06 등 방문수가 같은 자재).
 
 ## 3. 원단위 필드 계약
 
@@ -306,6 +305,90 @@ NORMAL wafer-start 호환값 = 0.0653333 kg/wafer × 117,000 = 7,644 kg/month
 
 EMC는 향후 `goodStacks × kgPerStack`으로 교체한다. 현재 값은 HBM4 12-Hi 100% 제품 믹스로 이름을 바꿨지만, 수치 자체는 legacy HBM 환산값이므로 `CALIBRATION_REQUIRED`다. 8-Hi 값을 1.5배 하지 않고 실제 stack당 원단위로 교체한다.
 
+## M21 wafer당 자재 원단위
+
+M21 프런트엔드(P01~P07, P09)는 M20과 동일한 물리 공정이므로([Applied Materials](https://www.appliedmaterials.com/us/en/newsroom/blogs/hbm--materials-innovation-propels-high-bandwidth-memory-into-the.html)), route pass count가 같은 자재(P01 4회, P02/P03/P04/P07 27회, P06 5회)는 M20 §5의 `equivalentPerWafer`를 그대로 재사용하고 M21 NORMAL WSPM(73,600)으로 월소요량만 다시 계산한다. P09는 M20이 2회(1차+2차)인데 M21은 1회(EDS만)라 관련 자재는 절반으로 재산정한다.
+
+### M21.1 M20과 공유하는 프런트엔드 자재 (대표 항목, `equivalentPerWafer` 동일 재사용)
+
+| 자재 | 공정 | wafer당 환산량(M20과 동일) | M21 NORMAL 월소요 |
+|---|---|---:|---:|
+| CHM-007 ArF PR | P03 | 0.0132222 | 973.2 캔 |
+| CHM-013 Post-CMP 세정액 | P07 | 0.00964444 | 710.0 드럼 |
+| CSM-001 Ceria Slurry | P07 | 0.0443333 | 3,263.7 캔 |
+| GAS-001 N₂ | P01/P02/P03/P07 | 1.06711(TSV 관련 P08 몫 제외 전 M20값 — 재계산 필요, `CALIBRATION_REQUIRED`) | — |
+| GAS-004 SiH₄ | P02 | 0.0140000 | 1,030.4 봄베 |
+| GAS-008 O₂ | P01 | 0.0622222 | 4,579.5 봄베 |
+
+전체 목록은 M20 §5.1·5.2·5.4의 P01/P02/P03/P04/P06/P07 관련 행을 동일하게 적용하되, GAS-001(N₂)처럼 M20에서 P08 공정도 함께 태그된 항목은 P08 몫을 제외한 재계산이 필요하다(`CALIBRATION_REQUIRED`). 이 표는 대표 항목만 예시했고, 나머지 항목은 같은 방식으로 마이그레이션 시 전개한다.
+
+### M21.2 제거되는 TSV 전용 자재
+
+M21에는 P08(TSV)이 없으므로 아래는 `0 / NOT_MODELED`다.
+
+| 자재 | 사유 |
+|---|---|
+| CHM-011 Cu ECD 도금액 | TSV wafer plate 전용 |
+| CSM-012 SnAg μBump | TSV wafer-lot 전용 |
+| CSM-016 Edge Trim Blade/Wheel | P08.`EDGE_TRIM` 전용 |
+| PKG-LBD-001 Logic Base Die KGD | M20 HBM 스택 전용 외부 조달 자재, M21에 대응 개념 없음 |
+| CSM-014 TC-NCF, PKG-002 DAF(스택 배합) | HBM 스택 본딩 배합. M21은 §M21.3의 단일 다이 DAF로 대체 |
+
+### M21.3 신규 — Conventional 단일 다이 패키징 자재
+
+M21 P10은 리드프레임/기판 실장이라 M20의 스택 조립 자재 대신 새 자재군이 필요하다([SK hynix Newsroom](https://news.skhynix.com/semiconductor-back-end-process-episode-6-conventional-packages/); [TI SNOA286](https://www.ti.com/lit/pdf/SNOA286)).
+
+| 자재 | 소비점 | native basis | 재고 단위 | 상태 |
+|---|---|---|---|---|
+| PKG-LF-001 리드프레임(Cu/Ag/NiPd 도금) | P10.`DIE_ATTACH` | die당 1개 | 개 | `RATE_TBD` |
+| PKG-DA-001 Die Attach 접착제(에폭시/시아네이트 에스터) 또는 단일-다이 DAF | P10.`DIE_ATTACH` | die당 native quantity | roll 또는 캔 | `RATE_TBD` |
+| PKG-WB-001 Au 본딩 와이어 | P10.`WIRE_BOND` | die당 wire 수 × pitch | spool | `RATE_TBD` |
+| PKG-EMC-LF-001 리드프레임용 EMC | P10.`MOLDING` | package당 kg | kg | `RATE_TBD` |
+| PKG-SOL-001 솔더볼(BGA) 또는 리드 도금액 | P10.`LEAD_FINISH` | package당 native quantity | kg 또는 리터 | `RATE_TBD` |
+| CSM-010 DRAM Probe Card | P09 | touchdown / rated touch life | 장 | `RATE_TBD` — FormFactor 공개 사례는 1~6 touchdown/wafer([FormFactor](https://www.formfactor.com/applications/high-volume-test-on-wafer/memory-test/), [FormFactor PH150](https://www.formfactor.com/press-release/formfactor-first-to-introduce-six-touchdown-probe-card-to-test-300mm-dram-wafers/)). M20의 CSM-009(6장/월 legacy 호환값)를 그대로 쓰지 않고 `touchesPerWafer(1~6) ÷ ratedTouchLife`로 별도 산정한다 |
+
+이 6개 자재는 정확한 vendor 원단위가 아직 없어 `RATE_TBD`다. 실제 조달 계산에 쓰려면 리드프레임/기판 vendor spec과 wire bonder 레시피가 먼저 확정되어야 한다.
+
+---
+
+## M22 wafer당 자재 원단위
+
+M22는 route pass count가 M20과 크게 다르다(P02 162 vs 27, P03 24 vs 27, P04 30 vs 27 등, [`route-master.md`](./route-master.md#m22--nand) 참고). 같은 native basis(예: wafer-CVD visit)를 쓰는 자재는 **pass count 비율로 `equivalentPerWafer`를 재스케일**하고, 3D NAND 고유 자재는 새로 추가한다.
+
+### M22.1 M20 대비 재스케일 자재 (대표 항목)
+
+P02(CVD) 계열은 M20 27회 → M22 162회, 배율 ×6.0 — 321단 스택 증착 반복이 원인이며 오류가 아니다.
+
+| 자재 | 공정 | M20 equivalentPerWafer | 재스케일 배율 | M22 equivalentPerWafer | M22 NORMAL 월소요 |
+|---|---|---:|---:|---:|---:|
+| GAS-004 SiH₄ | P02 | 0.0140000 | ×6.0(162/27) | 0.084000 | 7,560 봄베 |
+| GAS-014 TEOS | P02 | 0.0147778 | ×6.0 | 0.088667 | 7,980 드럼 |
+| CHM-007 ArF PR | P03 | 0.0132222 | ×0.889(24/27) | 0.011753 | 1,057.8 캔 |
+| CHM-002 과산화수소 | P01/P04 | 0.0362444 | ×1.111(30/27, P04 기준) | 0.040272 | 3,624.5 드럼 |
+| GAS-011 CF₄ | P04 | 0.00684444 | ×1.111 | 0.007605 | 684.5 봄베 |
+| CSM-001 Ceria Slurry | P07 | 0.0443333 | ×0.370(10/27) | 0.016407 | 1,476.6 캔 |
+
+이 표는 대표 항목만 예시했다. 나머지 P01/P02/P03/P04/P06/P07 관련 자재도 같은 pass-count 비율 재스케일 방법을 적용해 전개한다. 이 재스케일은 "동일 native quantity per visit"를 가정한 1차 근사이며, 실제 NAND 증착 레시피(막 두께·시간)가 DRAM 증착과 다를 수 있으므로 전 항목 `CALIBRATION_REQUIRED`다.
+
+### M22.2 제거·비활성 자재
+
+P08(TSV), P05(이온주입 — 주변 CMOS에만 소량 필요하나 셀 어레이 자체엔 불필요), HBM 스택 조립 자재(CHM-011, CSM-012, CSM-014, PKG-001/002, PKG-LBD-001)는 M22에 적용하지 않는다.
+
+### M22.3 신규 — 3D NAND 스택·게이트 리플레이스먼트 자재
+
+| 자재 | 소비점 | 분류 | 근거 |
+|---|---|---|---|
+| GAS-016 BDEAS | P02(스택 증착) | 산화막/질화막 ALD Si 전구체 | BDEAS는 SiO₂·SiₓNᵧ ALD에 널리 쓰이는 대표 전구체([ScienceDirect](https://www.sciencedirect.com/science/article/pii/S1369800125009205)) — `equivalentPerWafer`는 D_pair(161) 기준 신규 도출 필요, `RATE_TBD` |
+| CHM-006 H₃PO₄(인산) | P04(게이트 치환, deck당 1) | 희생 질화막 습식 제거(hot phosphoric acid strip) | 3D NAND 게이트 리플레이스먼트의 표준 습식 공정([AZoM](https://www.azom.com/article.aspx?ArticleID=20124)) — deck 수(3) 기준 신규 도출 필요, `RATE_TBD` |
+| GAS-007 WF₆ | P06(게이트 치환, deck당 1) | 텅스텐 워드라인 충진 | 321단(V9)은 텅스텐 워드라인 유지, 375단 이후에야 몰리브덴 일부 전환 예정([wccftech](https://wccftech.com/sk-hynix-races-samsung-to-400-layer-nand-must-abandon-tungsten-as-stacking-hits-a-wall/)) — deck 수(3) 기준 신규 도출 필요, `RATE_TBD` |
+| PKG-WB-002 Au 본딩 와이어(16단) | P10.`NAND_PACKAGE` | 16-die 와이어본딩 적층 | die당 wire, 16단이라 M21(단일 다이)의 16배 규모. `RATE_TBD` |
+| PKG-DA-002 다이 어태치 필름(DAF, 박형) | P10.`NAND_PACKAGE` | 16단 적층용 초박형 DAF(5~10μm급) | IEEE 공개 사례의 얇은 다이(15~25μm) 적층용 DAF 두께 기준([IEEE](https://ieeexplore.ieee.org/document/8277544/)) — `RATE_TBD` |
+| PKG-EMC-002 스택 몰딩 컴파운드 | P10.`NAND_PACKAGE` | 16단 스택 몰딩 | M20 PKG-001(EMC)과 별도 배합, `RATE_TBD` |
+
+이 6개 자재는 D_pair·deck 수 기반 정량 원단위가 아직 없어 전부 `RATE_TBD`다. BDEAS·H₃PO₄·WF₆ 활성화가 M22 자재 마스터의 다음 우선순위다.
+
+---
+
 ## 9. M20 비활성 자재
 
 아래 자재는 현재 M20 계산에서 `0 / NOT_MODELED`로 처리한다. 이는 물리적으로 소비량이 0이라는 뜻이 아니라 Route·recipe와 연결되지 않아 조달 계산에서 제외한다는 뜻이다.
@@ -313,7 +396,7 @@ EMC는 향후 `goodStacks × kgPerStack`으로 교체한다. 현재 값은 HBM4 
 | 자재 | 현재 분류 | 후속 조치 |
 |---|---|---|
 | GAS-005 NH₃ | M20 적용 후보 | P02 recipe 확인 |
-| GAS-007 WF₆ | M20 적용 후보 | DRAM contact/W plug 적용 여부 확인 |
+| GAS-007 WF₆ | M20 적용 후보, **M22는 §M22.3에서 활성화**(게이트 리플레이스먼트 텅스텐 충진, `RATE_TBD`) | M20 DRAM contact/W plug 적용 여부는 별도 확인 |
 | GAS-012 SF₆ | M20 적용 후보 | P04 etch recipe 확인 |
 | GAS-015 DCS | M20 적용 후보 | P02 DRAM base-die recipe 확인 |
 | GAS-021 BF₃ | M20 적용 후보 | P05 implant mix 확인 |
@@ -322,37 +405,54 @@ EMC는 향후 `goodStacks × kgPerStack`으로 교체한다. 현재 값은 HBM4 
 | GAS-025 HBr | M20 적용 후보 | P04 high-aspect etch 적용 확인 |
 | GAS-026 C₄F₈ | M20 적용 후보 | P04 oxide etch 적용 확인 |
 | CHM-012 EBR | M20 적용 후보 | P03 coat recipe 확인 |
-| GAS-016 BDEAS | M22 중심 | M20 recipe 근거 전까지 제외 |
-| CHM-006 H₃PO₄ | M22 중심 | M20 recipe 근거 전까지 제외 |
-| CSM-010 DRAM Probe Card | M21 전용 | M20은 CSM-009 사용 |
+| GAS-016 BDEAS | **M22에서 §M22.3으로 활성화**(스택 ALD Si 전구체, `RATE_TBD`) | M20 recipe 근거는 여전히 없어 M20은 계속 제외 |
+| CHM-006 H₃PO₄ | **M22에서 §M22.3으로 활성화**(게이트 리플레이스먼트 습식 스트립, `RATE_TBD`) | M20 recipe 근거는 여전히 없어 M20은 계속 제외 |
+| CSM-010 DRAM Probe Card | **M21에서 §M21.3으로 활성화**(`RATE_TBD`) | M20은 계속 CSM-009 사용 |
 
 비활성 후보를 다른 자재의 비율로 임의 보간하지 않는다. 활성화할 때 `equivalentPerWafer`, 변환식, 조건, 출처와 신뢰도를 함께 추가한다.
 
 ## 10. 구현 연결 규칙
 
-1. M20 NORMAL `monthlyQty`는 `equivalentPerWafer × 117,000`으로 생성한다.
+1. Fab별 NORMAL `monthlyQty`는 `equivalentPerWafer × 해당 Fab NORMAL WSPM`(M20 117,000 / M21 73,600 / M22 90,000)으로 생성한다.
 2. 일일 생산실적이 있으면 `equivalentPerWafer × actual wafer starts`로 당일 소요량을 계산한다.
-3. 실적이 없으면 `equivalentPerWafer × 3,900 wafer/day`를 계획값으로 사용한다.
+3. 실적이 없으면 `equivalentPerWafer × 해당 Fab 일평균 wafer starts`(M20 3,900 / M21 2,453.3 / M22 3,000)를 계획값으로 사용한다.
 4. UPLIFT/NAMEPLATE/EXPANSION은 같은 원단위에 해당 시나리오 WSPM을 적용한다.
 5. 교체성 자재는 연속 환산값과 정수 구매·교체 필요량을 함께 반환한다.
 6. DB `processUsage.monthlyQty`는 화면 호환을 위한 materialized value이며 원단위보다 우선하지 않는다.
-7. MES `CONSUMED` 원장이 충분히 쌓이면 30/90일 실적 ePW를 별도로 계산하고 V3 계획값과 차이를 표시한다.
+7. MES `CONSUMED` 원장이 충분히 쌓이면 30/90일 실적 ePW를 별도로 계산하고 계획값과 차이를 표시한다.
+8. M21·M22의 `equivalentPerWafer`는 M20 값을 pass-count 비율로 재스케일하거나(§M21.1, §M22.1) 새로 도출한(§M21.3, §M22.3) 값이며, 두 경우 모두 마이그레이션 전 `CALIBRATION_REQUIRED`·`RATE_TBD` 표시를 유지한다.
 
 ## 11. 보정 우선순위
 
 1. PR coat별 dispense와 P03 mask mix
 2. CMP recipe별 slurry flow·polish time·P07 방문수
 3. 가스별 cylinder 용량을 Nm³ 또는 kg으로 표준화
-4. Probe Card의 touchdowns/wafer와 rated touch life
+4. Probe Card의 touchdowns/wafer와 rated touch life (M20 CSM-009, M21 CSM-010 공통)
 5. CMP Pad·PVD Target·Quartz Kit의 tool driver와 교체수명
-6. KGD/wafer, HBM4 12-Hi 적층수율, NCF·DAF·EMC stack 원단위
+6. KGD/wafer, HBM4 12-Hi 적층수율, NCF·DAF·EMC stack 원단위 (M20)
 7. UPW 공급·회수 유량과 wafer pass별 사용량
+8. M21 conventional 패키징 자재(리드프레임·Au wire·EMC·솔더) vendor spec 확보
+9. M22 NAND 스택 자재(BDEAS·H₃PO₄·WF₆) deck 수 기반 원단위 도출과 wire bonder/molding UPH 확보
 
 ## 12. 공개 근거
 
+### M20
 - [Applied Materials — HBM Materials Engineering Steps](https://ir.appliedmaterials.com/static-files/2f334f9c-6170-42ed-98b5-24dc11d946e9) — DRAM 700+ 스텝, TSV·CVD·PVD·Cu plating·CMP·bump 공정
 - [300 mm photoresist coating patent](https://patents.google.com/patent/KR20210134208A/en) — 일반 PR dispense 약 0.6~1.5 cc/300 mm wafer와 저감 예시
 - [Slurry Injection Schemes in CMP](https://pmc.ncbi.nlm.nih.gov/articles/PMC6189973/) — 300 mm CMP slurry의 대표 유량 범위와 낮은 slurry 이용효율
 - [FormFactor — One-touchdown 300 mm Probe Solution](https://www.formfactor.com/press-release/formfactor-ships-industrys-first-one-touchdown-300-mm-wafer-probe-solution-for-burn-in-test-applications/) — 300 mm wafer 전체 one-touchdown DRAM test 사례
 - [Strategic Optimization of Water Reuse in Wafer Fabs](https://doi.org/10.1016/j.wen.2018.07.004) — Fab water mass-balance와 회수·재이용 경계
 - [SK hynix — World's First 12-Layer HBM4 Samples](https://news.skhynix.com/sk-hynix-ships-world-first-12-layer-hbm4-samples-to-customers/) — M20 기준 제품의 HBM4 12단·36GB 공개 근거
+
+### M21
+- [SK hynix Newsroom — Semiconductor Back-End Process Episode 6: Conventional Packages](https://news.skhynix.com/semiconductor-back-end-process-episode-6-conventional-packages/) — conventional 8단계 패키징 자재 흐름
+- [TI — Semiconductor Packaging Assembly Technology (SNOA286)](https://www.ti.com/lit/pdf/SNOA286) — Die Attach·Wire Bond·Mold Compound·Lead Finish 물성·공정 파라미터
+- [Caplinq — Leadframes](https://www.caplinq.com/leadframes.html) — 리드프레임 도금 종류(Bare Cu/Ag/NiPd/PPF)
+- [Kyocera — Epoxy Molding Compounds for Semiconductors](https://global.kyocera.com/prdct/chem/list/emc/) — 리드프레임 패키지 전용 EMC 라인업
+- [FormFactor — High Volume Memory Test](https://www.formfactor.com/applications/high-volume-test-on-wafer/memory-test/) / [FormFactor — Six-Touchdown Probe Card for 300mm DRAM (PH150)](https://www.formfactor.com/press-release/formfactor-first-to-introduce-six-touchdown-probe-card-to-test-300mm-dram-wafers/) — DRAM probe card touchdown 범위(1~6)
+
+### M22
+- [ScienceDirect — BDEAS ALD Precursor](https://www.sciencedirect.com/science/article/pii/S1369800125009205) — SiO₂·SiₓNᵧ ALD Si 전구체로서의 BDEAS
+- [AZoM — 3D NAND Fabrication and Hot Phosphoric Acid Nitride Strip](https://www.azom.com/article.aspx?ArticleID=20124) — H₃PO₄ 습식 스트립·텅스텐 게이트 충진 공정
+- [wccftech — SK Hynix 400+ Layer NAND, Tungsten to Molybdenum](https://wccftech.com/sk-hynix-races-samsung-to-400-layer-nand-must-abandon-tungsten-as-stacking-hits-a-wall/) — 텅스텐 유지 시점(321단)과 몰리브덴 전환(375단 이후) 경계
+- [IEEE — Yauw et al., Leading Edge Die Stacking and Wire Bonding Technologies](https://ieeexplore.ieee.org/document/8277544/) — 16단 와이어본딩 DAF 두께·다이 두께 사례
