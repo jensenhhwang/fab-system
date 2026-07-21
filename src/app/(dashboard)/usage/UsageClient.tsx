@@ -13,6 +13,7 @@ import LotRouteTrackerCard from "./LotRouteTrackerCard";
 import type { LiveFoupView } from "@/components/ProcessFlow3D";
 import type { M20FabEquipmentMaster } from "@/lib/m20-equipment-capacity-plan";
 import M20FabEquipmentMasterCard from "./M20FabEquipmentMasterCard";
+import M20NodeDensityCard from "./M20NodeDensityCard";
 import type { FoupFleetProjection } from "@/lib/foup-wip-model";
 
 const ProcessFlow3D = dynamic(() => import("@/components/ProcessFlow3D"), { ssr: false });
@@ -408,6 +409,7 @@ export default function UsageClient({
                   setSelectedProc((current) => current === processCode ? null : processCode);
                 }}
               />
+              <M20NodeDensityCard fabId="M20" product="HBM" />
               <div className="grid items-start gap-3 xl:grid-cols-2">
                 <FabThroughputDial fabId="M20" foupFleet={foupFleet} />
                 <LotRouteTrackerCard fabId="M20" product="HBM" occupiedFoup={foupFleet?.actual.occupied} onLiveFoupsChange={setLiveFoups} />

@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FabId } from "@/lib/fab-domain";
 import type { FoupFleetProjection } from "@/lib/foup-wip-model";
+import { M20_PRODUCTION_SCENARIOS, targetWipCount } from "@/lib/fab-scenario";
 
 type ScenarioResponse = {
   scenario: { id: FabId; nominalWspm: number; utilization: number };
@@ -30,6 +31,8 @@ export default function FabThroughputDial({ fabId, foupFleet }: { fabId: FabId; 
   const [lookupResult, setLookupResult] = useState<LotLookupResponse | null>(null);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const flashTimer = useRef<number | null>(null);
 
   const loadScenario = useCallback(async () => {
     const response = await fetch(`/api/fab-scenario/${fabId}`, { cache: "no-store" });
@@ -67,12 +70,17 @@ export default function FabThroughputDial({ fabId, foupFleet }: { fabId: FabId; 
       const data = await response.json() as ScenarioResponse;
       setScenario(data);
       void loadWip();
+      setJustSaved(true);
+      if (flashTimer.current) window.clearTimeout(flashTimer.current);
+      flashTimer.current = window.setTimeout(() => setJustSaved(false), 1200);
     } catch (err) {
       setError(err instanceof Error ? err.message : "저장 실패");
     } finally {
       setSaving(false);
     }
   };
+
+  useEffect(() => () => { if (flashTimer.current) window.clearTimeout(flashTimer.current); }, []);
 
   const runLookup = async () => {
     const code = lookupCode.trim();
@@ -94,7 +102,12 @@ export default function FabThroughputDial({ fabId, foupFleet }: { fabId: FabId; 
   if (!scenario) return <div className="rounded-xl border border-[#D8DDE2] bg-white p-4 text-[11px] text-[#999]">가동 정보 로딩 중…</div>;
 
   const displayUtilization = sliderValue ?? scenario.scenario.utilization;
-  const targetWip = scenario.targetWip ?? 0;
+  const previewValue = sliderValue !== null && sliderValue !== scenario.scenario.utilization ? sliderValue : null;
+  const isPreviewing = previewValue !== null;
+  const previewUtilizedWspm = previewValue !== null ? scenario.scenario.nominalWspm * previewValue : scenario.metrics.utilizedWspm;
+  const targetWip = previewValue !== null
+    ? targetWipCount(previewUtilizedWspm, M20_PRODUCTION_SCENARIOS.NORMAL.cycleTimeDays)
+    : (scenario.targetWip ?? 0);
   const occupiedTarget = foupFleet?.target.occupied ?? wip?.occupiedTarget ?? 0;
   const currentWip = foupFleet?.actual.occupied ?? wip?.currentWip ?? 0;
   const wipRatio = occupiedTarget > 0 ? Math.min(1, currentWip / occupiedTarget) : 0;
@@ -105,6 +118,7 @@ export default function FabThroughputDial({ fabId, foupFleet }: { fabId: FabId; 
       <div className="flex items-center justify-between">
         <div className="text-[10px] font-black uppercase tracking-[0.08em] text-[#7D8790]">FAB THROUGHPUT · {fabId}</div>
         {saving && <span className="text-[9px] text-[#999]">저장 중…</span>}
+        {!saving && isPreviewing && <span className="text-[9px] font-bold text-sky-600">미리보기 · 손 떼면 저장</span>}
       </div>
       <div className="mt-2 flex items-center gap-3">
         <input
@@ -114,16 +128,17 @@ export default function FabThroughputDial({ fabId, foupFleet }: { fabId: FabId; 
           onTouchEnd={(event) => void commitUtilization(Number((event.target as HTMLInputElement).value))}
           className="flex-1"
         />
-        <span className="w-14 text-right font-mono text-sm font-black text-[#20262D]">{Math.round(displayUtilization * 100)}%</span>
+        <span className={`w-14 text-right font-mono text-sm font-black transition-colors ${isPreviewing ? "text-sky-600" : "text-[#20262D]"}`}>{Math.round(displayUtilization * 100)}%</span>
       </div>
+      <div className="mt-1 text-[9px] leading-4 text-[#8A929A]">가동률(Utilization)을 조절하면 아래 WSPM·목표 WIP가 즉시 재계산됩니다.</div>
       <div className="mt-3 grid grid-cols-2 gap-3 text-[10px]">
         <div>
           <div className="text-[#8A929A]">가동 투입 WSPM</div>
-          <div className="mt-0.5 font-mono text-sm font-black text-[#303840]">{Math.round(scenario.metrics.utilizedWspm).toLocaleString()}</div>
+          <div className={`mt-0.5 rounded font-mono text-sm font-black text-[#303840] transition-colors duration-700 ${justSaved ? "bg-sky-100" : "bg-transparent"} ${isPreviewing ? "text-sky-600" : ""}`}>{Math.round(previewUtilizedWspm).toLocaleString()}</div>
         </div>
         <div>
           <div className="text-[#8A929A]">105일 참조 목표 WIP</div>
-          <div className="mt-0.5 font-mono text-sm font-black text-[#303840]">{targetWip.toLocaleString()} FOUP-eq</div>
+          <div className={`mt-0.5 rounded font-mono text-sm font-black text-[#303840] transition-colors duration-700 ${justSaved ? "bg-sky-100" : "bg-transparent"} ${isPreviewing ? "text-sky-600" : ""}`}>{targetWip.toLocaleString()} FOUP-eq</div>
         </div>
       </div>
       <div className="mt-3">
