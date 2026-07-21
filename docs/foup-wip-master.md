@@ -319,25 +319,25 @@ Watched Lot           12 (Occupied 안에 포함)
 
 ## M21 FOUP·Lot 수량
 
-M21은 [`fab-master.md`](./fab-master.md#m21--dram)이 확정한 NORMAL 73,600 WSPM, 80일 cycle time(Wafer/FOUP 구간 70일 + Back-end 10일)에서 동일한 Little's Law 계약을 적용한다. FOUP 해제 경계는 M20과 동일하게 **P10.`DICING` 진입 시점**이다([`route-master.md`](./route-master.md#m21--dram) 문서 스텝 119).
+M21은 [`fab-master.md`](./fab-master.md#m21--dram)이 확정한 NORMAL 184,000 WSPM(M16급 실측 규모 근거), 80일 cycle time(Wafer/FOUP 구간 70일 + Back-end 10일)에서 동일한 Little's Law 계약을 적용한다. FOUP 해제 경계는 M20과 동일하게 **P10.`DICING` 진입 시점**이다([`route-master.md`](./route-master.md#m21--dram) 문서 스텝 119).
 
 ```text
-Daily Wafer Lot release   = 73,600 ÷ 30 ÷ 25 = 98.1 lots/day
+Daily Wafer Lot release   = 184,000 ÷ 30 ÷ 25 = 245.3 lots/day
 
-Target Occupied FOUP      = 98.1 × 70 = 6,869 FOUP
-Target Physical Fleet     = 6,869 ÷ 90% target occupancy ratio = 7,632 FOUP
-Non-process Pool          = 7,632 − 6,869 = 763 FOUP
+Target Occupied FOUP      = 245.3 × 70 = 17,173 FOUP
+Target Physical Fleet     = 17,173 ÷ 90% target occupancy ratio = 19,081 FOUP
+Non-process Pool          = 19,081 − 17,173 = 1,908 FOUP
 
-Back-end WIP equivalent   = 98.1 × 10 = 981 lot-equivalent
-End-to-end WIP equivalent = 6,869 + 981 = 7,850 FOUP-equivalent
+Back-end WIP equivalent   = 245.3 × 10 = 2,453 lot-equivalent
+End-to-end WIP equivalent = 17,173 + 2,453 = 19,626 FOUP-equivalent
 ```
 
 | 지표 | M21 Target |
 |---|---:|
-| Occupied FOUP | 6,869 |
-| Physical FOUP Fleet | 7,632 |
-| Non-process Pool | 763 |
-| End-to-end WIP equivalent | 7,850 |
+| Occupied FOUP | 17,173 |
+| Physical FOUP Fleet | 19,081 |
+| Non-process Pool | 1,908 |
+| End-to-end WIP equivalent | 19,626 |
 
 ### M21 Carrier 전환 경계
 
@@ -370,27 +370,27 @@ FOUP 1개(25 wafers) 기준 계획 기대값
 
 ## M22 FOUP·Lot 수량
 
-M22는 [`fab-master.md`](./fab-master.md#m22--nand)가 확정한 NORMAL 90,000 WSPM, 150일 cycle time(Wafer/FOUP 구간 130일 + Back-end 20일)에서 동일한 Little's Law 계약을 적용한다. FOUP 해제 경계는 M20·M21과 동일하게 **P10.`DICING` 진입 시점**이다([`route-master.md`](./route-master.md#m22--nand) 문서 스텝 240).
+M22는 [`fab-master.md`](./fab-master.md#m22--nand)가 확정한 NORMAL 108,000 WSPM(NAND 단일 라인 실측 규모 근거), 150일 cycle time(Wafer/FOUP 구간 130일 + Back-end 20일)에서 동일한 Little's Law 계약을 적용한다. FOUP 해제 경계는 M20·M21과 동일하게 **P10.`DICING` 진입 시점**이다([`route-master.md`](./route-master.md#m22--nand) 문서 스텝 240).
 
 ```text
-Daily Wafer Lot release   = 90,000 ÷ 30 ÷ 25 = 120 lots/day
+Daily Wafer Lot release   = 108,000 ÷ 30 ÷ 25 = 144 lots/day
 
-Target Occupied FOUP      = 120 × 130 = 15,600 FOUP
-Target Physical Fleet     = 15,600 ÷ 90% target occupancy ratio = 17,333 FOUP
-Non-process Pool          = 17,333 − 15,600 = 1,733 FOUP
+Target Occupied FOUP      = 144 × 130 = 18,720 FOUP
+Target Physical Fleet     = 18,720 ÷ 90% target occupancy ratio = 20,800 FOUP
+Non-process Pool          = 20,800 − 18,720 = 2,080 FOUP
 
-Back-end WIP equivalent   = 120 × 20 = 2,400 lot-equivalent
-End-to-end WIP equivalent = 15,600 + 2,400 = 18,000 FOUP-equivalent
+Back-end WIP equivalent   = 144 × 20 = 2,880 lot-equivalent
+End-to-end WIP equivalent = 18,720 + 2,880 = 21,600 FOUP-equivalent
 ```
 
 | 지표 | M22 Target |
 |---|---:|
-| Occupied FOUP | 15,600 |
-| Physical FOUP Fleet | 17,333 |
-| Non-process Pool | 1,733 |
-| End-to-end WIP equivalent | 18,000 |
+| Occupied FOUP | 18,720 |
+| Physical FOUP Fleet | 20,800 |
+| Non-process Pool | 2,080 |
+| End-to-end WIP equivalent | 21,600 |
 
-Wafer/FOUP 구간이 M20(90일)·M21(70일)보다 훨씬 긴 130일인 것은 321단 적층의 반복 공정 스텝 수(239스텝, `route-master.md` 참고)가 두 Fab보다 훨씬 많기 때문이며, Occupied FOUP·Physical Fleet가 M20보다 큰 것도 같은 이유다 — M22의 NORMAL WSPM(90,000)은 M20(117,000)보다 낮지만 WIP는 더 크다.
+Wafer/FOUP 구간이 M20(90일)·M21(70일)보다 훨씬 긴 130일인 것은 321단 적층의 반복 공정 스텝 수(239스텝, `route-master.md` 참고)가 두 Fab보다 훨씬 많기 때문이며, Occupied FOUP·Physical Fleet가 M20보다 큰 것도 같은 이유다 — M22의 NORMAL WSPM(108,000)은 M20(117,000)과 비슷한 수준인데도 WIP는 더 크다.
 
 ### M22 Carrier 전환 경계
 
@@ -439,15 +439,15 @@ FOUP 1개(25 wafers) 기준 계획 기대값
 
 ### M21
 
-- 일평균 신규 Wafer Lot은 98.1개다.
-- 정상상태 Target Occupied FOUP는 6,869개, Physical Fleet는 7,632개다.
+- 일평균 신규 Wafer Lot은 245.3개다.
+- 정상상태 Target Occupied FOUP는 17,173개, Physical Fleet는 19,081개다.
 - 1 양품 die = 1 package로 수량이 보존된다(적층 없음).
 - 70일 Wafer 구간과 10일 Back-end 구간의 합은 80일이다.
 
 ### M22
 
-- 일평균 신규 Wafer Lot은 120개다.
-- 정상상태 Target Occupied FOUP는 15,600개, Physical Fleet는 17,333개다.
+- 일평균 신규 Wafer Lot은 144개다.
+- 정상상태 Target Occupied FOUP는 18,720개, Physical Fleet는 20,800개다.
 - 16개 양품 die가 1 package로 수량 보존되며 잔여 die는 폐기하지 않는다.
 - 130일 Wafer 구간과 20일 Back-end 구간의 합은 150일이다.
 

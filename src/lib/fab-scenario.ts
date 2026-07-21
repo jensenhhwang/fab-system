@@ -43,9 +43,11 @@ export const FAB_SCENARIO: readonly FabScenario[] = [
   // FAB_MASTER_M20_V1: 명목 130K, NORMAL 평균 운영 117K(90%). 실제 M20 내부 생산실적이 아닌 모델 기준.
   { id: "M20", name: "HBM Fab", product: "HBM", nominalWspm: 130_000, utilization: 0.90, waferYield: 0.85,
     marketReferenceWspm: 450_000, dimensionsM: { length: 330, width: 160, height: 105 }, color: "#EA002C" },
-  { id: "M21", name: "DRAM Fab", product: "DRAM", nominalWspm: 80_000, utilization: 0.92, waferYield: 0.90,
+  // FAB_MASTER_M21_V1: 명목 200K, NORMAL 평균 운영 184K(92%). SK hynix M16급 실측 1c DRAM 규모(월 17만~19만 장) 근거.
+  { id: "M21", name: "DRAM Fab", product: "DRAM", nominalWspm: 200_000, utilization: 0.92, waferYield: 0.90,
     marketReferenceWspm: 1_550_000, dimensionsM: { length: 360, width: 180, height: 105 }, color: "#2563EB" },
-  { id: "M22", name: "NAND Fab", product: "NAND", nominalWspm: 100_000, utilization: 0.90, waferYield: 0.88,
+  // FAB_MASTER_M22_V1: 명목 120K, NORMAL 평균 운영 108K(90%). SK hynix NAND 단일 라인 실측 규모(월 10만~12만 장) 상단 근거.
+  { id: "M22", name: "NAND Fab", product: "NAND", nominalWspm: 120_000, utilization: 0.90, waferYield: 0.88,
     marketReferenceWspm: 2_100_000, dimensionsM: { length: 400, width: 200, height: 105 }, color: "#7C3AED" },
 ] as const;
 
