@@ -110,6 +110,8 @@ const LOGS = [
     "설비 대수 산정을 병목/비병목 목표 부하 기준(병목 85%, 비병목 75%)으로 3팹에 일관 적용 — M20은 기존 설치 대수 하한을 없애 494→329대로, M21·M22는 병목이 아닌 공정에 여유를 둬 488→495대·512→533대로 재계산",
     "M20 equipmentMaster 초과분 165대를 equipmentAssignments 미참조 확인 후 스냅샷을 남기고 안전하게 삭제하는 일회성 trim 스크립트로 반영",
     "공정 카드 레이아웃에서 공정명이 길 때 대수·단위가 두 줄로 줄바꿈되던 버그 수정, TypeScript·ESLint·브라우저 3-fab 렌더링 검증 완료",
+    "M21·M22 P10(컨벤셔널 패키징)의 계획 부하 N/A를 해소 — Backgrind·Dicing은 M20과 동일 가정, Final Test는 CS MANTECH 2018 공개 문헌 기준 UPH, 나머지 4단계는 업계 통상 처리량 범위로 7-stage capacity 모델을 신설(INDUSTRY_RANGE_INFORMED_MODELED_BASELINE 명시)",
+    "M21 P10 57→434대(내부 병목 Molding 84.7%), M22 P10 33→139대(내부 병목 Wire Bond 84.9%)로 재계산하고 기존 추가 전용 마이그레이션 스크립트로 DB 반영",
   ] },
 ];
 
