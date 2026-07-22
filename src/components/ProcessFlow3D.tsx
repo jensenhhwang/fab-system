@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, Suspense } from "react";
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo, useContext, createContext, Suspense } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Text, CameraControls, Environment, Lightformer, ContactShadows } from "@react-three/drei";
 import * as THREE from "three";
@@ -11,9 +11,12 @@ import type { FoupFleetProjection } from "@/lib/foup-wip-model";
 import { PROCESSES } from "@/lib/processes";
 import {
   buildOhtAccessPoints,
-  buildDenseProcessEquipmentLayout,
-  M20_DENSE_PROCESS_ZONES,
+  buildBayEquipmentLayout,
+  computeDynamicProcessZones,
+  type ProcessBayZone,
+  type EquipmentInstancePosition,
 } from "@/lib/equipment-3d-layout";
+import { M20_DEFINED_EQUIPMENT_COUNTS } from "@/lib/m20-equipment-capacity-plan";
 export type { ProcessDef } from "@/lib/processes";
 export { PROCESSES };
 
@@ -21,10 +24,12 @@ const PITCH     = 0.82;
 const TOOL_SCALE = 0.68;
 const MACHINE_W = 0.72;
 
-// 29개 고밀도 bay를 중앙 OHT spine 양쪽에 배치하는 M20 생산층 envelope.
+// 22폭 고밀도 bay를 중앙 OHT spine 양쪽에 배치하는 생산층 envelope.
 const FAB_W = 22;
-const FAB_D = 45;
-const FAB_CENTER_Z = -2.25;
+const FAB_D = 45; // 정적 fallback(예: OVERVIEW_FOCUS) 전용 — 실제 화면은 zoneLayout.floorDepth를 쓴다.
+// computeDynamicProcessZones는 항상 z=0을 중심으로 대칭 배치한다 — 바닥·슬래브·그리드도
+// 같은 중심(0)을 써야 zone과 어긋나지 않는다 (예전 고정 M20 좌표계의 잔재였던 -2.25는 제거).
+const FAB_CENTER_Z = 0;
 
 // ─── 자재 카테고리 색 (usage 테이블과 통일) ───
 export const CATEGORY_COLOR: Record<string, string> = {
@@ -51,21 +56,69 @@ const WH_META: Record<string, {
 };
 const WH_HEADER_X = -(FAB_W / 2 + 0.5); // 벽면 서플라이 헤더 X
 
-// 가스야드 (벌크가스 ISO 탱크 — 창고 아님, 배관으로 팹 공급)
-const GAS_YARD = { x: WH_X - 0.7, z: -15.0 };
-const SUPPLY_ORIGIN: Record<string, { x: number; z: number; lane: number }> = {
-  "BGY-01": { x: GAS_YARD.x, z: GAS_YARD.z, lane: 0 },
-  "BCY-01": { x: GAS_YARD.x, z: -12.8, lane: 1 },
-  "PRS-01": { x: GAS_YARD.x, z: -5.8,  lane: 2 },
-  "UPW-01": { x: GAS_YARD.x, z:  3.0,  lane: 3 },
+// 가스야드(벌크가스 ISO 탱크)·전구체/UPW 공급원 — 창고가 아니라 배관으로 팹에 공급한다.
+// z좌표는 고정값이 아니라 그 fab의 맨 앞 공정 row보다 살짝 앞쪽에 오도록 동적으로 유도한다
+// (아래 deriveZoneLayout 참고) — fab마다 어떤 공정이 맨 앞에 올지 달라지기 때문이다.
+const GAS_YARD_LANE_OFFSETS: Record<string, number> = {
+  "BGY-01": 0, "BCY-01": 2.2, "PRS-01": 9.2, "UPW-01": 18.0,
 };
+const SUPPLY_LANE: Record<string, number> = { "BGY-01": 0, "BCY-01": 1, "PRS-01": 2, "UPW-01": 3 };
 
 // Route 순서를 지그재그로 접어 연속 공정의 이동거리를 줄인다.
 // 같은 row의 좌우 공정은 OHT spine 하나만 건너고, 다음 공정은 같은 side의 인접 row에 둔다.
-const PROCESS_ZONE = M20_DENSE_PROCESS_ZONES;
-const BAY_X = Object.fromEntries(Object.entries(PROCESS_ZONE).map(([code, zone]) => [code, zone.x])) as Record<string, number>;
-const BAY_Z = Object.fromEntries(Object.entries(PROCESS_ZONE).map(([code, zone]) => [code, zone.z])) as Record<string, number>;
-const PROCESS_ACCESS = buildOhtAccessPoints(PROCESS_ZONE);
+//
+// zone 좌표·floor depth·오버헤드 레일(processRows)·AGV 통로(crossAisles)·가스야드 위치는
+// 전부 fab마다 실제 설비 대수(equipmentCounts)로 다시 계산한다 — 예전처럼 M20 기준 고정
+// 좌표를 쓰면 M21/M22처럼 공정당 대수가 훨씬 크거나(M22 P02 300대+) 아예 없는 공정(P08=0)에서
+// 설비가 바닥 밖으로 넘치거나, 인프라(레일·AGV·배관)가 실제 zone과 어긋난다.
+type ProcessZoneLayout = {
+  zones: Record<string, ProcessBayZone>;
+  bayX: Record<string, number>;
+  bayZ: Record<string, number>;
+  accessPoints: Record<string, { x: number; z: number }>;
+  processRows: number[];
+  crossAisles: number[];
+  transferPoints: number[];
+  gasYard: { x: number; z: number };
+  supplyOrigin: Record<string, { x: number; z: number; lane: number }>;
+  floorDepth: number;
+};
+function deriveZoneLayout(zones: Record<string, ProcessBayZone>, floorDepth: number): ProcessZoneLayout {
+  // "#"이 들어간 실제 bay 좌표만 대상으로 한다 — processCode 대표키(bay#0의 중복값)는 제외.
+  const bayZs = Object.entries(zones).filter(([key]) => key.includes("#")).map(([, zone]) => zone.z);
+  const processRows = Array.from(new Set(bayZs.map((z) => Math.round(z * 10) / 10))).sort((a, b) => a - b);
+  const transferPoints = processRows.slice(1).map((z, index) => (z + processRows[index]) / 2);
+  const aisleMargin = BAY_SPACING_FALLBACK;
+  const crossAisles = processRows.length > 0
+    ? [processRows[0] - aisleMargin, ...transferPoints, processRows[processRows.length - 1] + aisleMargin]
+    : [];
+  const gasYard = { x: WH_X - 0.7, z: (processRows[0] ?? -15.0) - 4.5 };
+  const supplyOrigin = Object.fromEntries(Object.entries(GAS_YARD_LANE_OFFSETS).map(([code, offset]) => [code, {
+    x: gasYard.x, z: gasYard.z + offset, lane: SUPPLY_LANE[code] ?? 0,
+  }]));
+
+  return {
+    zones,
+    bayX: Object.fromEntries(Object.entries(zones).map(([code, zone]) => [code, zone.x])),
+    bayZ: Object.fromEntries(Object.entries(zones).map(([code, zone]) => [code, zone.z])),
+    accessPoints: buildOhtAccessPoints(zones),
+    processRows, crossAisles, transferPoints, gasYard, supplyOrigin,
+    floorDepth,
+  };
+}
+const BAY_SPACING_FALLBACK = 2.3;
+const DEFAULT_ZONE_LAYOUT = deriveZoneLayout(...(() => {
+  const { zones, floorDepth } = computeDynamicProcessZones(M20_DEFINED_EQUIPMENT_COUNTS);
+  return [zones, floorDepth] as const;
+})());
+const ProcessZoneContext = createContext<ProcessZoneLayout>(DEFAULT_ZONE_LAYOUT);
+function useProcessZoneLayout(equipmentCounts?: Record<string, number>): ProcessZoneLayout {
+  return useMemo(() => {
+    if (!equipmentCounts) return DEFAULT_ZONE_LAYOUT;
+    const { zones, floorDepth } = computeDynamicProcessZones(equipmentCounts);
+    return deriveZoneLayout(zones, floorDepth);
+  }, [equipmentCounts]);
+}
 const BACKEND_LINE = {
   x: 0,
   testX: -5.2,
@@ -142,9 +195,9 @@ export type LiveFoupView = {
   isDone: boolean;
 };
 
-function makeCurve(fromCode: string, toCode: string): THREE.CatmullRomCurve3 {
-  const from = PROCESS_ACCESS[fromCode] ?? PROCESS_ACCESS.P01;
-  const to = PROCESS_ACCESS[toCode] ?? PROCESS_ACCESS.P01;
+function makeCurve(fromCode: string, toCode: string, accessPoints: Record<string, { x: number; z: number }>): THREE.CatmullRomCurve3 {
+  const from = accessPoints[fromCode] ?? accessPoints.P01;
+  const to = accessPoints[toCode] ?? accessPoints.P01;
   if (fromCode === "P09" && toCode === "P10") {
     return new THREE.CatmullRomCurve3([
       new THREE.Vector3(from.x, RAIL_Y, from.z),
@@ -182,7 +235,7 @@ const TOOL_DIM: Record<ToolKind, [number, number, number]> = {
 };
 
 function InstancedFabTools({ layout, proc, isHL, isDimmed, kind }: {
-  layout: ReturnType<typeof buildDenseProcessEquipmentLayout>["equipment"];
+  layout: EquipmentInstancePosition[];
   proc: typeof PROCESSES[0];
   isHL: boolean;
   isDimmed: boolean;
@@ -263,39 +316,73 @@ function ProcessBay({ proc, isHL, isDimmed, onClick, actualMachineCount }: {
   onClick: () => void; actualMachineCount?: number;
 }) {
   const [hov, setHov] = useState(false);
-  const zone = PROCESS_ZONE[proc.code] ?? PROCESS_ZONE.P01;
+  const { zones } = useContext(ProcessZoneContext);
   const actualCount = actualMachineCount ?? proc.nMachines * 2;
   const kind   = PROCESS_KIND[proc.code] ?? "box";
   const rowGap = 0.72;
-  const denseLayout = useMemo(
-    () => buildDenseProcessEquipmentLayout(actualCount, zone.x, zone.z, PITCH, rowGap, 20, 2.3),
-    [actualCount, zone.x, zone.z],
+
+  // 이 공정이 차지하는 bay들(대수가 많으면 두 열에 걸쳐 여러 개일 수 있다) — bayIndex 순.
+  const bayZones = useMemo(
+    () => Object.entries(zones)
+      .filter(([key]) => key.startsWith(`${proc.code}#`))
+      .map(([, zone]) => zone)
+      .sort((a, b) => a.bayIndex - b.bayIndex),
+    [zones, proc.code],
   );
+
+  // 설비가 0대인 공정은 bay·label·조명까지 통째로 렌더링하지 않는다 (목업 대수로 채우지 않음).
+  if (bayZones.length === 0 || actualCount === 0) return null;
+
+  // 실제 원장 대수를 bay 개수만큼 균등 분배 — 나머지는 앞쪽 bay부터 1대씩 더 받는다.
+  const bayCount = bayZones.length;
+  const baseCount = Math.floor(actualCount / bayCount);
+  const remainder = actualCount % bayCount;
+  const bays = bayZones.map((zone, index) => ({
+    zone,
+    count: baseCount + (index < remainder ? 1 : 0),
+    equipment: buildBayEquipmentLayout(baseCount + (index < remainder ? 1 : 0), zone.x, zone.z, PITCH, rowGap),
+  }));
+  const allEquipment = bays.flatMap((bay) => bay.equipment);
+
+  // 같은 열(zone.x)에 연속으로 붙어있는 bay들을 하나의 "run"으로 묶어 라벨을 1개만 붙인다 —
+  // 공정이 두 열에 걸쳐 있으면(예: M22 P02) 열마다 라벨이 하나씩 생긴다.
+  const runs: Array<{ x: number; zMin: number; zMax: number; count: number }> = [];
+  for (const bay of bays) {
+    const last = runs[runs.length - 1];
+    if (last && last.x === bay.zone.x) {
+      last.zMin = Math.min(last.zMin, bay.zone.z);
+      last.zMax = Math.max(last.zMax, bay.zone.z);
+      last.count += bay.count;
+    } else {
+      runs.push({ x: bay.zone.x, zMin: bay.zone.z, zMax: bay.zone.z, count: bay.count });
+    }
+  }
+
   return (
     <group>
-      {denseLayout.bays.map((bay) => {
-        const bayW = (Math.max(Math.ceil(bay.count / 2), 1) - 1) * PITCH + MACHINE_W * TOOL_SCALE + 0.34;
+      {bays.map(({ zone, count }) => {
+        const bayW = (Math.max(Math.ceil(count / 2), 1) - 1) * PITCH + MACHINE_W * TOOL_SCALE + 0.34;
         const railLength = Math.abs(zone.x);
-        return <React.Fragment key={`${proc.code}-B${bay.index + 1}`}>
-          <mesh position={[zone.x, 0.01, bay.centerZ]}
+        return <React.Fragment key={`${proc.code}-B${zone.bayIndex + 1}`}>
+          <mesh position={[zone.x, 0.01, zone.z]}
             onClick={(e) => { e.stopPropagation(); onClick(); }}
             onPointerEnter={(e) => { e.stopPropagation(); setHov(true); document.body.style.cursor = "pointer"; }}
             onPointerLeave={() => { setHov(false); document.body.style.cursor = ""; }}>
             <boxGeometry args={[bayW, 0.02, 2.2]} />
             <meshStandardMaterial transparent opacity={0} />
           </mesh>
-          <mesh position={[zone.x, 0.003, bay.centerZ]}>
+          <mesh position={[zone.x, 0.003, zone.z]}>
             <boxGeometry args={[bayW, 0.005, 2.2]} />
             <meshStandardMaterial color={proc.yellowBay ? "#ffd700" : proc.color} transparent
               opacity={isDimmed ? 0.03 : isHL ? 0.18 : hov ? 0.1 : proc.yellowBay ? 0.06 : 0.05} />
           </mesh>
           {/* 장비 전면이 공유하는 작업 aisle */}
-          <mesh position={[zone.x, 0.006, bay.centerZ]}>
+          <mesh position={[zone.x, 0.006, zone.z]}>
             <boxGeometry args={[bayW + 0.16, 0.006, 0.48]} />
             <meshStandardMaterial color="#e8f0fa" transparent opacity={isDimmed ? 0.05 : 0.58} />
           </mesh>
           {/* 두 장비열 후면의 service chase */}
-          {[bay.centerZ - 1.0, bay.centerZ + 1.0].map((chaseZ) => (
+          {[zone.z - 1.0, zone.z + 1.0].map((chaseZ) => (
             <mesh key={chaseZ} position={[zone.x, 0.005, chaseZ]}>
               <boxGeometry args={[bayW, 0.005, 0.26]} />
               <meshStandardMaterial color="#aeb7c1" transparent opacity={isDimmed ? 0.04 : 0.5} />
@@ -303,11 +390,11 @@ function ProcessBay({ proc, isHL, isDimmed, onClick, actualMachineCount }: {
           ))}
           {/* P10 내부에서 FOUP/wafer가 die tray·stack으로 전환되므로 AGV branch만 사용한다. */}
           {proc.code !== "P10" && <>
-            <mesh position={[zone.x, 2.58, bay.centerZ]}>
+            <mesh position={[zone.x, 2.58, zone.z]}>
               <boxGeometry args={[bayW + 0.12, 0.045, 0.07]} />
               <meshStandardMaterial color="#8ea0b1" metalness={0.65} roughness={0.28} transparent opacity={isDimmed ? 0.3 : 1} />
             </mesh>
-            <mesh position={[zone.x / 2, 2.58, bay.centerZ]}>
+            <mesh position={[zone.x / 2, 2.58, zone.z]}>
               <boxGeometry args={[railLength, 0.045, 0.07]} />
               <meshStandardMaterial color="#8ea0b1" metalness={0.65} roughness={0.28} transparent opacity={isDimmed ? 0.3 : 1} />
             </mesh>
@@ -317,22 +404,29 @@ function ProcessBay({ proc, isHL, isDimmed, onClick, actualMachineCount }: {
 
       {/* Photo bay subtle ambient — static intensity, no flash */}
       {proc.yellowBay && (
-        <pointLight position={[zone.x, 3.5, zone.z]} color="#ffd000" intensity={0.8} distance={5} decay={2} />
+        <pointLight position={[bays[0].zone.x, 3.5, bays[0].zone.z]} color="#ffd000" intensity={0.8} distance={5} decay={2} />
       )}
 
       {/* 실제 원장 대수 전체를 1 body instance = 1 equipment로 배치한다. */}
-      <InstancedFabTools layout={denseLayout.equipment} proc={proc} kind={kind} isHL={isHL} isDimmed={isDimmed} />
+      <InstancedFabTools layout={allEquipment} proc={proc} kind={kind} isHL={isHL} isDimmed={isDimmed} />
 
-      {/* Bay labels */}
-      <Text position={[zone.x, 2.95, zone.z]} fontSize={0.2}
-        color={isHL ? proc.color : hov ? proc.color : "#374151"}
-        anchorX="center" anchorY="middle">
-        {`${proc.code}  ${proc.name} · ${denseLayout.bays.length} BAYS`}
-      </Text>
-      <Text position={[zone.x, 2.75, zone.z]} fontSize={0.105} color={isHL ? proc.color : "#7f8b96"}
-        anchorX="center" anchorY="middle">
-        {`${proc.nameEn} · 원장/3D ×${denseLayout.equipment.length}대`}
-      </Text>
+      {/* Bay labels — run(열)마다 하나씩 */}
+      {runs.map((run, index) => {
+        const centerZ = (run.zMin + run.zMax) / 2;
+        return <React.Fragment key={`${proc.code}-label-${index}`}>
+          <Text position={[run.x, 2.95, centerZ]} fontSize={0.2}
+            color={isHL ? proc.color : hov ? proc.color : "#374151"}
+            anchorX="center" anchorY="middle">
+            {`${proc.code}  ${proc.name} · ${bays.length} BAYS`}
+          </Text>
+          <Text position={[run.x, 2.75, centerZ]} fontSize={0.105} color={isHL ? proc.color : "#7f8b96"}
+            anchorX="center" anchorY="middle">
+            {runs.length > 1
+              ? `${proc.nameEn} · 이 열 ×${run.count}대 (총 ${allEquipment.length}대)`
+              : `${proc.nameEn} · 원장/3D ×${allEquipment.length}대`}
+          </Text>
+        </React.Fragment>;
+      })}
 
       {/* FOUP 수량은 화면 overlay에서 읽고, 3D 공간에는 density instance만 둔다. */}
     </group>
@@ -343,11 +437,11 @@ function ProcessBay({ proc, isHL, isDimmed, onClick, actualMachineCount }: {
 // Overhead AMHS rails (no solid ceiling)
 // ─────────────────────────────────────────────
 function OverheadInfra() {
-  const ohtStartZ = -23.5;
-  const ohtEndZ = BACKEND_LINE.handoffZ;
+  const { processRows, crossAisles } = useContext(ProcessZoneContext);
+  const ohtStartZ = crossAisles[0] ?? -23.5;
+  const ohtEndZ = crossAisles[crossAisles.length - 1] ?? BACKEND_LINE.handoffZ;
   const ohtCenterZ = (ohtStartZ + ohtEndZ) / 2;
-  const processRows = [-21.2, -11.6, -2, 7.6];
-  const lightRows = [...processRows, BACKEND_LINE.testZ];
+  const lightRows = processRows;
   return (
     <group>
       {/* 중앙 OHT main spine: 왕복 2선 */}
@@ -372,17 +466,17 @@ function OverheadInfra() {
           </mesh>
         ))
       )}
-      <Text position={[0.5, RAIL_Y + 0.2, -22.8]} fontSize={0.15} color="#64748b" anchorX="left">OHT MAIN SPINE</Text>
+      <Text position={[0.5, RAIL_Y + 0.2, ohtStartZ + 0.7]} fontSize={0.15} color="#64748b" anchorX="left">OHT MAIN SPINE</Text>
     </group>
   );
 }
 
-function AgvVehicle({ offset, color }: { offset: number; color: string }) {
+function AgvVehicle({ offset, color, startZ, endZ }: { offset: number; color: string; startZ: number; endZ: number }) {
   const ref = useRef<THREE.Group>(null);
   const curve = useMemo(() => new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-10.1, 0.12, -23), new THREE.Vector3(10.1, 0.12, -23),
-    new THREE.Vector3(10.1, 0.12, 19), new THREE.Vector3(-10.1, 0.12, 19),
-  ], true, "catmullrom", 0.04), []);
+    new THREE.Vector3(-10.1, 0.12, startZ), new THREE.Vector3(10.1, 0.12, startZ),
+    new THREE.Vector3(10.1, 0.12, endZ), new THREE.Vector3(-10.1, 0.12, endZ),
+  ], true, "catmullrom", 0.04), [startZ, endZ]);
   useFrame(({ clock }) => {
     if (!ref.current) return;
     const progress = (clock.elapsedTime * 0.025 + offset) % 1;
@@ -397,33 +491,40 @@ function AgvVehicle({ offset, color }: { offset: number; color: string }) {
 }
 
 function AgvLogisticsInfra() {
-  const crossAisles = [-23, -16.4, -6.8, 2.8, 11.4, 18.2, 19];
+  const { crossAisles, transferPoints, bayZ } = useContext(ProcessZoneContext);
+  const loopStartZ = (crossAisles[0] ?? -23) - 0.5;
+  const loopEndZ = (crossAisles[crossAisles.length - 1] ?? 19) + 0.5;
+  const loopCenterZ = (loopStartZ + loopEndZ) / 2;
+  const loopLength = loopEndZ - loopStartZ;
+  // P10 실제 zone 바로 뒤쪽에 back-end handoff 마커를 둔다 — 고정 좌표를 쓰면 fab마다
+  // 실제 P10 bay 위치와 어긋난다.
+  const handoffZ = (bayZ.P10 ?? BACKEND_LINE.handoffZ) + 2.5;
   return <group>
     {/* 장비 bay와 분리한 바닥 AGV 외곽 loop */}
-    {[-10.1, 10.1].map((x) => <mesh key={x} position={[x, 0.012, -2]}>
-      <boxGeometry args={[0.62, 0.012, 42]} />
+    {[-10.1, 10.1].map((x) => <mesh key={x} position={[x, 0.012, loopCenterZ]}>
+      <boxGeometry args={[0.62, 0.012, loopLength]} />
       <meshStandardMaterial color="#334155" transparent opacity={0.34} />
     </mesh>)}
     {crossAisles.map((z) => <mesh key={z} position={[0, 0.013, z]}>
       <boxGeometry args={[20.2, 0.013, 0.62]} />
       <meshStandardMaterial color="#475569" transparent opacity={0.25} />
     </mesh>)}
-    {[-16.4, -6.8, 2.8, 11.4].map((z) => <group key={`transfer-${z}`} position={[0, 0, z]}>
+    {transferPoints.map((z) => <group key={`transfer-${z}`} position={[0, 0, z]}>
       <mesh position={[0, 0.035, 0]}><boxGeometry args={[1.3, 0.07, 0.9]} /><meshStandardMaterial color="#0ea5e9" transparent opacity={0.42} /></mesh>
       <Text position={[0, 0.09, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.1} color="#0369a1">OHT ↔ AGV</Text>
     </group>)}
     {/* P10 singulation 이후 wafer/FOUP에서 die tray·stack 물류로 전환되는 handoff */}
-    <group position={[0, 0, BACKEND_LINE.handoffZ]}>
+    <group position={[0, 0, handoffZ]}>
       <mesh position={[0, 0.055, 0]}><boxGeometry args={[2.1, 0.1, 0.9]} /><meshStandardMaterial color="#d946ef" transparent opacity={0.62} /></mesh>
       <Text position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.12} color="#86198f">P10 OUTPUT · WAFER → MEMORY KGD TRAY</Text>
     </group>
-    <group position={[BACKEND_LINE.agvX, 0, BACKEND_LINE.outboundZ]}>
+    <group position={[BACKEND_LINE.agvX, 0, handoffZ]}>
       <mesh position={[0, 0.055, 0]}><boxGeometry args={[1.25, 0.1, 1.0]} /><meshStandardMaterial color="#22c55e" transparent opacity={0.55} /></mesh>
       <Text position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.11} color="#166534">STACK BUFFER · AGV OUTBOUND</Text>
     </group>
-    <AgvVehicle offset={0} color="#f59e0b" />
-    <AgvVehicle offset={0.5} color="#22c55e" />
-    <Text position={[-9.7, 0.08, -22.4]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.14} color="#334155" anchorX="left">AGV GROUND LOOP</Text>
+    <AgvVehicle offset={0} color="#f59e0b" startZ={loopStartZ} endZ={loopEndZ} />
+    <AgvVehicle offset={0.5} color="#22c55e" startZ={loopStartZ} endZ={loopEndZ} />
+    <Text position={[-9.7, 0.08, loopStartZ + 0.6]} rotation={[-Math.PI / 2, 0, 0]} fontSize={0.14} color="#334155" anchorX="left">AGV GROUND LOOP</Text>
   </group>;
 }
 
@@ -476,6 +577,7 @@ function AnimatedFoup({ config, stateRef, dimmed = false }: {
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const ringRef  = useRef<THREE.Mesh>(null);
+  const { accessPoints } = useContext(ProcessZoneContext);
 
   useFrame((_, dt) => {
     const s = stateRef.current;
@@ -487,7 +589,7 @@ function AnimatedFoup({ config, stateRef, dimmed = false }: {
       if (s.timer <= 0) {
         const nextStep = (s.stepIdx + 1) % WAFER_RECIPE.length;
         const nextBay  = WAFER_RECIPE[nextStep];
-        s.curve  = makeCurve(s.currentBay, nextBay);
+        s.curve  = makeCurve(s.currentBay, nextBay, accessPoints);
         s.tSpeed = TRAVEL_SPEED / s.curve.getLength();
         s.t      = 0;
         s.phase  = "traveling";
@@ -519,9 +621,9 @@ function AnimatedFoup({ config, stateRef, dimmed = false }: {
   // Set initial position
   const initPos = useMemo(() => {
     const processCode = WAFER_RECIPE[config.startStep] ?? "P01";
-    const access = PROCESS_ACCESS[processCode] ?? PROCESS_ACCESS.P01;
+    const access = accessPoints[processCode] ?? accessPoints.P01;
     return new THREE.Vector3(access.x, RAIL_Y, access.z);
-  }, [config.startStep]);
+  }, [config.startStep, accessPoints]);
 
   const bodyOpacity = dimmed ? 0.55 : 1;
   const ringOpacity = dimmed ? 0.4 : 0.85;
@@ -556,13 +658,14 @@ function AnimatedFoup({ config, stateRef, dimmed = false }: {
 function LiveTrackedFoup({ liveFoup }: { liveFoup: LiveFoupView }) {
   const groupRef = useRef<THREE.Group>(null);
   const ringRef = useRef<THREE.Mesh>(null);
+  const { accessPoints } = useContext(ProcessZoneContext);
   const target = useMemo(() => {
     if (liveFoup.processCode === "P10" || liveFoup.processCode === "P11") {
       return new THREE.Vector3(9.35, 0.32, BACKEND_LINE.packagingZ);
     }
-    const access = PROCESS_ACCESS[liveFoup.processCode] ?? PROCESS_ACCESS.P01;
+    const access = accessPoints[liveFoup.processCode] ?? accessPoints.P01;
     return new THREE.Vector3(access.x, RAIL_Y, access.z);
-  }, [liveFoup.processCode]);
+  }, [liveFoup.processCode, accessPoints]);
 
   useFrame((_, dt) => {
     const g = groupRef.current;
@@ -626,14 +729,16 @@ export function CampusFabProcessModel({
     },
   })), []);
   const hasHighlight = highlightedProcesses.length > 0;
+  const zoneLayout = useProcessZoneLayout(equipmentCounts);
 
   return (
+    <ProcessZoneContext.Provider value={zoneLayout}>
     <group>
       <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, FAB_CENTER_Z]}>
-        <planeGeometry args={[FAB_W + 2, FAB_D + 2]} />
+        <planeGeometry args={[FAB_W + 2, zoneLayout.floorDepth + 2]} />
         <meshStandardMaterial color="#E7EBF0" roughness={0.25} metalness={0.12} />
       </mesh>
-      <CleanroomFloorGrid />
+      <CleanroomFloorGrid floorDepth={zoneLayout.floorDepth} />
       <OverheadInfra />
       <AgvLogisticsInfra />
       {fabId === "M20" && <BackendIntegratedLine />}
@@ -643,7 +748,7 @@ export function CampusFabProcessModel({
           proc={proc}
           isHL={highlightedProcesses.includes(proc.code)}
           isDimmed={hasHighlight && !highlightedProcesses.includes(proc.code)}
-          actualMachineCount={equipmentCounts?.[proc.code] ?? (FAB_MACHINE_PROFILES[fabId][proc.code] ?? 2) * 2}
+          actualMachineCount={equipmentCounts ? (equipmentCounts[proc.code] ?? 0) : (FAB_MACHINE_PROFILES[fabId][proc.code] ?? 2) * 2}
           onClick={() => onProcessClick?.(proc.code)}
         />
       ))}
@@ -652,6 +757,7 @@ export function CampusFabProcessModel({
         <AnimatedFoup key={config.id} config={config} stateRef={waferStates[index]} />
       ))}
     </group>
+    </ProcessZoneContext.Provider>
   );
 }
 
@@ -662,13 +768,14 @@ const FAB_MACHINE_PROFILES: Record<FabId, Record<string, number>> = {
 };
 
 function FabSignatureEquipment({ fabId }: { fabId: FabId }) {
+  const { bayZ } = useContext(ProcessZoneContext);
   if (fabId === "M20") {
     // M20은 원장 494대만 전수 배치한다. 장식 설비를 더하면 화면 대수가 원장을 초과한다.
     return null;
   }
   if (fabId === "M21") {
     return (
-      <group position={[5.4, 0, BAY_Z.P06]}>
+      <group position={[5.4, 0, bayZ.P06]}>
         {[-1.0, -0.34, 0.34, 1.0].map((z) => <group key={z} position={[0, 0, z]}>
           <mesh position={[0, 1.1, 0]}><boxGeometry args={[1.15, 2.2, 0.5]} /><meshStandardMaterial color="#B8D4F1" metalness={0.28} roughness={0.32} /></mesh>
           <mesh position={[0, 1.55, 0.27]}><boxGeometry args={[0.76, 0.42, 0.06]} /><meshStandardMaterial color="#2563EB" emissive="#2563EB" emissiveIntensity={0.55} /></mesh>
@@ -678,7 +785,7 @@ function FabSignatureEquipment({ fabId }: { fabId: FabId }) {
     );
   }
   return (
-    <group position={[5.4, 0, BAY_Z.P04]}>
+    <group position={[5.4, 0, bayZ.P04]}>
       {[-0.9, 0, 0.9].map((z, index) => <group key={z} position={[0, 0, z]}>
         <mesh position={[0, 1.5, 0]}><cylinderGeometry args={[0.46, 0.62, 3 + index * 0.28, 16]} /><meshStandardMaterial color="#C5D8CF" metalness={0.42} roughness={0.3} /></mesh>
         <mesh position={[0, 2.85 + index * 0.14, 0]}><cylinderGeometry args={[0.32, 0.46, 0.32, 16]} /><meshStandardMaterial color="#059669" emissive="#059669" emissiveIntensity={0.6} /></mesh>
@@ -980,10 +1087,11 @@ function WarehouseBuilding({ wh, isHL, isDimmed, onHover, onLeave, onFocus }: {
 
 // 가스야드: 벌크가스 ISO 탱크(수직 실린더) 줄지어 + 밸브 매니폴드
 function GasYard({ dim }: { dim: boolean }) {
+  const { gasYard } = useContext(ProcessZoneContext);
   const op = dim ? 0.4 : 1;
   const tanks = 6;
   return (
-    <group position={[GAS_YARD.x, 0, GAS_YARD.z]}>
+    <group position={[gasYard.x, 0, gasYard.z]}>
       <mesh position={[0, 0.03, 0]} receiveShadow>
         <boxGeometry args={[3.4, 0.06, 2.2]} />
         <meshStandardMaterial color="#b0bac4" roughness={0.9} transparent opacity={op} />
@@ -1012,12 +1120,38 @@ function GasYard({ dim }: { dim: boolean }) {
   );
 }
 
+// 첫 공정 row 앞의 OHT 진입 aisle — 예전엔 완전히 빈 바닥이었다. 사람·FOUP이 실제로
+// 클린룸에 들어오는 gowning/에어샤워 게이트를 두어 그 공간에 용도를 준다.
+function FeolEntryGate({ frontZ }: { frontZ: number }) {
+  const gateW = 5.2, gateD = 1.5, gateH = 2.5;
+  return (
+    <group position={[0, 0, frontZ]}>
+      <mesh position={[0, gateH / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[gateW, gateH, gateD]} />
+        <meshStandardMaterial color="#dbe2e8" roughness={0.4} metalness={0.08} />
+      </mesh>
+      <mesh position={[0, gateH + 0.06, 0]}>
+        <boxGeometry args={[gateW + 0.1, 0.12, gateD + 0.1]} />
+        <meshStandardMaterial color="#2563eb" emissive="#2563eb" emissiveIntensity={0.35} />
+      </mesh>
+      {/* 에어샤워 게이트 유리창 2개 */}
+      {[-1.4, 1.4].map((x) => (
+        <mesh key={x} position={[x, 1.0, gateD / 2 + 0.021]}>
+          <boxGeometry args={[0.9, 1.9, 0.03]} />
+          <meshStandardMaterial color="#bcd4f0" transparent opacity={0.55} metalness={0.2} roughness={0.1} />
+        </mesh>
+      ))}
+      <Text position={[0, gateH + 0.35, 0]} fontSize={0.16} color="#334155" anchorX="center">GOWNING · SUB-FAB ENTRY</Text>
+    </group>
+  );
+}
+
 // ─────────────────────────────────────────────
 // 배관 (창고 → 공정 베이) : 튜브 + 흐름 입자
 // ─────────────────────────────────────────────
-function makePipeCurve(whCode: string, bayX: number, bayZ: number): THREE.CatmullRomCurve3 {
+function makePipeCurve(whCode: string, bayX: number, bayZ: number, supplyOrigin: Record<string, { x: number; z: number; lane: number }>): THREE.CatmullRomCurve3 {
   const meta = WH_META[whCode];
-  const supply = SUPPLY_ORIGIN[whCode];
+  const supply = supplyOrigin[whCode];
   const lane = meta?.lane ?? supply?.lane ?? 0;
   const y = 0.55 + lane * 0.32;       // 창고별 헤더 높이 분리
   const wz = meta?.z ?? supply?.z ?? 0;
@@ -1033,9 +1167,10 @@ function makePipeCurve(whCode: string, bayX: number, bayZ: number): THREE.Catmul
 }
 
 function SupplyPipe({ link, active }: { link: WarehouseLink; active: boolean }) {
-  const bayZ = BAY_Z[link.procCode];
-  const bayX = BAY_X[link.procCode];
-  const curve = useMemo(() => makePipeCurve(link.whCode, bayX, bayZ), [link.whCode, bayX, bayZ]);
+  const { bayX: bayXMap, bayZ: bayZMap, supplyOrigin } = useContext(ProcessZoneContext);
+  const bayZ = bayZMap[link.procCode];
+  const bayX = bayXMap[link.procCode];
+  const curve = useMemo(() => makePipeCurve(link.whCode, bayX, bayZ, supplyOrigin), [link.whCode, bayX, bayZ, supplyOrigin]);
   const color = CATEGORY_COLOR[link.category] ?? "#64748B";
   const radius = 0.03 + Math.min(link.qty, 3000) / 3000 * 0.06; // 굵기 = 월 사용량
   const geom = useMemo(() => new THREE.TubeGeometry(curve, 40, radius, 8, false), [curve, radius]);
@@ -1190,9 +1325,9 @@ export function focusForWarehouse(code: string): FocusView {
     look: [WH_X + 0.5, m.h / 2, m.z],
   };
 }
-export function focusForBay(code: string): FocusView {
-  const bx = BAY_X[code] ?? 0;
-  const bz = BAY_Z[code] ?? 0;
+export function focusForBay(code: string, bayX: Record<string, number> = DEFAULT_ZONE_LAYOUT.bayX, bayZ: Record<string, number> = DEFAULT_ZONE_LAYOUT.bayZ): FocusView {
+  const bx = bayX[code] ?? 0;
+  const bz = bayZ[code] ?? 0;
   return {
     cam: [bx, 9.5, bz + 10.5],
     look: [bx, 1.1, bz],
@@ -1217,9 +1352,9 @@ function FocusController({ controls, focus }: {
 // ─────────────────────────────────────────────
 // 클린룸 raised access floor — 600 mm 타일 격자선
 // ─────────────────────────────────────────────
-function CleanroomFloorGrid() {
+function CleanroomFloorGrid({ floorDepth = FAB_D }: { floorDepth?: number }) {
   const geom = useMemo(() => {
-    const W = FAB_W + 2, D = FAB_D + 2, step = 0.6;
+    const W = FAB_W + 2, D = floorDepth + 2, step = 0.6;
     const pts: number[] = [];
     for (let z = -D / 2; z <= D / 2 + 0.001; z += step)
       pts.push(-W / 2, 0, z, W / 2, 0, z);
@@ -1228,7 +1363,7 @@ function CleanroomFloorGrid() {
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
     return g;
-  }, []);
+  }, [floorDepth]);
   return (
     <lineSegments geometry={geom} position={[0, 0.007, FAB_CENTER_Z]}>
       <lineBasicMaterial color="#9baab8" transparent opacity={0.38} />
@@ -1292,12 +1427,14 @@ function Scene({
     (!!hoveredWh && hoveredWh !== code) ||
     (!hoveredWh && hasProcHL && !warehouseLinks.some((l) => l.whCode === code && highlightedProcesses.includes(l.procCode)));
 
-  const floorW = FAB_W, floorD = FAB_D;
+  const zoneLayout = useProcessZoneLayout(equipmentCounts);
+  const floorW = FAB_W, floorD = zoneLayout.floorDepth;
 
   // liveFoups에 들어있는 FOUP은 decorative waferStates 대신 실데이터로 그린다.
   const liveFoupLabels = new Set((liveFoups ?? []).map((f) => f.foupLabel));
 
   return (
+    <ProcessZoneContext.Provider value={zoneLayout}>
     <>
       <ambientLight intensity={0.45} color="#eef2f8" />
       <directionalLight position={[8, 16, 10]} intensity={1.3} color="#fff6e8" castShadow
@@ -1320,7 +1457,7 @@ function Scene({
         <meshStandardMaterial color="#eaecf0" roughness={0.22} metalness={0.18} />
       </mesh>
       {/* 600 mm 타일 격자선 (raised access floor) */}
-      <CleanroomFloorGrid />
+      <CleanroomFloorGrid floorDepth={floorD} />
       {/* 클린룸 슬래브 두께 */}
       <mesh position={[0, -0.16, FAB_CENTER_Z]}>
         <boxGeometry args={[floorW + 2, 0.32, floorD + 2]} />
@@ -1331,6 +1468,7 @@ function Scene({
       <CUB />
       <AuxFacilities />
       <GasYard dim={!!hoveredWh} />
+      <FeolEntryGate frontZ={(zoneLayout.crossAisles[0] ?? -22.8) - 1.4} />
 
       {/* 중앙 OHT spine 아래의 점검 통로 */}
       <mesh position={[0, 0.002, FAB_CENTER_Z]}>
@@ -1342,9 +1480,9 @@ function Scene({
       <AgvLogisticsInfra />
       {fabId === "M20" && <BackendIntegratedLine />}
 
-      {/* Section labels */}
-      <Text position={[0, 3.8, -22.8]} fontSize={0.28} color="#6b7280" anchorX="center">전공정 진입 (FEOL IN)</Text>
-      <Text position={[0, 3.8,  18.8]} fontSize={0.28} color="#6b7280" anchorX="center">후공정 인계 (BACK-END HANDOFF)</Text>
+      {/* Section labels — 실제 zone 앞/뒤 끝에 맞춰 위치한다 */}
+      <Text position={[0, 3.8, zoneLayout.crossAisles[0] ?? -22.8]} fontSize={0.28} color="#6b7280" anchorX="center">전공정 진입 (FEOL IN)</Text>
+      <Text position={[0, 3.8, zoneLayout.crossAisles[zoneLayout.crossAisles.length - 1] ?? 18.8]} fontSize={0.28} color="#6b7280" anchorX="center">후공정 인계 (BACK-END HANDOFF)</Text>
       {fabId && <Text position={[0, 4.55, 0]} fontSize={0.42} color={fabId === "M20" ? "#EA002C" : fabId === "M21" ? "#2563EB" : "#059669"} anchorX="center">
         {fabId === "M20" ? "M20 · HBM / TSV STACK" : fabId === "M21" ? "M21 · DRAM CELL ARRAY" : "M22 · 3D NAND VERTICAL STACK"}
       </Text>}
@@ -1356,7 +1494,7 @@ function Scene({
       {PROCESSES.map((proc) => (
         <ProcessBay key={proc.code} proc={proc}
           isHL={isHL(proc.code)} isDimmed={isDimmed(proc.code)}
-          actualMachineCount={equipmentCounts?.[proc.code] ?? (fabId ? (FAB_MACHINE_PROFILES[fabId][proc.code] ?? 2) * 2 : undefined)}
+          actualMachineCount={equipmentCounts ? (equipmentCounts[proc.code] ?? 0) : (fabId ? (FAB_MACHINE_PROFILES[fabId][proc.code] ?? 2) * 2 : undefined)}
           onClick={() => { onProcessClick?.(proc.code); onFocusBay(proc.code); }} />
       ))}
       {fabId && fabId !== "M20" && <FabSignatureEquipment fabId={fabId} />}
@@ -1393,6 +1531,7 @@ function Scene({
         dollySpeed={1.7} truckSpeed={1.6} maxPolarAngle={Math.PI / 2.05} />
       <FocusController controls={camRef} focus={focus} />
     </>
+    </ProcessZoneContext.Provider>
   );
 }
 
@@ -1429,6 +1568,7 @@ export default function ProcessFlow3D({
     () => Object.values(equipmentCounts ?? {}).reduce((sum, count) => sum + count, 0),
     [equipmentCounts],
   );
+  const zoneLayout = useProcessZoneLayout(equipmentCounts);
   // 카메라 포커스 상태 (클릭 → 줌인)
   const [focus, setFocus] = useState<FocusView>(OVERVIEW_FOCUS);
   const [focusLabel, setFocusLabel] = useState<string | null>(null);
@@ -1441,7 +1581,7 @@ export default function ProcessFlow3D({
     }
   };
   const focusBay = (code: string) => {
-    setFocus(focusForBay(code));
+    setFocus(focusForBay(code, zoneLayout.bayX, zoneLayout.bayZ));
     setFocusLabel(`${code} ${PROCESSES.find((p) => p.code === code)?.name ?? ""} 공정`);
   };
   const resetView = () => { setFocus({ ...OVERVIEW_FOCUS }); setFocusLabel(null); };
