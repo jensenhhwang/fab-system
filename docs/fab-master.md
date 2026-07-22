@@ -91,7 +91,7 @@ M20의 실제 설치 캐파, 제품 믹스, 수율, 사이클타임은 공개자
 | `NAMEPLATE` | 130,000 | 100% | +11.1% | 126일 | 21,840 | — | 스트레스 계획, 설비 미검증 |
 | `EXPANSION` | 143,000 | 110%(명목 대비) | +22.2% | 105일 | 20,020 | 6,971,250 | 디보틀넥·설비증설 후 미래 상태 |
 
-설비 대수는 [`fab-equipment-master.md`](./fab-equipment-master.md)를 따른다. M20은 NORMAL 15% reserve 기준 **494 modeled tools**로 정의됐다.
+설비 대수는 [`fab-equipment-master.md`](./fab-equipment-master.md)를 따른다. M20은 NORMAL 기준 병목 15%·비병목 25% reserve로 **329 modeled tools**로 정의됐다.
 
 ### HBM 완제품 환산
 
@@ -178,7 +178,7 @@ End-to-end WIP equivalent = 17,173 + 2,453 = 19,626 FOUP-equivalent
 | `NAMEPLATE` | 200,000 | 100% | +8.7% | 90일 | 24,000 | 스트레스 계획, 설비 미검증 |
 | `EXPANSION` | 220,000 | 110%(명목 대비) | +19.6% | 80일 | 23,467 | 디보틀넥 후 미래 상태 |
 
-설비 대수는 [`fab-equipment-master.md`](./fab-equipment-master.md#m21--dram)의 **488 modeled tools**(NORMAL 15% reserve 기준)를 따른다. WSPM은 M20(117,000)보다 크지만(184,000) 공정이 단순해 wafer당 설비 필요량이 적어, 총 설비 대수는 M20(494대)과 비슷한 수준에 그친다.
+설비 대수는 [`fab-equipment-master.md`](./fab-equipment-master.md#m21--dram)의 **495 modeled tools**(NORMAL 기준 병목 15%·비병목 25% reserve)를 따른다. WSPM은 M20(117,000)보다 크지만(184,000) 공정이 단순해 wafer당 설비 필요량이 적어, 총 설비 대수는 M20(329대)보다는 많지만 M22(533대)보다는 적다.
 
 ### DRAM 완제품 환산
 
@@ -267,7 +267,7 @@ End-to-end WIP equivalent = 18,720 + 2,880 = 21,600 FOUP-equivalent
 | `NAMEPLATE` | 120,000 | 100% | +11.1% | 168일 | 26,880 | 스트레스 계획, 설비 미검증 |
 | `EXPANSION` | 132,000 | 110%(명목 대비) | +22.2% | 150일 | 26,400 | 디보틀넥 후 미래 상태 |
 
-설비 대수는 [`fab-equipment-master.md`](./fab-equipment-master.md#m22--nand)의 **512 modeled tools**(NORMAL 15% reserve 기준)를 따른다. M20(494대)보다 WSPM(108,000 vs 117,000)은 비슷한 수준이지만 층수·반복 공정이 훨씬 많아 총 설비 대수가 M20을 넘어선다.
+설비 대수는 [`fab-equipment-master.md`](./fab-equipment-master.md#m22--nand)의 **533 modeled tools**(NORMAL 기준 병목 15%·비병목 25% reserve)를 따른다. M20(329대)보다 WSPM(108,000 vs 117,000)은 비슷한 수준이지만 층수·반복 공정이 훨씬 많아 총 설비 대수가 3팹 중 가장 많다.
 
 ### NAND 완제품 환산
 
@@ -301,10 +301,10 @@ Route 기준: `M22:NAND:V1`, 3-deck 321단, 256 모델 스텝. 상세는 [`route
 | NORMAL 목표 WIP(FOUP-eq) | 16,380 | 19,626 | 21,600 |
 | 적층/패키징 방식 | TSV 12단 적층 | 단일 다이(SDP) | 와이어본딩 16단 |
 | Route 모델 스텝 | 140 | 120 | 256 |
-| 설비 대수(NORMAL 15% reserve) | 494 | 488 | 512 |
+| 설비 대수(NORMAL, 병목 15%·비병목 25% reserve) | 329 | 495 | 533 |
 | 실측 규모 근거 | M16 참고(가상 HBM Fab) | M16급 1c DRAM(17만~19만 WSPM) | NAND 단일 라인(10만~12만 WSPM) |
 
-M21은 WSPM이 3팹 중 가장 크지만(공정이 단순해 wafer당 필요 설비가 적어 총 설비 대수는 M20과 비슷) 사이클타임은 가장 짧다 — **사이클타임(Route 복잡도)과 WSPM(설비 투자 규모)은 서로 독립적인 변수**이기 때문이다. M22는 WSPM이 가장 낮지만 321단 적층으로 증착·식각 반복 횟수가 압도적으로 많아 설비 대수가 3팹 중 가장 많다. 둘 다 오류가 아니라 "wafer당 반복 공정 수"와 "설비 투자 규모"가 각 Fab마다 다른 방향으로 조합된 결과다.
+M21은 WSPM이 3팹 중 가장 크지만(공정이 단순해 wafer당 필요 설비가 적어 총 설비 대수는 M20보다는 많고 M22보다는 적음) 사이클타임은 가장 짧다 — **사이클타임(Route 복잡도)과 WSPM(설비 투자 규모)은 서로 독립적인 변수**이기 때문이다. M22는 WSPM이 가장 낮지만 321단 적층으로 증착·식각 반복 횟수가 압도적으로 많아 설비 대수가 3팹 중 가장 많다. 둘 다 오류가 아니라 "wafer당 반복 공정 수"와 "설비 투자 규모"가 각 Fab마다 다른 방향으로 조합된 결과다.
 
 ## 4. 시나리오 계산 계약
 

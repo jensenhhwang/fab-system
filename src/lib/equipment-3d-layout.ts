@@ -14,8 +14,8 @@ export type DenseEquipmentBay = {
   equipment: EquipmentInstancePosition[];
 };
 
-export const M20_3D_EQUIPMENT_TOTAL = 494;
-export const M20_3D_MAX_PROCESS_EQUIPMENT = 72;
+export const M20_3D_EQUIPMENT_TOTAL = 329;
+export const M20_3D_MAX_PROCESS_EQUIPMENT = 66;
 export const M20_DENSE_PROCESS_ZONES: Readonly<Record<string, { x: number; z: number }>> = Object.freeze({
   P01: { x: -5.2, z: -21.2 }, P05: { x:  5.2, z: -21.2 },
   P03: { x: -5.2, z: -11.6 }, P04: { x:  5.2, z: -11.6 },

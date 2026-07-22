@@ -22,3 +22,19 @@ export function minimumDefinedCount(ratedWph: number, passesPerWafer: number, no
   while (normalWspm / supportedWspm(ratedWph, passesPerWafer, count) > maxPlannedLoad) count += 1;
   return count;
 }
+
+// 병목이 아닌 공정까지 85% 상한까지 채우면(=최소 대수) 변동성을 흡수할 여유가 전혀 없다 —
+// PM·돌발 다운·수율 재작업을 흡수하는 protective capacity를 남기는 표준 fab capacity planning
+// 관행(TOC 병목 관리)에 따라, 병목이 아닌 공정엔 더 낮은 목표 부하를 쓴다.
+export const NORMAL_TARGET_LOAD_NON_BOTTLENECK = 0.75;
+
+// 이 fab에서 wafer당 방문 횟수(capacityPassesPerWafer)가 가장 많은 공정(들)만 "병목"으로 보고
+// maxPlannedLoad까지 채우고, 나머지는 targetLoadNonBottleneck까지만 채운다.
+export function resolveTargetLoad(
+  capacityPassesPerWafer: number,
+  maxPassesPerWafer: number,
+  maxPlannedLoad: number,
+  targetLoadNonBottleneck: number = NORMAL_TARGET_LOAD_NON_BOTTLENECK,
+): number {
+  return capacityPassesPerWafer === maxPassesPerWafer ? maxPlannedLoad : targetLoadNonBottleneck;
+}

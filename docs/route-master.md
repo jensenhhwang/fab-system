@@ -250,12 +250,12 @@ P10(Dicing/Singulation → Die Attach → Wire Bond × 16단 적층 → Molding 
 | HBM4 12-Hi | 구현됨 — `P10.DRAM_BOND_12H`, `repeatCount: 12` |
 | M20 실행 원장 | 구현됨 — `waferLots`, `waferLotStepEvents`, 12개 FOUP 타임랩스 추적 |
 | 패키징 자재 연결 | 구현됨 — `route/version/operation` scope, P10 MUF 진입 시 파일럿 트리거 |
-| M21 `routeMaster` | 문서 승인(`M21:DRAM:V1`, 120스텝) — DB 컬렉션 미연결 |
-| M22 `routeMaster` | 문서 승인(`M22:NAND:V1`, 256스텝, 3-deck 321단) — DB 컬렉션 미연결 |
-| M20 설비 Capacity 연결 | 구현됨 — M20 494대; P10 Packaging 36대의 5개 native-stage capacity |
-| M21·M22 설비 Capacity | 문서 승인(`fab-equipment-master.md` — M21 198대, M22 427대) — DB 컬렉션 미연결 |
+| M21 `routeMaster` | 구현됨 — `M21:DRAM:V1`, 120스텝, DB 시딩 완료 |
+| M22 `routeMaster` | 구현됨 — `M22:NAND:V1`, 256스텝, 3-deck 321단, DB 시딩 완료 |
+| M20 설비 Capacity 연결 | 구현됨 — M20 329대; P10 Packaging 36대의 5개 native-stage capacity |
+| M21·M22 설비 Capacity | 구현됨 — `fab-equipment-master.md` 기준 M21 495대, M22 533대, `equipmentMaster` DB 원장 연결 완료(P10은 여전히 `RATE_TBD`) |
 | FOUP → Die/Stack carrier 전환 | Route 단위 전환은 정의됨; 물리 Die/Stack 개별 원장은 후속 구현 |
-| 다이싱·본딩·몰딩·최종검사 세부 노드 | M20 V3 P10 operation node로 구현됨; M21·M22는 문서 단계 |
+| 다이싱·본딩·몰딩·최종검사 세부 노드 | M20 V4 P10 operation node로 구현됨; M21·M22는 문서 단계(`RATE_TBD`) |
 
 다음 구현 우선순위는 M20의 모델 반복수와 설비용 capacity visit 분리, P05 물리 방문 전개, 패키징 세부 노드 및 FOUP/Die/Stack WIP 분리, **M21·M22 route/equipment 문서를 `routeMaster`·`equipmentMaster` 컬렉션과 실행 원장에 연결하는 마이그레이션**이다. 3D 화면의 5초 간격 이동은 실제 가공시간이 아니라 정의된 라우트를 순서대로 보여주는 타임랩스다.
 

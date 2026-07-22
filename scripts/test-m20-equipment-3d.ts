@@ -14,9 +14,9 @@ let renderedTotal = 0;
 let bayTotal = 0;
 const allDetailPositions = new Set<string>();
 const expectedBayCounts: Record<string, number[]> = {
-  P01: [16, 16], P02: [20, 19, 19], P03: [17, 17, 16, 16], P04: [18, 18, 18, 18],
-  P05: [12, 12], P06: [16, 16, 16], P07: [16, 16, 15, 15], P08: [19, 19, 18],
-  P09: [20, 20], P10: [18, 18],
+  P01: [9], P02: [20, 19, 19], P03: [17, 17, 16, 16], P04: [19, 19, 18],
+  P05: [13], P06: [13], P07: [16, 16, 15, 15], P08: [12],
+  P09: [4], P10: [18, 18],
 };
 for (const [processCode, count] of Object.entries(M20_DEFINED_EQUIPMENT_COUNTS)) {
   const zone = M20_DENSE_PROCESS_ZONES[processCode];
@@ -42,9 +42,9 @@ for (const [processCode, count] of Object.entries(M20_DEFINED_EQUIPMENT_COUNTS))
 }
 
 assert.equal(renderedTotal, M20_3D_EQUIPMENT_TOTAL);
-assert.equal(bayTotal, 29);
+assert.equal(bayTotal, 21);
 assert.equal(Math.max(...Object.values(M20_DEFINED_EQUIPMENT_COUNTS)), M20_3D_MAX_PROCESS_EQUIPMENT);
-assert.deepEqual(Object.values(M20_DEFINED_EQUIPMENT_COUNTS), [32, 58, 66, 72, 24, 48, 62, 56, 40, 36]);
+assert.deepEqual(Object.values(M20_DEFINED_EQUIPMENT_COUNTS), [9, 58, 66, 56, 13, 13, 62, 12, 4, 36]);
 assert(M20_DENSE_PROCESS_ZONES.P09.x < 0, "P09 테스트는 Back-end line 왼쪽");
 assert(M20_DENSE_PROCESS_ZONES.P10.x > 0, "P10 패키징은 Back-end line 오른쪽");
 assert.equal(M20_DENSE_PROCESS_ZONES.P09.z, M20_DENSE_PROCESS_ZONES.P10.z, "P09→P10은 같은 row의 짧은 handoff");
@@ -63,4 +63,4 @@ const denseDistance = ohtRouteDistance(hbmRoute, buildOhtAccessPoints(M20_DENSE_
 const legacyDistance = ohtRouteDistance(hbmRoute, legacyAccess);
 assert(denseDistance < legacyDistance * 0.9, `OHT route distance 개선: ${legacyDistance} → ${denseDistance}`);
 
-console.log(`✅ M20 3D verified: 494/494 · 29 bays · OHT/AGV route ${legacyDistance.toFixed(1)} → ${denseDistance.toFixed(1)}`);
+console.log(`✅ M20 3D verified: 329/329 · 21 bays · OHT/AGV route ${legacyDistance.toFixed(1)} → ${denseDistance.toFixed(1)}`);

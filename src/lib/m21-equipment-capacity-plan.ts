@@ -1,5 +1,5 @@
 import { FAB_SCENARIO, fabScenarioMetrics } from "@/lib/fab-scenario";
-import { minimumDefinedCount, modeledOeeForSequence, supportedWspm } from "@/lib/equipment-wph-model";
+import { minimumDefinedCount, modeledOeeForSequence, resolveTargetLoad, supportedWspm } from "@/lib/equipment-wph-model";
 import type { FabEquipmentMasterView } from "@/lib/fab-equipment-master-view";
 
 export const FAB_EQUIPMENT_MASTER_M21_VERSION = "FAB_EQUIPMENT_MASTER_M21_V1" as const;
@@ -50,11 +50,16 @@ export const M21_PROCESS_PASSES: Readonly<Record<M21WphProcessCode, number>> = O
   Object.fromEntries(M21_PROCESS_ASSUMPTIONS.map((p) => [p.processCode, p.capacityPassesPerWafer])),
 ) as Readonly<Record<M21WphProcessCode, number>>;
 
+const M21_MAX_PASSES_PER_WAFER = Math.max(...M21_PROCESS_ASSUMPTIONS.map((p) => p.capacityPassesPerWafer));
+
 export const M21_DEFINED_EQUIPMENT_COUNTS: Readonly<Record<M21WphProcessCode, number>> = Object.freeze((() => {
   const normalWspm = m21NormalWspm();
   return Object.fromEntries(M21_PROCESS_ASSUMPTIONS.map((p) => [
     p.processCode,
-    minimumDefinedCount(p.ratedWph, p.capacityPassesPerWafer, normalWspm, M21_NORMAL_MAX_PLANNED_LOAD),
+    minimumDefinedCount(
+      p.ratedWph, p.capacityPassesPerWafer, normalWspm,
+      resolveTargetLoad(p.capacityPassesPerWafer, M21_MAX_PASSES_PER_WAFER, M21_NORMAL_MAX_PLANNED_LOAD),
+    ),
   ]));
 })()) as Readonly<Record<M21WphProcessCode, number>>;
 

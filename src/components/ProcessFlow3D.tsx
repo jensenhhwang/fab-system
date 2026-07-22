@@ -770,7 +770,7 @@ const FAB_MACHINE_PROFILES: Record<FabId, Record<string, number>> = {
 function FabSignatureEquipment({ fabId }: { fabId: FabId }) {
   const { bayZ } = useContext(ProcessZoneContext);
   if (fabId === "M20") {
-    // M20은 원장 494대만 전수 배치한다. 장식 설비를 더하면 화면 대수가 원장을 초과한다.
+    // M20은 원장 329대만 전수 배치한다. 장식 설비를 더하면 화면 대수가 원장을 초과한다.
     return null;
   }
   if (fabId === "M21") {

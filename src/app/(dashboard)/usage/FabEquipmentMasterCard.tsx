@@ -66,13 +66,13 @@ export default function FabEquipmentMasterCard({
               className={`rounded-lg border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${selected ? "border-[#1D5FBF] ring-2 ring-[#BFD5FF]" : "border-[#DDE5EB]"} ${style?.bg ?? "bg-[#F5F7F9]"}`}
             >
               <div className="flex items-start justify-between gap-2">
-                <div>
+                <div className="min-w-0">
                   <div className="font-mono text-[11px] font-black text-[#283A48]">{process.processCode}</div>
                   <div className="mt-0.5 text-[10px] font-bold text-[#596975]">{process.name}</div>
                 </div>
-                <div className="text-right">
-                  <div className="font-mono text-lg font-black text-[#1D5FBF]">{process.definedCount}대</div>
-                  <div className={`text-[8px] font-bold ${ledgerMatches ? "text-[#087A55]" : "text-[#C51636]"}`}>
+                <div className="shrink-0 text-right">
+                  <div className="whitespace-nowrap font-mono text-lg font-black text-[#1D5FBF]">{process.definedCount}대</div>
+                  <div className={`whitespace-nowrap text-[8px] font-bold ${ledgerMatches ? "text-[#087A55]" : "text-[#C51636]"}`}>
                     {ledgerCount === undefined ? "원장 미연결" : ledgerMatches ? "원장 일치" : `원장 ${ledgerCount}대`}
                   </div>
                 </div>

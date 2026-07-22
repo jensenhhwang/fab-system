@@ -7,13 +7,15 @@ import {
 
 const master = buildM20FabEquipmentMaster();
 
-assert.equal(master.version, "FAB_EQUIPMENT_MASTER_M20_V3");
+assert.equal(master.version, "FAB_EQUIPMENT_MASTER_M20_V4");
 assert.equal(master.previousBaselineTotal, 452);
-assert.equal(master.totalEquipment, 494);
-assert.equal(master.totalGap, 42);
+assert.equal(master.totalEquipment, 329);
+assert.equal(master.totalGap, 329 - 452);
 assert.equal(M20_DEFINED_EQUIPMENT_COUNTS.P02, 58);
 assert.equal(M20_DEFINED_EQUIPMENT_COUNTS.P03, 66);
 assert.equal(M20_DEFINED_EQUIPMENT_COUNTS.P07, 62);
+assert.equal(M20_DEFINED_EQUIPMENT_COUNTS.P04, 56);
+assert.equal(M20_DEFINED_EQUIPMENT_COUNTS.P09, 4);
 assert(master.supportedWspm >= 117_000 / M20_NORMAL_MAX_PLANNED_LOAD);
 assert(master.normalPlannedLoad <= M20_NORMAL_MAX_PLANNED_LOAD);
 assert(master.normalReservedHeadroom >= 0.15);
@@ -31,4 +33,4 @@ assert.deepEqual(master.fabDefinitions.slice(1).map((fab) => [fab.fabId, fab.tot
   ["M22", null, "NOT_MODELED"],
 ]);
 
-console.log("✅ Fab Equipment Master verified: M20 494 modeled tools / 15% reserve policy / M21·M22 TBD");
+console.log("✅ Fab Equipment Master verified: M20 329 modeled tools / 15%+ non-bottleneck reserve policy / M21·M22 TBD");

@@ -1,6 +1,7 @@
 import { M20_PRODUCTION_SCENARIOS, type M20ProductionScenarioId } from "@/lib/fab-scenario";
+import { resolveTargetLoad } from "@/lib/equipment-wph-model";
 
-export const FAB_EQUIPMENT_MASTER_VERSION = "FAB_EQUIPMENT_MASTER_M20_V3" as const;
+export const FAB_EQUIPMENT_MASTER_VERSION = "FAB_EQUIPMENT_MASTER_M20_V4" as const;
 export const M20_EQUIPMENT_DEFINITION_STATUS = "INDUSTRY_RANGE_INFORMED_MODELED_BASELINE" as const;
 export const M20_EQUIPMENT_RATE_UNIT = "MIXED_NATIVE_CAPACITY" as const;
 export const M20_NORMAL_MAX_PLANNED_LOAD = 0.85;
@@ -59,6 +60,9 @@ type NativeStageProcessAssumption = {
 
 type ProcessAssumption = AssessedProcessAssumption | NativeStageProcessAssumption;
 
+// previousCount는 V2 시절 기설치 대수 기록이다 — V4부터는 대수 계산의 하한으로 쓰지 않고
+// (definedCount 참고) processes[].gap 필드로 "V2 대비 얼마나 바뀌었는지"만 보여주는
+// 참고값으로 남긴다.
 const PROCESS_ASSUMPTIONS: readonly ProcessAssumption[] = [
   { processCode: "P01", name: "산화", previousCount: 32, ratedWph: M20_MODELED_RATE_VALUES.P01, capacityPassesPerWafer: 4, assessment: "WPH_PROXY" },
   { processCode: "P02", name: "CVD", previousCount: 48, ratedWph: M20_MODELED_RATE_VALUES.P02, capacityPassesPerWafer: 27, assessment: "WPH_PROXY" },
@@ -190,11 +194,20 @@ function processSupportedWspm(process: ProcessAssumption, count: number): number
   return process.assessment === "WPH_PROXY" ? supportedWspm(process, count) : backendSupportedWspm(process.processCode);
 }
 
+// wafer당 방문 횟수(capacityPassesPerWafer)가 가장 많은 공정만 병목으로 보고 85% 상한까지,
+// 나머지는 변동성을 흡수할 여유를 남기도록 더 낮은 목표 부하까지 채운다 — M21·M22와 동일한
+// 기준(resolveTargetLoad)이다. previousCount는 더 이상 대수의 하한이 아니라 V3 이전 버전과의
+// 비교를 위한 참고값으로만 쓴다(processes[].previousCount/gap).
+const WPH_MAX_PASSES_PER_WAFER = Math.max(
+  ...PROCESS_ASSUMPTIONS.filter((p): p is AssessedProcessAssumption => p.assessment === "WPH_PROXY").map((p) => p.capacityPassesPerWafer),
+);
+
 function definedCount(process: ProcessAssumption): number {
   if (process.assessment !== "WPH_PROXY") return process.previousCount;
   const normalWspm = M20_PRODUCTION_SCENARIOS.NORMAL.waferStartsPerMonth;
-  let count = process.previousCount;
-  while (normalWspm / supportedWspm(process, count) > M20_NORMAL_MAX_PLANNED_LOAD) count += 1;
+  const targetLoad = resolveTargetLoad(process.capacityPassesPerWafer, WPH_MAX_PASSES_PER_WAFER, M20_NORMAL_MAX_PLANNED_LOAD);
+  let count = 1;
+  while (normalWspm / supportedWspm(process, count) > targetLoad) count += 1;
   return count;
 }
 
@@ -316,7 +329,7 @@ export function buildM20FabEquipmentMaster(): M20FabEquipmentMaster {
       "P10 Packaging은 Dicing·Die Sort·12-Hi Bonding·MUF/Molding·Final Test의 native-unit Capacity 중 최대 부하를 대표값으로 사용합니다.",
       "650 KGD/wafer는 die yield 반영값이며 assembly yield 90%는 Final Test 이후 good stack 산출에 한 번만 적용합니다.",
       "P10.BASE_DIE_ATTACH는 Base Die KGD 1개를 gross stack마다 소비합니다. 설비 Capacity는 검증 전 CAPACITY_PENDING이며 12-Hi Bonding 부하에 합산하지 않습니다.",
-      "494대는 실제 구매·설치·qualification 완료 수량이 아닌 M20 modeled equipment definition입니다.",
+      "329대는 실제 구매·설치·qualification 완료 수량이 아닌 M20 modeled equipment definition입니다.",
     ],
   };
 }

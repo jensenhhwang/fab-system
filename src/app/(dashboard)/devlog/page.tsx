@@ -96,6 +96,21 @@ const LOGS = [
     "실행추적의 전체 원장 선택과 Watched 상세 선택을 하나로 통합해 서로 다른 FOUP 정보가 동시에 표시되던 이중 선택 UX 제거",
     "FOUP bootstrap 재실행 추가 생성 0건, 14,040 Lot/Assignment 불변식, 494대 3D, 생산 시나리오, TypeScript, ESLint 및 Next.js 프로덕션 빌드 검증 완료",
   ] },
+  { day: 13, date: "2026-07-21", label: "M21·M22 Fab Master 정의 + 로그인 역할 선택", color: "#DB2777", items: [
+    "로그인 폼을 아이디/비밀번호 입력에서 역할 선택 타일로 교체하고 헤더에 역할 스위처를 추가",
+    "M20 공정별 사용량 3D에 노드 밀도 카드와 실시간 가동률 미리보기를 추가하고, 만 단위가 넘는 FOUP 표현·슬라이더 UX를 개선",
+    "M21(DRAM)·M22(NAND)를 M20과 동일한 문서 rigor로 fab-master·route-master·material-consumption-master·fab-equipment-master 5개 마스터 문서에 정의 — M20 숫자를 복사하지 않고 공개 업계 자료(Applied Materials·SK hynix Newsroom·imec·SemiEngineering·Lam Research)로 독립 도출",
+    "M21·M22의 WSPM을 최초 추정치(80K/100K)에서 실제 SK hynix 팹급 벤치마크로 재산정 — M21 184,000 WSPM(M16급 1c DRAM 17만~19만 실측 근거), M22 108,000 WSPM(NAND 단일 라인 10만~12만 실측 근거) — 하위 설비·자재·시나리오 전체 재계산",
+  ] },
+  { day: 14, date: "2026-07-22", label: "M21·M22 실DB 동기화 + 3D 레이아웃 재설계 + 설비 대수 일관화", color: "#4F46E5", items: [
+    "M21·M22의 routeMaster·equipmentMaster·materialConsumption을 문서 승인 단계에서 실제 MongoDB 원장으로 동기화 — M20과 동일한 구현 깊이로 마이그레이션 스크립트 4종 추가",
+    "M20 전용이던 장비 카드를 FabEquipmentMasterView 기반 3-fab 공용 카드로 일반화하고, 대수 0인 공정을 목업으로 채우지 않고 실제로 숨기도록 수정",
+    "M21·M22 3D 트윈에서 대수 0인 P08이 4대로 표시되던 phantom 렌더링 버그와, 공정당 대수가 크게 다른 fab에서 설비가 바닥 밖으로 넘치던 버그를 원장 기반 bay 단위 bin-packing으로 해결",
+    "OverheadInfra·AgvLogisticsInfra·가스야드 배관이 여전히 M20 시대 고정 좌표를 쓰던 버그와, 바닥·타일 그리드가 실제 zone 중심과 2.25만큼 어긋나 있던 FAB_CENTER_Z 버그를 수정하고 첫 공정 앞 빈 통로에 gowning/에어샤워 게이트를 배치",
+    "설비 대수 산정을 병목/비병목 목표 부하 기준(병목 85%, 비병목 75%)으로 3팹에 일관 적용 — M20은 기존 설치 대수 하한을 없애 494→329대로, M21·M22는 병목이 아닌 공정에 여유를 둬 488→495대·512→533대로 재계산",
+    "M20 equipmentMaster 초과분 165대를 equipmentAssignments 미참조 확인 후 스냅샷을 남기고 안전하게 삭제하는 일회성 trim 스크립트로 반영",
+    "공정 카드 레이아웃에서 공정명이 길 때 대수·단위가 두 줄로 줄바꿈되던 버그 수정, TypeScript·ESLint·브라우저 3-fab 렌더링 검증 완료",
+  ] },
 ];
 
 export default function DevlogPage() {
