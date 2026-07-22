@@ -1,8 +1,11 @@
 import { FAB_SCENARIO, fabScenarioMetrics } from "@/lib/fab-scenario";
-import { minimumDefinedCount, modeledOeeForSequence, resolveTargetLoad, supportedWspm } from "@/lib/equipment-wph-model";
+import {
+  minimumDefinedCount, minimumNativeStageCount, modeledOeeForSequence, nativeStageSupportedWspm,
+  resolveTargetLoad, supportedWspm, type NativeCapacityStage,
+} from "@/lib/equipment-wph-model";
 import type { FabEquipmentMasterView } from "@/lib/fab-equipment-master-view";
 
-export const FAB_EQUIPMENT_MASTER_M21_VERSION = "FAB_EQUIPMENT_MASTER_M21_V1" as const;
+export const FAB_EQUIPMENT_MASTER_M21_VERSION = "FAB_EQUIPMENT_MASTER_M21_V2" as const;
 export const M21_EQUIPMENT_DEFINITION_STATUS = "INDUSTRY_RANGE_INFORMED_MODELED_BASELINE" as const;
 export const M21_NORMAL_MAX_PLANNED_LOAD = 0.85;
 
@@ -23,18 +26,27 @@ export const M21_PROCESS_ASSUMPTIONS: readonly M21ProcessAssumption[] = [
   { processCode: "P09", name: "웨이퍼 테스트", ratedWph: 130, capacityPassesPerWafer: 1 },
 ];
 
-// P10(conventional 단일 다이 패키징) — wire bonder 등 공개 UPH가 없어 RATE_TBD.
-// M20 P10 36대/117,000 WSPM 비율을 M21 NORMAL WSPM에 적용한 placeholder (docs/fab-equipment-master.md 참고).
-export const M21_P10_PLACEHOLDER_STAGES: readonly { stageCode: string; name: string; equipmentCount: number }[] = [
-  { stageCode: "BACKGRIND", name: "Backgrind(단일-패스)", equipmentCount: 5 },
-  { stageCode: "DICING", name: "Dicing / Singulation", equipmentCount: 8 },
-  { stageCode: "DIE_ATTACH", name: "Die Attach", equipmentCount: 7 },
-  { stageCode: "WIRE_BOND", name: "Wire Bond", equipmentCount: 17 },
-  { stageCode: "MOLDING", name: "Molding", equipmentCount: 7 },
-  { stageCode: "LEAD_FINISH", name: "Lead Finish / Ball Mount", equipmentCount: 5 },
-  { stageCode: "FINAL_TEST", name: "Final Test", equipmentCount: 8 },
+// P10(conventional 단일 다이 패키징, SDP — 적층 없음). fab-master.md § DRAM 완제품 환산의
+// 863 gross die → 759 양품 die(88%) → 743.8 양품 package(98% 조립수율)를 그대로 쓴다.
+export const M21_GOOD_DIE_PER_WAFER = 759;
+export const M21_GOOD_PACKAGE_PER_WAFER = 743.8;
+
+// Backgrind·Dicing은 wafer 단위(웨이퍼당 1회), Die Attach·Wire Bond는 다이 단위(적층이
+// 없어 다이=패키지 1:1이지만 본딩 자체는 다이별 인덱싱), Molding·Lead Finish·Final Test는
+// 완성 패키지 단위다. ratedRate는 vendor spec이 아닌 반도체 조립·테스트 업계 통상 처리량
+// 범위 추정이다 — Final Test만 공개 문헌(아래 출처)으로 뒷받침되고 나머지는
+// INDUSTRY_RANGE_INFORMED 추정이라 실제 vendor 확보 시 대수가 달라질 수 있다.
+export const M21_P10_STAGES: readonly NativeCapacityStage[] = [
+  { stageCode: "BACKGRIND", name: "Backgrind(단일-패스)", ratedRate: 45, capacityUnit: "WAFER_HOUR", driverPerWafer: 1 },
+  { stageCode: "DICING", name: "Dicing / Singulation", ratedRate: 38, capacityUnit: "WAFER_HOUR", driverPerWafer: 1 },
+  { stageCode: "DIE_ATTACH", name: "Die Attach", ratedRate: 4_000, capacityUnit: "DIE_HOUR", driverPerWafer: M21_GOOD_DIE_PER_WAFER },
+  { stageCode: "WIRE_BOND", name: "Wire Bond", ratedRate: 6_000, capacityUnit: "DIE_HOUR", driverPerWafer: M21_GOOD_DIE_PER_WAFER },
+  { stageCode: "MOLDING", name: "Molding", ratedRate: 2_500, capacityUnit: "PACKAGE_HOUR", driverPerWafer: M21_GOOD_PACKAGE_PER_WAFER },
+  { stageCode: "LEAD_FINISH", name: "Lead Finish / Ball Mount", ratedRate: 5_000, capacityUnit: "PACKAGE_HOUR", driverPerWafer: M21_GOOD_PACKAGE_PER_WAFER },
+  // Final Test rate: practical UPH at ~1s test time, 0.2s handler index, 60% OEE 가정
+  // (James Migliaccio, "Aspects of High Volume Test for Semiconductor Devices", CS MANTECH 2018, Table I).
+  { stageCode: "FINAL_TEST", name: "Final Test", ratedRate: 1_800, capacityUnit: "PACKAGE_HOUR", driverPerWafer: M21_GOOD_PACKAGE_PER_WAFER },
 ];
-export const M21_P10_TOTAL = M21_P10_PLACEHOLDER_STAGES.reduce((sum, stage) => sum + stage.equipmentCount, 0);
 
 export function m21NormalWspm(): number {
   const fab = FAB_SCENARIO.find((entry) => entry.id === "M21");
@@ -63,6 +75,17 @@ export const M21_DEFINED_EQUIPMENT_COUNTS: Readonly<Record<M21WphProcessCode, nu
   ]));
 })()) as Readonly<Record<M21WphProcessCode, number>>;
 
+// P10 내부 7개 stage도 병목(85%) 기준으로 최소 대수를 구한다 — M20 P10(5-stage)이 이미
+// 83~84%대로 병목급으로 운영되는 전례를 따라, P10 전체를 P01~P09의 병목 공정과 같은 급으로 본다.
+export const M21_P10_DEFINED_COUNTS: Readonly<Record<string, number>> = Object.freeze((() => {
+  const normalWspm = m21NormalWspm();
+  return Object.fromEntries(M21_P10_STAGES.map((stage) => [
+    stage.stageCode,
+    minimumNativeStageCount(stage, normalWspm, M21_NORMAL_MAX_PLANNED_LOAD),
+  ]));
+})());
+export const M21_P10_TOTAL = Object.values(M21_P10_DEFINED_COUNTS).reduce((sum, count) => sum + count, 0);
+
 export const M21_TOTAL_EQUIPMENT = Object.values(M21_DEFINED_EQUIPMENT_COUNTS).reduce((sum, count) => sum + count, 0) + M21_P10_TOTAL;
 
 export { modeledOeeForSequence };
@@ -81,14 +104,20 @@ export function buildM21FabEquipmentMaster(): FabEquipmentMasterView {
       capacityStages: [],
     };
   });
+
+  const p10Stages = M21_P10_STAGES.map((stage) => {
+    const count = M21_P10_DEFINED_COUNTS[stage.stageCode];
+    const supported = nativeStageSupportedWspm(stage, count);
+    return { stage, count, normalPlannedLoad: normalWspm / supported };
+  });
+  const p10Bottleneck = p10Stages.reduce((highest, row) => row.normalPlannedLoad > highest.normalPlannedLoad ? row : highest);
   processes.push({
     processCode: "P10",
     name: "Conventional 단일 다이 패키징",
     definedCount: M21_P10_TOTAL,
-    normalPlannedLoad: null,
-    pendingReason: "Wire bonder 등 conventional 패키징 장비 공개 UPH 없음 (RATE_TBD)",
-    bottleneckCapacityStage: null,
-    capacityStages: [],
+    normalPlannedLoad: p10Bottleneck.normalPlannedLoad,
+    bottleneckCapacityStage: p10Bottleneck.stage.stageCode,
+    capacityStages: M21_P10_STAGES.map((stage) => ({ stageCode: stage.stageCode, name: stage.name })),
   });
   return {
     fabId: "M21",

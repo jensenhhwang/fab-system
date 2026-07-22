@@ -38,3 +38,27 @@ export function resolveTargetLoad(
 ): number {
   return capacityPassesPerWafer === maxPassesPerWafer ? maxPlannedLoad : targetLoadNonBottleneck;
 }
+
+// M20 P10(backendCapacityStages)이 쓰는 "1개 stage = wafer당 다른 단위(다이/패키지/wafer) 처리"
+// 모델을 M21/M22의 conventional 패키징에도 재사용할 수 있게 뽑아낸 것 — WPH_PROXY(P01~P09)와
+// 달리 시퀀스별 OEE 순환 없이 고정 OEE 하나를 쓴다(M20_BACKEND_MODELED_OEE와 동일 값).
+export const NATIVE_STAGE_MODELED_OEE = 0.855;
+
+export type NativeCapacityStage = {
+  stageCode: string;
+  name: string;
+  ratedRate: number;
+  capacityUnit: string;
+  driverPerWafer: number;
+};
+
+export function nativeStageSupportedWspm(stage: Pick<NativeCapacityStage, "ratedRate" | "driverPerWafer">, count: number): number {
+  const perToolCapacityPerDay = stage.ratedRate * HOURS_PER_DAY * NATIVE_STAGE_MODELED_OEE;
+  return ((count * perToolCapacityPerDay) / stage.driverPerWafer) * DAYS_PER_MONTH;
+}
+
+export function minimumNativeStageCount(stage: Pick<NativeCapacityStage, "ratedRate" | "driverPerWafer">, normalWspm: number, maxPlannedLoad: number): number {
+  let count = 1;
+  while (normalWspm / nativeStageSupportedWspm(stage, count) > maxPlannedLoad) count += 1;
+  return count;
+}

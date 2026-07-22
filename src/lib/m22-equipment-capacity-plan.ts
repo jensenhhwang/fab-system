@@ -1,8 +1,11 @@
 import { FAB_SCENARIO, fabScenarioMetrics } from "@/lib/fab-scenario";
-import { minimumDefinedCount, modeledOeeForSequence, resolveTargetLoad, supportedWspm } from "@/lib/equipment-wph-model";
+import {
+  minimumDefinedCount, minimumNativeStageCount, modeledOeeForSequence, nativeStageSupportedWspm,
+  resolveTargetLoad, supportedWspm, type NativeCapacityStage,
+} from "@/lib/equipment-wph-model";
 import type { FabEquipmentMasterView } from "@/lib/fab-equipment-master-view";
 
-export const FAB_EQUIPMENT_MASTER_M22_VERSION = "FAB_EQUIPMENT_MASTER_M22_V1" as const;
+export const FAB_EQUIPMENT_MASTER_M22_VERSION = "FAB_EQUIPMENT_MASTER_M22_V2" as const;
 export const M22_EQUIPMENT_DEFINITION_STATUS = "INDUSTRY_RANGE_INFORMED_MODELED_BASELINE" as const;
 export const M22_NORMAL_MAX_PLANNED_LOAD = 0.85;
 
@@ -23,18 +26,27 @@ export const M22_PROCESS_ASSUMPTIONS: readonly M22ProcessAssumption[] = [
   { processCode: "P09", name: "웨이퍼 테스트", ratedWph: 130, capacityPassesPerWafer: 1 },
 ];
 
-// P10(16단 와이어본딩 패키징) — wire bonder 등 공개 UPH가 없어 RATE_TBD.
-// M20 P10 36대/117,000 WSPM 비율을 M22 NORMAL WSPM에 적용한 placeholder (docs/fab-equipment-master.md 참고).
-export const M22_P10_PLACEHOLDER_STAGES: readonly { stageCode: string; name: string; equipmentCount: number }[] = [
-  { stageCode: "BACKGRIND", name: "Backgrind", equipmentCount: 2 },
-  { stageCode: "DICING", name: "Dicing / Singulation", equipmentCount: 4 },
-  { stageCode: "DIE_ATTACH", name: "Die Attach", equipmentCount: 5 },
-  { stageCode: "WIRE_BOND", name: "Wire Bond(16단 적층)", equipmentCount: 12 },
-  { stageCode: "MOLDING", name: "Molding", equipmentCount: 4 },
-  { stageCode: "LEAD_FINISH", name: "Lead Finish / Ball Mount", equipmentCount: 2 },
-  { stageCode: "FINAL_TEST", name: "Final Test", equipmentCount: 4 },
+// P10(16단 와이어본딩 패키징). fab-master.md § NAND 완제품 환산의 1,523 gross die →
+// 1,249 양품 die(82%) → 74.94 양품 16-die stack package(96% 조립수율)를 그대로 쓴다.
+export const M22_GOOD_DIE_PER_WAFER = 1_249;
+export const M22_GOOD_PACKAGE_PER_WAFER = 74.94;
+
+// Backgrind·Dicing은 wafer 단위, Die Attach·Wire Bond는 다이 단위(16단 적층 — 층마다
+// 개별 attach·bond가 필요해 패키지가 아니라 다이 기준 driver를 쓴다), Molding·Lead
+// Finish·Final Test는 완성 패키지(스택) 단위다. ratedRate는 vendor spec이 아닌 반도체
+// 조립·테스트 업계 통상 처리량 범위 추정이다 — Final Test만 공개 문헌(아래 출처)으로
+// 뒷받침되고 나머지는 INDUSTRY_RANGE_INFORMED 추정이라 실제 vendor 확보 시 대수가 달라질 수 있다.
+export const M22_P10_STAGES: readonly NativeCapacityStage[] = [
+  { stageCode: "BACKGRIND", name: "Backgrind", ratedRate: 45, capacityUnit: "WAFER_HOUR", driverPerWafer: 1 },
+  { stageCode: "DICING", name: "Dicing / Singulation", ratedRate: 38, capacityUnit: "WAFER_HOUR", driverPerWafer: 1 },
+  { stageCode: "DIE_ATTACH", name: "Die Attach", ratedRate: 4_000, capacityUnit: "DIE_HOUR", driverPerWafer: M22_GOOD_DIE_PER_WAFER },
+  { stageCode: "WIRE_BOND", name: "Wire Bond(16단 적층)", ratedRate: 6_000, capacityUnit: "DIE_HOUR", driverPerWafer: M22_GOOD_DIE_PER_WAFER },
+  { stageCode: "MOLDING", name: "Molding", ratedRate: 2_500, capacityUnit: "PACKAGE_HOUR", driverPerWafer: M22_GOOD_PACKAGE_PER_WAFER },
+  { stageCode: "LEAD_FINISH", name: "Lead Finish / Ball Mount", ratedRate: 5_000, capacityUnit: "PACKAGE_HOUR", driverPerWafer: M22_GOOD_PACKAGE_PER_WAFER },
+  // Final Test rate: practical UPH at ~1s test time, 0.2s handler index, 60% OEE 가정
+  // (James Migliaccio, "Aspects of High Volume Test for Semiconductor Devices", CS MANTECH 2018, Table I).
+  { stageCode: "FINAL_TEST", name: "Final Test", ratedRate: 1_800, capacityUnit: "PACKAGE_HOUR", driverPerWafer: M22_GOOD_PACKAGE_PER_WAFER },
 ];
-export const M22_P10_TOTAL = M22_P10_PLACEHOLDER_STAGES.reduce((sum, stage) => sum + stage.equipmentCount, 0);
 
 export function m22NormalWspm(): number {
   const fab = FAB_SCENARIO.find((entry) => entry.id === "M22");
@@ -63,6 +75,17 @@ export const M22_DEFINED_EQUIPMENT_COUNTS: Readonly<Record<M22WphProcessCode, nu
   ]));
 })()) as Readonly<Record<M22WphProcessCode, number>>;
 
+// P10 내부 7개 stage도 병목(85%) 기준으로 최소 대수를 구한다 — M20 P10(5-stage)이 이미
+// 83~84%대로 병목급으로 운영되는 전례를 따라, P10 전체를 P01~P09의 병목 공정과 같은 급으로 본다.
+export const M22_P10_DEFINED_COUNTS: Readonly<Record<string, number>> = Object.freeze((() => {
+  const normalWspm = m22NormalWspm();
+  return Object.fromEntries(M22_P10_STAGES.map((stage) => [
+    stage.stageCode,
+    minimumNativeStageCount(stage, normalWspm, M22_NORMAL_MAX_PLANNED_LOAD),
+  ]));
+})());
+export const M22_P10_TOTAL = Object.values(M22_P10_DEFINED_COUNTS).reduce((sum, count) => sum + count, 0);
+
 export const M22_TOTAL_EQUIPMENT = Object.values(M22_DEFINED_EQUIPMENT_COUNTS).reduce((sum, count) => sum + count, 0) + M22_P10_TOTAL;
 
 export { modeledOeeForSequence };
@@ -81,14 +104,20 @@ export function buildM22FabEquipmentMaster(): FabEquipmentMasterView {
       capacityStages: [],
     };
   });
+
+  const p10Stages = M22_P10_STAGES.map((stage) => {
+    const count = M22_P10_DEFINED_COUNTS[stage.stageCode];
+    const supported = nativeStageSupportedWspm(stage, count);
+    return { stage, count, normalPlannedLoad: normalWspm / supported };
+  });
+  const p10Bottleneck = p10Stages.reduce((highest, row) => row.normalPlannedLoad > highest.normalPlannedLoad ? row : highest);
   processes.push({
     processCode: "P10",
     name: "16단 와이어본딩 패키징",
     definedCount: M22_P10_TOTAL,
-    normalPlannedLoad: null,
-    pendingReason: "와이어본더 등 16단 적층 패키징 장비 공개 UPH 없음 (RATE_TBD)",
-    bottleneckCapacityStage: null,
-    capacityStages: [],
+    normalPlannedLoad: p10Bottleneck.normalPlannedLoad,
+    bottleneckCapacityStage: p10Bottleneck.stage.stageCode,
+    capacityStages: M22_P10_STAGES.map((stage) => ({ stageCode: stage.stageCode, name: stage.name })),
   });
   return {
     fabId: "M22",

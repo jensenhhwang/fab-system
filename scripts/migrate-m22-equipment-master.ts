@@ -16,7 +16,9 @@ function equipmentId(processCode: string, sequence: number): string {
   return `M22-${processCode}-${String(sequence).padStart(3, "0")}`;
 }
 
-// P10 대수는 RATE_TBD placeholder라 ratedCapacity에 M20과 동일한 자리수(140 WAFER_DAY)를 재사용한다.
+// P10의 7개 stage는 서로 단위가 다른 native-stage capacity(wafer/die/package 단위)를 쓴다.
+// 원장 스키마의 ratedCapacity 필드는 WAFER_DAY 단일 단위라 여기 넣을 정확한 값이 없어
+// M20과 동일한 자리수(140)를 그대로 둔다 — 실제 부하율 계산은 이 필드를 쓰지 않는다.
 const P10_PLACEHOLDER_RATED_CAPACITY = 140;
 
 async function main() {
