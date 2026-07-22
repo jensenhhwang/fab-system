@@ -4,6 +4,14 @@ export const M20_HBM_ROUTE_KEY = "M20:HBM" as const;
 export const M20_HBM_ROUTE_VERSION = "ROUTE_MASTER_M20_HBM_V3" as const;
 export const M20_HBM_MODEL_PRODUCT = "M20-HBM4-12H-V2" as const;
 
+export const M21_DRAM_ROUTE_KEY = "M21:DRAM" as const;
+export const M21_DRAM_ROUTE_VERSION = "ROUTE_MASTER_M21_DRAM_V1" as const;
+export const M21_DRAM_MODEL_PRODUCT = "M21-DDR5-16Gb-V1" as const;
+
+export const M22_NAND_ROUTE_KEY = "M22:NAND" as const;
+export const M22_NAND_ROUTE_VERSION = "ROUTE_MASTER_M22_NAND_V1" as const;
+export const M22_NAND_MODEL_PRODUCT = "M22-NAND321L-1Tb-TLC-V1" as const;
+
 export type RouteOperationCode =
   | "GENERAL"
   | "TSV_FRONT"
@@ -16,7 +24,9 @@ export type RouteOperationCode =
   | "BASE_DIE_ATTACH"
   | "DRAM_BOND_12H"
   | "MUF_MOLDING_CURE"
-  | "FINAL_TEST";
+  | "FINAL_TEST"
+  | "DIE_ATTACH"
+  | "NAND_PACKAGE";
 
 export type RouteMaterialScope = {
   fabId: string;

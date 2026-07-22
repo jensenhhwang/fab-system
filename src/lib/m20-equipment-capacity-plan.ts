@@ -85,6 +85,8 @@ export type M20FabEquipmentMaster = {
   version: typeof FAB_EQUIPMENT_MASTER_VERSION;
   status: typeof M20_EQUIPMENT_DEFINITION_STATUS;
   rateUnit: typeof M20_EQUIPMENT_RATE_UNIT;
+  fabId: "M20";
+  normalWspm: number;
   fabDefinitions: Array<{
     fabId: "M20" | "M21" | "M22";
     product: "HBM4 12-Hi 36GB" | "TBD";
@@ -128,6 +130,7 @@ export type M20FabEquipmentMaster = {
     capacityPassesPerWafer: number | null;
     supportedWspm: number;
     normalPlannedLoad: number;
+    pendingReason?: string;
     bottleneckCapacityStage: M20BackendCapacityStageCode | null;
     capacityStages: Array<{
       stageCode: M20BackendCapacityStageCode;
@@ -275,6 +278,8 @@ export function buildM20FabEquipmentMaster(): M20FabEquipmentMaster {
     version: FAB_EQUIPMENT_MASTER_VERSION,
     status: M20_EQUIPMENT_DEFINITION_STATUS,
     rateUnit: M20_EQUIPMENT_RATE_UNIT,
+    fabId: "M20",
+    normalWspm,
     fabDefinitions: [
       { fabId: "M20", product: "HBM4 12-Hi 36GB", referenceWspm: normalWspm, targetReservedHeadroom: 0.15, totalEquipment, status: "INDUSTRY_RANGE_INFORMED_MODELED_BASELINE" },
       { fabId: "M21", product: "TBD", referenceWspm: null, targetReservedHeadroom: null, totalEquipment: null, status: "NOT_MODELED" },

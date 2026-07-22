@@ -1,9 +1,17 @@
 import { M20_PRODUCTION_SCENARIOS, type M20ProductionScenarioId } from "@/lib/fab-scenario";
+import { m21NormalWspm } from "@/lib/m21-equipment-capacity-plan";
+import { m22NormalWspm } from "@/lib/m22-equipment-capacity-plan";
 import {
   M20_BASE_DIE_ASSUMPTION,
   M20_HBM_MODEL_PRODUCT,
   M20_HBM_ROUTE_KEY,
   M20_HBM_ROUTE_VERSION,
+  M21_DRAM_MODEL_PRODUCT,
+  M21_DRAM_ROUTE_KEY,
+  M21_DRAM_ROUTE_VERSION,
+  M22_NAND_MODEL_PRODUCT,
+  M22_NAND_ROUTE_KEY,
+  M22_NAND_ROUTE_VERSION,
   routeMaterialUsageId,
   type RouteOperationCode,
 } from "@/lib/route-contract";
@@ -26,8 +34,8 @@ export type M20MaterialConsumptionRow = {
   equivalentPerWafer: number;
   source: "LEGACY_DERIVED" | "MODELED_ASSUMPTION";
   confidence: "LOW";
-  version: typeof M20_MATERIAL_CONSUMPTION_VERSION;
-  modelProduct: typeof M20_MODEL_PRODUCT;
+  version: string;
+  modelProduct: string;
 };
 
 type BaselineInput = [materialId: string, processCode: string, normalMonthlyQty: number, nativeBasis: MaterialConsumptionBasis];
@@ -101,7 +109,7 @@ function operationCodeFor(materialId: string, processCode: string): RouteOperati
   return "GENERAL";
 }
 
-const LEGACY_ROWS: readonly M20MaterialConsumptionRow[] = M20_BASELINE_INPUTS.map(
+export const LEGACY_ROWS: readonly M20MaterialConsumptionRow[] = M20_BASELINE_INPUTS.map(
   ([materialId, processCode, legacyMonthlyQty, nativeBasis]) => ({
     materialId,
     processCode,
@@ -179,5 +187,97 @@ export function m20MaterialDemandForScenario(scenarioId: M20ProductionScenarioId
     ...row,
     monthlyQty: roundDemand(row.monthlyQty),
     equivalentPerWafer: roundDemand(row.equivalentPerWafer),
+  }));
+}
+
+// ── M21 · DRAM ──────────────────────────────────────────────────────────
+// docs/material-consumption-master.md § M21.1: TSV(P08)·HBM 스택(P10) 공정이 없어
+// M20의 wafer당 원단위를 그대로 재사용한다(같은 물리 프런트엔드 공정, Applied Materials 근거).
+// § M21.2: HBM 전용 자재(TSV 화학물질, Base Die, 스택 조립재, HBM Probe Card)는 제외.
+// § M21.3의 conventional 패키징 신규 자재(리드프레임·Au wire·EMC·솔더·CSM-010)는 RATE_TBD라 아직 시딩하지 않는다.
+export const M21_MATERIAL_CONSUMPTION_VERSION = "MATERIAL_CONSUMPTION_M21_V1" as const;
+export const M21_MODEL_PRODUCT = M21_DRAM_MODEL_PRODUCT;
+
+const M21_EXCLUDED_PROCESS_CODES = new Set(["P08", "P10"]);
+// CSM-009는 M20 HBM 전용 Probe Card. M21은 CSM-010(RATE_TBD)을 쓰므로 제외.
+const M21_EXCLUDED_MATERIAL_IDS = new Set(["CSM-009"]);
+
+export const M21_MATERIAL_CONSUMPTION: readonly M20MaterialConsumptionRow[] = LEGACY_ROWS
+  .filter((row) => !M21_EXCLUDED_PROCESS_CODES.has(row.processCode) && !M21_EXCLUDED_MATERIAL_IDS.has(row.materialId))
+  .map((row) => ({ ...row, version: M21_MATERIAL_CONSUMPTION_VERSION, modelProduct: M21_MODEL_PRODUCT }));
+
+export function m21ProcessUsageForScenario(waferStartsPerMonth: number = m21NormalWspm()) {
+  return M21_MATERIAL_CONSUMPTION.map((row) => ({
+    _id: routeMaterialUsageId({
+      fabId: "M21", product: "DRAM", routeKey: M21_DRAM_ROUTE_KEY, routeVersion: M21_DRAM_ROUTE_VERSION,
+      processCode: row.processCode, operationCode: row.operationCode,
+    }, row.materialId),
+    fabId: "M21" as const,
+    product: "DRAM" as const,
+    materialId: row.materialId,
+    processCode: row.processCode,
+    routeKey: M21_DRAM_ROUTE_KEY,
+    routeVersion: M21_DRAM_ROUTE_VERSION,
+    operationCode: row.operationCode,
+    active: true,
+    monthlyQty: roundDemand(row.equivalentPerWafer * waferStartsPerMonth),
+    equivalentPerWafer: row.equivalentPerWafer,
+    consumptionBasis: row.nativeBasis,
+    source: "MODELED_BASELINE" as const,
+    sourceVersion: row.version,
+    modelProduct: row.modelProduct,
+  }));
+}
+
+// ── M22 · NAND ──────────────────────────────────────────────────────────
+// docs/material-consumption-master.md § M22.1: route pass count가 M20과 크게 달라(321단 3-deck)
+// 같은 native basis 자재는 processCode별 pass count 비율로 equivalentPerWafer를 재스케일한다(1차 근사, CALIBRATION_REQUIRED).
+// § M22.2: P08·HBM 스택(P10) 자재 제외. § M22.3의 BDEAS·H₃PO₄·WF₆·와이어본딩 자재는 RATE_TBD라 아직 시딩하지 않는다.
+export const M22_MATERIAL_CONSUMPTION_VERSION = "MATERIAL_CONSUMPTION_M22_V1" as const;
+export const M22_MODEL_PRODUCT = M22_NAND_MODEL_PRODUCT;
+
+const M22_EXCLUDED_PROCESS_CODES = new Set(["P08", "P10"]);
+const M22_EXCLUDED_MATERIAL_IDS = new Set(["CSM-009"]);
+
+// M22 route(route-master.md § M22 · NAND)와 M20 route의 processCode별 pass count 비율.
+const M22_PASS_RESCALE: Readonly<Record<string, number>> = {
+  P01: 3 / 4,
+  P02: 162 / 27,
+  P03: 24 / 27,
+  P04: 30 / 27,
+  P05: 3 / 6,
+  P06: 6 / 5,
+  P07: 10 / 27,
+};
+
+export const M22_MATERIAL_CONSUMPTION: readonly M20MaterialConsumptionRow[] = LEGACY_ROWS
+  .filter((row) => !M22_EXCLUDED_PROCESS_CODES.has(row.processCode) && !M22_EXCLUDED_MATERIAL_IDS.has(row.materialId))
+  .map((row) => ({
+    ...row,
+    equivalentPerWafer: row.equivalentPerWafer * (M22_PASS_RESCALE[row.processCode] ?? 1),
+    version: M22_MATERIAL_CONSUMPTION_VERSION,
+    modelProduct: M22_MODEL_PRODUCT,
+  }));
+
+export function m22ProcessUsageForScenario(waferStartsPerMonth: number = m22NormalWspm()) {
+  return M22_MATERIAL_CONSUMPTION.map((row) => ({
+    _id: routeMaterialUsageId({
+      fabId: "M22", product: "NAND", routeKey: M22_NAND_ROUTE_KEY, routeVersion: M22_NAND_ROUTE_VERSION,
+      processCode: row.processCode, operationCode: row.operationCode,
+    }, row.materialId),
+    fabId: "M22" as const,
+    product: "NAND" as const,
+    materialId: row.materialId,
+    processCode: row.processCode,
+    routeKey: M22_NAND_ROUTE_KEY,
+    routeVersion: M22_NAND_ROUTE_VERSION,
+    operationCode: row.operationCode,
+    active: true,
+    monthlyQty: roundDemand(row.equivalentPerWafer * waferStartsPerMonth),
+    equivalentPerWafer: row.equivalentPerWafer,
+    consumptionBasis: row.nativeBasis,
+    source: "MODELED_BASELINE" as const,
+    sourceVersion: row.version,
+    modelProduct: row.modelProduct,
   }));
 }

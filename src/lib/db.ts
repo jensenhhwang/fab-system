@@ -412,8 +412,8 @@ export interface RouteMasterNode {
   repeatCount: number; // cycle을 몇 번 반복하는지
   stage: RouteNodeStage;
   operationCode?: string;
-  inputUnit?: "WAFER" | "MEMORY_KGD" | "BASE_KGD" | "STACK";
-  outputUnit?: "WAFER" | "MEMORY_KGD" | "STACK" | "GOOD_PACKAGE";
+  inputUnit?: "WAFER" | "MEMORY_KGD" | "BASE_KGD" | "STACK" | "DIE";
+  outputUnit?: "WAFER" | "MEMORY_KGD" | "STACK" | "GOOD_PACKAGE" | "DIE";
 }
 export interface RouteMasterEdge {
   from: string; // node id 또는 "START"

@@ -11,8 +11,8 @@ import { buildTwinHref, type CameraPreset, type TwinMode } from "@/lib/twin-navi
 import FabThroughputDial from "./FabThroughputDial";
 import LotRouteTrackerCard from "./LotRouteTrackerCard";
 import type { LiveFoupView } from "@/components/ProcessFlow3D";
-import type { M20FabEquipmentMaster } from "@/lib/m20-equipment-capacity-plan";
-import M20FabEquipmentMasterCard from "./M20FabEquipmentMasterCard";
+import type { FabEquipmentMasterView } from "@/lib/fab-equipment-master-view";
+import FabEquipmentMasterCard from "./FabEquipmentMasterCard";
 import M20NodeDensityCard from "./M20NodeDensityCard";
 import type { FoupFleetProjection } from "@/lib/foup-wip-model";
 
@@ -71,13 +71,13 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
 }
 
 export default function UsageClient({
-  materials, warehouseLinks = [], warehouses = [], equipmentByFab, m20EquipmentMaster,
+  materials, warehouseLinks = [], warehouses = [], equipmentByFab, equipmentMasterByFab,
 }: {
   materials: Material[];
   warehouseLinks?: WarehouseLink[];
   warehouses?: WarehouseInfo[];
   equipmentByFab: Record<FabId, Record<string, number>>;
-  m20EquipmentMaster: M20FabEquipmentMaster;
+  equipmentMasterByFab: Record<FabId, FabEquipmentMasterView>;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -397,25 +397,27 @@ export default function UsageClient({
               )}
             </div>
           </div>
-          {selectedFab === "M20" && (
-            <div className="space-y-3">
-              <M20FabEquipmentMasterCard
-                master={m20EquipmentMaster}
-                ledgerCounts={equipmentByFab.M20}
-                selectedProcess={selectedProc}
-                onProcessSelect={(processCode) => {
-                  setPinnedMatId(null);
-                  setHoveredMat(null);
-                  setSelectedProc((current) => current === processCode ? null : processCode);
-                }}
-              />
-              <M20NodeDensityCard fabId="M20" product="HBM" />
-              <div className="grid items-start gap-3 xl:grid-cols-2">
-                <FabThroughputDial fabId="M20" foupFleet={foupFleet} />
-                <LotRouteTrackerCard fabId="M20" product="HBM" occupiedFoup={foupFleet?.actual.occupied} onLiveFoupsChange={setLiveFoups} />
-              </div>
-            </div>
-          )}
+          <div className="space-y-3">
+            <FabEquipmentMasterCard
+              master={equipmentMasterByFab[selectedFab]}
+              ledgerCounts={equipmentByFab[selectedFab]}
+              selectedProcess={selectedProc}
+              onProcessSelect={(processCode) => {
+                setPinnedMatId(null);
+                setHoveredMat(null);
+                setSelectedProc((current) => current === processCode ? null : processCode);
+              }}
+            />
+            {selectedFab === "M20" && (
+              <>
+                <M20NodeDensityCard fabId="M20" product="HBM" />
+                <div className="grid items-start gap-3 xl:grid-cols-2">
+                  <FabThroughputDial fabId="M20" foupFleet={foupFleet} />
+                  <LotRouteTrackerCard fabId="M20" product="HBM" occupiedFoup={foupFleet?.actual.occupied} onLiveFoupsChange={setLiveFoups} />
+                </div>
+              </>
+            )}
+          </div>
         </div>}
       </div>
 
