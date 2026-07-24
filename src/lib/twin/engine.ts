@@ -75,10 +75,10 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
       await twinBurnEvents.insertOne({ _id: randomUUID(), tickAt: now, materialId, burnedQty: burned, shortfallQty: shortfall });
     }
 
-    // ③ 입고: 소모가 잡힌 자재에 대해 ROP 점검·발주, 도착 정산
+    // ③ 입고: 전체 M20 자재에 대해 ROP 점검·발주, 도착 정산 (이번 tick에 소모되지 않은 자재도 도착 PO는 반드시 정산되어야 함)
     let newPOs = 0;
     let receipts = 0;
-    const materialIds = Object.keys(burnedByMaterial);
+    const materialIds = [...new Set(M20_MATERIAL_CONSUMPTION.map((r) => r.materialId))];
     for (const materialId of materialIds) {
       const warehouseId = await resolveWarehouse(materialId);
       if (!warehouseId) continue;

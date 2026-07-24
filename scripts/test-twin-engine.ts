@@ -41,16 +41,44 @@ async function main() {
     { upsert: true });
   const before = (await inventory.findOne({ _id: invId }))!.quantity;
 
+  // targetStep에서 소모되지 않는 다른 M20 자재를 골라, "이번 tick에 소모가 없어도 도착 PO는 정산되어야 한다"를 검증
+  const allMaterialIds = [...new Set(M20_MATERIAL_CONSUMPTION.map((r) => r.materialId))];
+  const burnedAtTargetStep = new Set(firstEntry[1].map((r) => r.materialId));
+  const otherMaterial = allMaterialIds.find((id) => !burnedAtTargetStep.has(id));
+  assert.ok(otherMaterial, "targetStep에서 소모되지 않는 다른 M20 자재 존재");
+
+  const otherInvId = `${otherMaterial}__WH-TWINTEST-PO`;
+  await inventory.updateOne({ _id: otherInvId },
+    { $set: { materialId: otherMaterial, warehouseId: "WH-TWINTEST-PO", quantity: 1e12, avgDailyUsage: 0, avgDailyBurn: 0, status: "AVAILABLE" } },
+    { upsert: true });
+  const otherBefore = (await inventory.findOne({ _id: otherInvId }))!.quantity;
+
+  const poId = randomUUID();
+  const poQty = 777;
+  await twinPurchaseOrders.insertOne({
+    _id: poId, materialId: otherMaterial, qty: poQty, orderedAt: old,
+    etaAt: new Date(Date.now() - 3_600_000), leadTimeDays: 7, status: "ORDERED",
+  } as never);
+
   const res = await executeTwinTick(new Date());
   assert.ok(res.advanced >= 1, "AGGREGATE 로트가 진행됨");
   assert.ok((res.burnedByMaterial[targetMaterial] ?? 0) > 0, "targetMaterial이 소모됨");
   const after = (await inventory.findOne({ _id: invId }))!.quantity;
   assert.ok(after < before, "소모로 창고 재고가 감소");
 
+  // 소모가 없었던 otherMaterial도 도착 PO가 정산되어야 한다(회귀: 소모된 자재만 순회하던 버그)
+  assert.ok(!(res.burnedByMaterial[otherMaterial!] > 0), "otherMaterial은 이번 tick에 소모되지 않음(전제 확인)");
+  const poAfter = await twinPurchaseOrders.findOne({ _id: poId });
+  assert.equal(poAfter?.status, "RECEIVED", "소모 없는 자재의 도착 PO도 RECEIVED로 정산됨");
+  const otherAfter = (await inventory.findOne({ _id: otherInvId }))!.quantity;
+  assert.ok(otherAfter >= otherBefore + poQty, "도착 PO 수량만큼 재고 증가");
+
   // 정리
   await waferLots.deleteMany({ _id: lotId });
   await inventory.deleteMany({ _id: invId });
+  await inventory.deleteMany({ _id: otherInvId });
   await twinPurchaseOrders.deleteMany({ materialId: targetMaterial, orderedAt: { $gte: old } });
+  await twinPurchaseOrders.deleteMany({ _id: poId });
   await twinBurnEvents.deleteMany({ materialId: targetMaterial, tickAt: { $gte: old } });
   console.log("✅ twin engine tick passed");
 }
