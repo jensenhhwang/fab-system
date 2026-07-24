@@ -203,26 +203,29 @@ const AGGREGATE_ADVANCE_BATCH_MAX = 2_000;
 // AGGREGATE 코호트를 벌크로 한 스텝씩 진행시킨다. VISUAL 코호트(advanceLotStep)와 달리
 // waferLotStepEvents를 쓰지 않고, P10 package operation 진입 시에도 createM20PilotWorkOrder를 절대 호출하지 않는다
 // (자재 소비 트리거는 여전히 VISUAL 12개 전용 스코프).
-export async function advanceAggregateWip(fabId: FabId, product: Product): Promise<{ advanced: number; completed: number }> {
-  if (fabId !== "M20" || product !== "HBM") return { advanced: 0, completed: 0 };
+export async function advanceAggregateWip(fabId: FabId, product: Product): Promise<{ advanced: number; completed: number; advancedFromStepIndex: Record<number, number> }> {
+  if (fabId !== "M20" || product !== "HBM") return { advanced: 0, completed: 0, advancedFromStepIndex: {} };
 
   const { waferLots } = await collections();
   const routeMaster = await getRouteMaster(fabId, product);
-  if (!routeMaster) return { advanced: 0, completed: 0 };
+  if (!routeMaster) return { advanced: 0, completed: 0, advancedFromStepIndex: {} };
   const visits = expandRouteMaster(routeMaster);
   const totalSteps = visits.length;
-  if (totalSteps === 0) return { advanced: 0, completed: 0 };
+  if (totalSteps === 0) return { advanced: 0, completed: 0, advancedFromStepIndex: {} };
 
   const due = await waferLots.find({
     fabId, product, cohort: "AGGREGATE", status: "IN_PROGRESS",
     lastEventAt: { $lte: new Date(Date.now() - AUTO_ADVANCE_INTERVAL_MS) },
   }).limit(AGGREGATE_ADVANCE_BATCH_MAX).toArray();
-  if (due.length === 0) return { advanced: 0, completed: 0 };
+  if (due.length === 0) return { advanced: 0, completed: 0, advancedFromStepIndex: {} };
 
   const now = new Date();
   let completed = 0;
+  const advancedFromStepIndex: Record<number, number> = {};
   const ops = due.map((lot) => {
-    const nextStep = (lot.currentStepIndex ?? 0) + 1;
+    const fromStep = lot.currentStepIndex ?? 0;
+    advancedFromStepIndex[fromStep] = (advancedFromStepIndex[fromStep] ?? 0) + (lot.waferQty ?? 25);
+    const nextStep = fromStep + 1;
     const isDone = nextStep >= totalSteps;
     if (isDone) completed++;
     const nextNodeId = isDone ? visits[totalSteps - 1].nodeId : visits[nextStep].nodeId;
@@ -237,5 +240,5 @@ export async function advanceAggregateWip(fabId: FabId, product: Product): Promi
     };
   });
   const result = await waferLots.bulkWrite(ops, { ordered: false });
-  return { advanced: result.modifiedCount, completed };
+  return { advanced: result.modifiedCount, completed, advancedFromStepIndex };
 }
