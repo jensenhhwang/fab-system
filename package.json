@@ -19,6 +19,7 @@
     "test:twin-burn": "tsx scripts/test-twin-burn.ts",
     "test:twin-inbound": "tsx scripts/test-twin-inbound.ts",
     "test:twin-advance-steps": "tsx scripts/test-twin-advance-steps.ts",
+    "test:twin-state": "tsx scripts/test-twin-state.ts",
     "test:material-consumption": "tsx scripts/test-material-consumption.ts",
     "test:m20-production-master": "tsx scripts/verify-m20-production-master.ts",
     "test:m20-fab-equipment-master": "tsx scripts/test-m20-fab-equipment-master.ts",
