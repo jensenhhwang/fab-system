@@ -1,5 +1,3 @@
-import "server-only";
-
 import type { ClientSession } from "mongodb";
 import { collections } from "@/lib/db";
 
