@@ -57,8 +57,34 @@ export interface WarehouseDoc {
 }
 export interface InventoryDoc {
   _id: string; materialId: string; warehouseId: string; quantity: number; avgDailyUsage: number;
+  avgDailyBurn?: number; // twin 엔진이 실측한 일일 소모 EMA
   capacityLimit?: number; // 벌크 탱크별 최대량 (자재 unit 기준)
   status?: InventoryStatus;
+}
+export interface TwinEngineStateDoc {
+  _id: "singleton";
+  status: "RUNNING" | "PAUSED";
+  lastTickAt: Date;
+  tickIntervalMs: number;
+  speedMultiplier: number;
+  lockedBy?: string | null;
+  lockExpiresAt?: Date | null;
+}
+export interface TwinPurchaseOrderDoc {
+  _id: string;
+  materialId: string;
+  qty: number;
+  orderedAt: Date;
+  etaAt: Date;
+  leadTimeDays: number;
+  status: "ORDERED" | "IN_TRANSIT" | "RECEIVED";
+}
+export interface TwinBurnEventDoc {
+  _id: string;
+  tickAt: Date;
+  materialId: string;
+  burnedQty: number;
+  shortfallQty: number;
 }
 export interface WarehouseZoneDoc {
   _id: string; warehouseId: string; code: string; name: string; zoneType: string;
@@ -699,6 +725,9 @@ export async function collections(): Promise<{
   materials: Collection<MaterialDoc>;
   warehouses: Collection<WarehouseDoc>;
   inventory: Collection<InventoryDoc>;
+  twinEngineState: Collection<TwinEngineStateDoc>;
+  twinPurchaseOrders: Collection<TwinPurchaseOrderDoc>;
+  twinBurnEvents: Collection<TwinBurnEventDoc>;
   processUsage: Collection<ProcessUsageDoc>;
   transactions: Collection<TransactionDoc>;
   suppliers: Collection<SupplierDoc>;
@@ -752,6 +781,9 @@ export async function collections(): Promise<{
     materials: db.collection<MaterialDoc>("materials"),
     warehouses: db.collection<WarehouseDoc>("warehouses"),
     inventory: db.collection<InventoryDoc>("inventory"),
+    twinEngineState: db.collection<TwinEngineStateDoc>("twinEngineState"),
+    twinPurchaseOrders: db.collection<TwinPurchaseOrderDoc>("twinPurchaseOrders"),
+    twinBurnEvents: db.collection<TwinBurnEventDoc>("twinBurnEvents"),
     processUsage: db.collection<ProcessUsageDoc>("processUsage"),
     transactions: db.collection<TransactionDoc>("transactions"),
     suppliers: db.collection<SupplierDoc>("suppliers"),
