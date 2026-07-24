@@ -1,5 +1,8 @@
 import { randomUUID } from "crypto";
 import type { InventoryLotDoc, SimPurchaseOrderDoc, SimEventDoc } from "@/lib/db";
+import { getBaseLeadTime } from "@/lib/twin/lead-time";
+
+export { getBaseLeadTime };
 
 export type MaterialUsage = {
   materialId: string;
@@ -29,17 +32,6 @@ export type TickResult = {
   updatedPOs: UpdatedPO[];
   newEvents: SimEventDoc[];
 };
-
-const LEAD_TIME_RANGE: Record<string, [number, number]> = {
-  CHM: [7, 14],
-  GAS: [3, 7],
-  PKG: [5, 10],
-};
-
-export function getBaseLeadTime(category: string): number {
-  const [lo, hi] = LEAD_TIME_RANGE[category] ?? [7, 7];
-  return Math.round((lo + hi) / 2);
-}
 
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
