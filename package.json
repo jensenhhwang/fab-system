@@ -16,6 +16,7 @@
     "test:inventory-scaleup": "tsx scripts/test-inventory-scaleup.ts",
     "test:fab-scenario": "tsx scripts/test-fab-scenario.ts",
     "test:twin-lead-time": "tsx scripts/test-twin-lead-time.ts",
+    "test:twin-burn": "tsx scripts/test-twin-burn.ts",
     "test:material-consumption": "tsx scripts/test-material-consumption.ts",
     "test:m20-production-master": "tsx scripts/verify-m20-production-master.ts",
     "test:m20-fab-equipment-master": "tsx scripts/test-m20-fab-equipment-master.ts",
