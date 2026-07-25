@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { collections } from "@/lib/db";
-import { advanceAggregateWip } from "@/lib/lot-route";
+import { advanceAggregateWip, M20_CYCLE_DAYS } from "@/lib/lot-route";
 import { getRouteMaster, expandRouteMaster } from "@/lib/route-master";
 import { M20_MATERIAL_CONSUMPTION } from "@/lib/material-consumption";
 import { buildStepConsumption, computeBurn, type StepConsumption } from "@/lib/twin/burn";
@@ -11,7 +11,14 @@ import { burnInventoryProjection, increaseInventoryProjection } from "@/lib/inve
 
 const LOCK_TTL_MS = 30_000;
 const EMA_ALPHA = 0.2;
-const MAX_DT_DAYS = 3; // 오래 멈췄다 재개 시 catch-up 폭주 방지
+
+// 한 tick은 각 due 로트를 정확히 공정 스텝 1개만큼 진행시킨다. 실제 팹에서 한 스텝의
+// 소요시간 = 사이클타임 / 전체 스텝수 이므로, 한 tick이 나타내는 sim-time도 그만큼이다.
+// avgDailyBurn을 실벽시계(5초)로 정규화하면 ~1.7만배 폭발하므로 이 sim-day로 정규화한다.
+export function simDaysPerTick(cycleDays: number, totalSteps: number): number {
+  if (totalSteps <= 0) return 1;
+  return cycleDays / totalSteps;
+}
 
 export type TwinTickResult = {
   advanced: number;
@@ -22,13 +29,16 @@ export type TwinTickResult = {
   skipped?: "PAUSED" | "LOCKED";
 };
 
-let cachedStepConsumption: StepConsumption | null = null;
-async function getStepConsumption(): Promise<StepConsumption> {
+let cachedStepConsumption: { stepConsumption: StepConsumption; totalSteps: number } | null = null;
+async function getStepConsumption(): Promise<{ stepConsumption: StepConsumption; totalSteps: number }> {
   if (cachedStepConsumption) return cachedStepConsumption;
   const routeMaster = await getRouteMaster("M20", "HBM");
-  if (!routeMaster) return new Map();
+  if (!routeMaster) return { stepConsumption: new Map(), totalSteps: 0 };
   const visits = expandRouteMaster(routeMaster);
-  cachedStepConsumption = buildStepConsumption(visits, [...M20_MATERIAL_CONSUMPTION]);
+  cachedStepConsumption = {
+    stepConsumption: buildStepConsumption(visits, [...M20_MATERIAL_CONSUMPTION]),
+    totalSteps: visits.length,
+  };
   return cachedStepConsumption;
 }
 
@@ -49,11 +59,11 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
 
   try {
     const { inventory, materials, twinPurchaseOrders, twinBurnEvents } = await collections();
-    const dtDays = Math.min(MAX_DT_DAYS, Math.max(1e-6, (now.getTime() - state.lastTickAt.getTime()) / 86_400_000));
 
     // ① WIP 진행 → ② 소모 계산
     const adv = await advanceAggregateWip("M20", "HBM");
-    const stepConsumption = await getStepConsumption();
+    const { stepConsumption, totalSteps } = await getStepConsumption();
+    const simDays = simDaysPerTick(M20_CYCLE_DAYS, totalSteps);
     const burn = computeBurn(adv.advancedFromStepIndex, stepConsumption);
 
     const burnedByMaterial: Record<string, number> = {};
@@ -68,7 +78,7 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
 
       // 실측 일일 소모율 EMA 갱신
       const inv = await inventory.findOne({ materialId, warehouseId });
-      const observedDaily = burned / dtDays;
+      const observedDaily = burned / simDays;
       const nextEma = updateBurnEma(inv?.avgDailyBurn ?? 0, observedDaily, EMA_ALPHA);
       await inventory.updateOne({ materialId, warehouseId }, { $set: { avgDailyBurn: nextEma } });
 
