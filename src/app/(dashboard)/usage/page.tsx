@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { Suspense } from "react";
 import { getUsageTwinData } from "@/lib/usage-twin-data";
 import UsageClient from "./UsageClient";
+import { TwinEnginePanel } from "./TwinEnginePanel";
 import { getEquipmentCapacity } from "@/lib/equipment-capacity";
 import { FAB_IDS, type FabId } from "@/lib/fab-domain";
 import { buildM20FabEquipmentMaster } from "@/lib/m20-equipment-capacity-plan";
@@ -25,8 +26,11 @@ export default async function UsagePage() {
     M22: buildM22FabEquipmentMaster(),
   };
   return (
-    <Suspense fallback={<div className="p-8 text-sm text-gray-400">로딩 중...</div>}>
-      <UsageClient materials={data.materials} warehouseLinks={data.links} warehouses={data.warehouses} equipmentByFab={equipmentByFab} equipmentMasterByFab={equipmentMasterByFab} />
-    </Suspense>
+    <div className="space-y-4">
+      <TwinEnginePanel />
+      <Suspense fallback={<div className="p-8 text-sm text-gray-400">로딩 중...</div>}>
+        <UsageClient materials={data.materials} warehouseLinks={data.links} warehouses={data.warehouses} equipmentByFab={equipmentByFab} equipmentMasterByFab={equipmentMasterByFab} />
+      </Suspense>
+    </div>
   );
 }
