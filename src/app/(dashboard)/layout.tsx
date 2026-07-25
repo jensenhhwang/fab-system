@@ -18,6 +18,7 @@ const NAV = [
     { href: "/inventory", label: "재고·보관일수" },
     { href: "/warehouse", label: "창고 Capacity" },
     { href: "/wms", label: "창고관리 (WMS)" },
+    { href: "/inbound-today", label: "오늘의 입고 실적" },
   ] },
   { group: "생산 실행", items: [
     { href: "/mes", label: "공정 실행 (MES)" },
