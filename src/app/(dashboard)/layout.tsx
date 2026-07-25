@@ -29,8 +29,6 @@ const NAV = [
     { href: "/market", label: "시장·수요 정보" },
   ] },
   { group: "분석·관리", items: [
-    { href: "/value", label: "성과 관리" },
-    { href: "/scm", label: "조달 기준" },
     { href: "/devlog", label: "개발 이력" },
   ] },
 ];
