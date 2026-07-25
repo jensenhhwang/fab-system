@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import InboundModal from "../wms/InboundModal";
 import {
   HOUR_END,
   HOUR_START,
@@ -9,9 +8,6 @@ import {
   type RaceRow,
   type RaceRowStatus,
 } from "@/lib/inbound-today";
-
-type MatDoc = { _id: string; name: string; code: string; unit: string };
-type WhDoc = { _id: string; name: string; code: string };
 
 const nf = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
 
@@ -81,13 +77,12 @@ function Sparkline({ buckets, nowHour }: { buckets: { hour: number; count: numbe
   );
 }
 
-export default function InboundTodayClient({ matMap, whMap }: { matMap: Record<string, MatDoc>; whMap: Record<string, WhDoc> }) {
+export default function InboundTodayPanel() {
   const [summary, setSummary] = useState<InboundTodaySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("ALL");
   const [pulse, setPulse] = useState(false);
-  const [showInbound, setShowInbound] = useState(false);
   const prevCount = useRef<number | null>(null);
   const now = summary ? new Date(summary.generatedAt) : new Date();
 
@@ -147,26 +142,14 @@ export default function InboundTodayClient({ matMap, whMap }: { matMap: Record<s
     <div className="space-y-4">
       <style>{`@keyframes inbound-pulse-ring{0%{box-shadow:0 0 0 0 rgba(234,0,44,.45)}100%{box-shadow:0 0 0 16px rgba(234,0,44,0)}}`}</style>
 
-      {/* 헤더 */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-extrabold text-[#141413]">오늘의 입고 실적</h1>
-          <p className="mt-1 text-sm text-[#888]">
-            {now.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "short" })} · 실입고(RECEIPT)와 오늘 입고계획을 함께 봅니다.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1.5 text-[11px] font-bold text-[#00875A]">
-            <span className="h-2 w-2 rounded-full bg-[#00875A]" style={{ animation: "inbound-pulse-ring 2s infinite" }} />
-            LIVE · 60초 자동갱신
-          </span>
-          <button
-            onClick={() => setShowInbound(true)}
-            className="rounded-xl bg-[#EA002C] px-4 py-2 text-xs font-bold text-white hover:opacity-90"
-          >
-            + 입고 등록
-          </button>
-        </div>
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-[#888]">
+          {now.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" })} · 실입고(RECEIPT)와 오늘 입고계획
+        </span>
+        <span className="flex items-center gap-1.5 text-[11px] font-bold text-[#00875A]">
+          <span className="h-2 w-2 rounded-full bg-[#00875A]" style={{ animation: "inbound-pulse-ring 2s infinite" }} />
+          LIVE · 60초 자동갱신
+        </span>
       </div>
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">{error}</div>}
@@ -320,15 +303,6 @@ export default function InboundTodayClient({ matMap, whMap }: { matMap: Record<s
             </div>
           )}
         </>
-      )}
-
-      {showInbound && (
-        <InboundModal
-          matMap={matMap}
-          whMap={whMap}
-          onClose={() => setShowInbound(false)}
-          onSuccess={() => { setShowInbound(false); void load(); }}
-        />
       )}
     </div>
   );

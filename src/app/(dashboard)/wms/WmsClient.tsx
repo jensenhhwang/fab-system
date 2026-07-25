@@ -1,6 +1,14 @@
 "use client";
 import { useState, useMemo } from "react";
 import InboundModal from "./InboundModal";
+import InboundTodayPanel from "./InboundTodayPanel";
+
+type WmsTab = "inbound" | "history" | "lots";
+const WMS_TABS: { key: WmsTab; label: string }[] = [
+  { key: "inbound", label: "오늘 입고 실적" },
+  { key: "history", label: "입출고 이력" },
+  { key: "lots", label: "재고 Lot" },
+];
 
 type Lot = {
   _id: string; materialId: string; lotNo: string; quantity: number;
@@ -38,6 +46,7 @@ export default function WmsClient({
   matMap: Record<string, MatDoc>; whMap: Record<string, WhDoc>;
 }) {
   const [showInbound, setShowInbound] = useState(false);
+  const [tab, setTab] = useState<WmsTab>("inbound");
   const [filterMat, setFilterMat] = useState("");
   const [filterWh, setFilterWh] = useState("");
 
@@ -57,7 +66,7 @@ export default function WmsClient({
       <div className="flex items-center justify-between mb-6">
         <div>
           <div className="text-2xl font-extrabold tracking-tight">창고관리 (WMS)</div>
-          <div className="text-sm text-[#999] mt-1">Lot 단위 재고 추적 · FEFO 출고 관리</div>
+          <div className="text-sm text-[#999] mt-1">오늘 입고 관제 · 입출고 이력 · Lot 재고 추적</div>
         </div>
         <button
           onClick={() => setShowInbound(true)}
@@ -67,6 +76,27 @@ export default function WmsClient({
         </button>
       </div>
 
+      {/* 서브탭 */}
+      <div className="flex gap-1 mb-5">
+        {WMS_TABS.map((t) => {
+          const active = tab === t.key;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className="rounded-full px-4 py-1.5 text-xs font-bold transition-colors"
+              style={active ? { background: "#141413", color: "#fff" } : { background: "#F1F1F0", color: "#777" }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === "inbound" && <InboundTodayPanel />}
+
+      {tab === "lots" && (
+      <>
       {/* 필터 */}
       <div className="flex gap-3 mb-5">
         <select
@@ -140,8 +170,10 @@ export default function WmsClient({
           </table>
         </div>
       </div>
+      </>
+      )}
 
-      {/* 입출고 이력 */}
+      {tab === "history" && (
       <div className="bg-white rounded-2xl shadow-sm border border-[#F0F2F5] overflow-hidden">
         <div className="px-5 py-3 border-b border-[#F0F2F5] text-sm font-bold text-[#333]">입출고 이력</div>
         <div className="overflow-x-auto">
@@ -184,6 +216,7 @@ export default function WmsClient({
           </table>
         </div>
       </div>
+      )}
 
       {showInbound && (
         <InboundModal
