@@ -113,6 +113,15 @@ const LOGS = [
     "M21·M22 P10(컨벤셔널 패키징)의 계획 부하 N/A를 해소 — Backgrind·Dicing은 M20과 동일 가정, Final Test는 CS MANTECH 2018 공개 문헌 기준 UPH, 나머지 4단계는 업계 통상 처리량 범위로 7-stage capacity 모델을 신설(INDUSTRY_RANGE_INFORMED_MODELED_BASELINE 명시)",
     "M21 P10 57→434대(내부 병목 Molding 84.7%), M22 P10 33→139대(내부 병목 Wire Bond 84.9%)로 재계산하고 기존 추가 전용 마이그레이션 스크립트로 DB 반영",
   ] },
+  { day: 15, date: "2026-07-25", label: "Twin Physics Engine + 재고 프로비저닝 진단 + 화면 컴팩트화", color: "#0D9488", items: [
+    "각 공정이 실시간으로 창고 재고를 소모하고 ROP 미달 시 자동 발주→리드타임 후 입고로 되채우는 서버 주도 양방향 Twin Physics Engine 구축 — instrumentation 훅이 5초 setInterval로 매 tick WIP 진행→자재별 창고재고 배치 차감→PO 발주·입고 정산 실행(신규 컬렉션 twinEngineState·twinPurchaseOrders·twinBurnEvents, InventoryDoc.avgDailyBurn)",
+    "소모 계산·입고 계획·EMA를 순수 함수로 분리하고 DB 오케스트레이션(executeTwinTick)은 락으로 tick 상호배제, 소모는 AGGREGATE 코호트만 반영해 VISUAL 파일럿 배관과 이중 차감 없이 무회귀 — 10개 태스크 subagent-driven TDD + 태스크별·최종 whole-branch 리뷰(GET force-dynamic Critical 1건 수정) 후 main 병합",
+    "\"consume에 재고 미반영 버그\"로 출발했으나 자재 흐름 추적 결과 창고 inventory는 출고(IN_TRANSIT) 시점에 이미 차감됨을 확인 — decrease 추가 시 이중 차감이라 수정하지 않고, 진짜 gap은 AGGREGATE 생산 물량이 자재를 아예 안 태우던 것으로 규명",
+    "가용 재고 부족 근본 원인 진단: 소비 마스터가 117K WSPM으로 상향된 뒤 오프닝 재고 프로비저닝이 현재 스케일로 적용된 적이 없어 41/44 자재가 ROP 미만 — 벌크 가스(N₂ 등)가 실린더(봄베)로 잘못 모델링돼 재고를 채우면 창고 capacity가 폭발하니 억지로 작게 눌러온 구조임을 warehouse-capacity-master 기준과 대조해 확인",
+    "엔진 캘리브레이션 수정 — avgDailyBurn을 실벽시계(5초)로 정규화하던 것을 SIM_DAYS_PER_TICK(사이클타임/스텝수≈0.808일)로 교체해 ~1.7만배 왜곡 제거, ProcessUsage 기준 daily-control과 정합(순수+통합 테스트 검증)",
+    "트윈 엔진이 실제 생산 WIP를 소모하지 못하던 코호트 이름 불일치 버그 발견 — 실 가동 WIP는 cohort=MODELED_FOUP(14,028개)인데 advanceAggregateWip은 cohort=AGGREGATE만 진행하고 있었음(후속 수정 대상으로 기록)",
+    "무거워진 시스템 정리 — 참조·네비 링크 없는 고아 화면(/risk·/wiki)과 스텁 화면(/value·/scm route)을 제거하고 재사용 컴포넌트(ProcurementMasterClient)는 유지, 실시간 연동 통합 Control Tower 뷰(심박 스트립·Runway·탱크 액위 게이지) 설계 확정",
+  ] },
 ];
 
 export default function DevlogPage() {
