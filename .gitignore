@@ -46,3 +46,6 @@ next-env.d.ts
 # SQLite DB (로컬 데이터)
 *.db
 *.db-journal
+
+# Playwright MCP artifacts
+.playwright-mcp/

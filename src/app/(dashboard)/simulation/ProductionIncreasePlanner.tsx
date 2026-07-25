@@ -2,76 +2,239 @@
 
 import { useMemo, useState } from "react";
 import {
-  planProductionChanges, type ProductDemand, type ProductionPlanEvent,
-  type ProductionPlanInput, type ScenarioMaterial,
+  recommendMaterialOrders,
+  type MaterialRecommendation,
+  type ProductDemand,
+  type ProductionPlanEvent,
+  type ProductionPlanInput,
+  type ScenarioMaterial,
 } from "@/lib/scenario-engine";
+import {
+  parseMaterialScenarioPrompt,
+  type CopilotFab,
+  type MaterialScenarioInterpretation,
+} from "@/lib/material-copilot";
+import WhatIfActionCopilot from "./WhatIfActionCopilot";
 
 const PRODUCTS: (keyof ProductDemand)[] = ["HBM", "DRAM", "NAND"];
-const PRODUCT_COLOR = { HBM: "#EA002C", DRAM: "#2563EB", NAND: "#8B5CF6" };
-const PRIORITY = {
-  OVERDUE: { label: "즉시 대응", style: "bg-red-50 text-red-700" },
-  NOW: { label: "오늘 발주", style: "bg-amber-50 text-amber-700" },
-  PLANNED: { label: "발주 예정", style: "bg-blue-50 text-blue-700" },
-  LEAD_TIME_MISSING: { label: "리드타임 미등록", style: "bg-gray-100 text-gray-600" },
-};
-
-const INITIAL_EVENTS: ProductionPlanEvent[] = [
-  { id: "event-hbm", product: "HBM", startDay: 2, changePct: 30, durationDays: 30 },
-  { id: "event-dram", product: "DRAM", startDay: 2, changePct: -15, durationDays: 30 },
+const EXAMPLES = [
+  "다음 달 1일부터 M20 HBM 생산을 6주간 20% 늘려줘",
+  "8월 15일부터 M20 DRAM 생산을 30일간 10% 줄여줘",
+  "현재 주의해서 봐야 할 자재와 이유를 알려줘",
 ];
 
-function formatQty(value: number) { return value.toLocaleString("ko-KR", { maximumFractionDigits: 2 }); }
+function formatQty(value: number) {
+  return value.toLocaleString("ko-KR", { maximumFractionDigits: 2 });
+}
+
 function dateAt(snapshotAt: string, day: number | null) {
-  if (day === null) return "발주일 계산 불가";
-  const date = new Date(snapshotAt); date.setDate(date.getDate() + day);
+  if (day === null) return "계산 불가";
+  const date = new Date(snapshotAt);
+  date.setDate(date.getDate() + day);
   return `${date.toLocaleDateString("ko-KR", { month: "short", day: "numeric" })} · ${day === 0 ? "오늘" : day > 0 ? `D+${day}` : `D${day}`}`;
 }
 
-function EventCard({ event, index, canDelete, onChange, onCopy, onDelete }: {
-  event: ProductionPlanEvent; index: number; canDelete: boolean;
-  onChange: (patch: Partial<ProductionPlanEvent>) => void; onCopy: () => void; onDelete: () => void;
+function warningStyle(severity: "HIGH" | "MEDIUM" | "LOW") {
+  if (severity === "HIGH") return "bg-red-50 text-red-700";
+  if (severity === "MEDIUM") return "bg-amber-50 text-amber-700";
+  return "bg-slate-100 text-slate-600";
+}
+
+function InterpretationEditor({
+  fabId,
+  event,
+  horizonDays,
+  coverageDays,
+  onFabChange,
+  onEventChange,
+  onSettingsChange,
+}: {
+  fabId: CopilotFab | null;
+  event: ProductionPlanEvent;
+  horizonDays: number;
+  coverageDays: number;
+  onFabChange: (value: CopilotFab) => void;
+  onEventChange: (patch: Partial<ProductionPlanEvent>) => void;
+  onSettingsChange: (patch: Partial<Pick<ProductionPlanInput, "horizonDays" | "coverageDays">>) => void;
 }) {
-  return <div className="rounded-xl border bg-[#FCFBFA] p-3">
-    <div className="mb-3 flex items-center justify-between">
-      <div><span className="text-[10px] font-bold text-[#999]">변경 {index + 1}</span><div className="mt-0.5 text-sm font-extrabold" style={{ color: PRODUCT_COLOR[event.product] }}>D+{event.startDay} · {event.product} · {event.changePct >= 0 ? "+" : ""}{event.changePct}%</div></div>
-      <div className="flex gap-1"><button type="button" onClick={onCopy} className="rounded-lg border px-2 py-1 text-[10px] text-[#666]">복제</button><button type="button" disabled={!canDelete} onClick={onDelete} className="rounded-lg border px-2 py-1 text-[10px] text-[#EA002C] disabled:opacity-30">삭제</button></div>
+  return (
+    <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-extrabold text-blue-950">AI가 이렇게 해석했어요</div>
+        <div className="text-[10px] text-blue-700">값을 수정하면 즉시 다시 계산됩니다.</div>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
+        <label className="text-[10px] font-bold text-blue-800">FAB
+          <select value={fabId ?? ""} onChange={event => onFabChange(event.target.value as CopilotFab)} className="mt-1 w-full rounded-lg border border-blue-100 bg-white px-2 py-2 text-xs text-[#141413]">
+            {["M20", "M21", "M22"].map(item => <option key={item}>{item}</option>)}
+          </select>
+        </label>
+        <label className="text-[10px] font-bold text-blue-800">제품
+          <select value={event.product} onChange={e => onEventChange({ product: e.target.value as keyof ProductDemand })} className="mt-1 w-full rounded-lg border border-blue-100 bg-white px-2 py-2 text-xs text-[#141413]">
+            {PRODUCTS.map(product => <option key={product}>{product}</option>)}
+          </select>
+        </label>
+        <label className="text-[10px] font-bold text-blue-800">증감률
+          <div className="relative"><input aria-label="증감률" type="number" min="-100" max="300" value={event.changePct} onChange={e => onEventChange({ changePct: Number(e.target.value) || 0 })} className="mt-1 w-full rounded-lg border border-blue-100 bg-white px-2 py-2 pr-6 text-xs text-[#141413]"/><span className="absolute right-2 top-3 text-[10px] text-[#777]">%</span></div>
+        </label>
+        <label className="text-[10px] font-bold text-blue-800">시작
+          <div className="relative"><input aria-label="시작일" type="number" min="0" value={event.startDay} onChange={e => onEventChange({ startDay: Math.max(0, Number(e.target.value) || 0) })} className="mt-1 w-full rounded-lg border border-blue-100 bg-white px-2 py-2 pr-10 text-xs text-[#141413]"/><span className="absolute right-2 top-3 text-[10px] text-[#777]">일 뒤</span></div>
+        </label>
+        <label className="text-[10px] font-bold text-blue-800">유지 기간
+          <div className="relative"><input aria-label="유지 기간" type="number" min="1" value={event.durationDays} onChange={e => onEventChange({ durationDays: Math.max(1, Number(e.target.value) || 1) })} className="mt-1 w-full rounded-lg border border-blue-100 bg-white px-2 py-2 pr-7 text-xs text-[#141413]"/><span className="absolute right-2 top-3 text-[10px] text-[#777]">일</span></div>
+        </label>
+        <label className="text-[10px] font-bold text-blue-800">분석 기간
+          <div className="relative"><input aria-label="분석 기간" type="number" min="30" value={horizonDays} onChange={e => onSettingsChange({ horizonDays: Math.max(30, Number(e.target.value) || 90) })} className="mt-1 w-full rounded-lg border border-blue-100 bg-white px-2 py-2 pr-7 text-xs text-[#141413]"/><span className="absolute right-2 top-3 text-[10px] text-[#777]">일</span></div>
+        </label>
+        <label className="text-[10px] font-bold text-blue-800">입고 후 확보
+          <div className="relative"><input aria-label="입고 후 확보" type="number" min="1" value={coverageDays} onChange={e => onSettingsChange({ coverageDays: Math.max(1, Number(e.target.value) || 30) })} className="mt-1 w-full rounded-lg border border-blue-100 bg-white px-2 py-2 pr-7 text-xs text-[#141413]"/><span className="absolute right-2 top-3 text-[10px] text-[#777]">일</span></div>
+        </label>
+      </div>
     </div>
-    <div className="grid grid-cols-2 gap-2">
-      <label className="text-[10px] font-bold text-[#777]">제품<select aria-label={`변경 ${index + 1} 대상 제품`} value={event.product} onChange={e => onChange({ product: e.target.value as keyof ProductDemand })} className="mt-1 w-full rounded-lg border bg-white px-2 py-2 text-xs font-normal">{PRODUCTS.map(product => <option key={product}>{product}</option>)}</select></label>
-      <label className="text-[10px] font-bold text-[#777]">생산량 변화<div className="relative"><input aria-label={`변경 ${index + 1} 생산량 변화`} type="number" min="-100" max="300" value={event.changePct} onChange={e => onChange({ changePct: Math.max(-100, Math.min(300, Number(e.target.value) || 0)) })} className="mt-1 w-full rounded-lg border bg-white px-2 py-2 pr-7 text-xs font-normal"/><span className="absolute right-2 top-3 text-[10px] text-[#999]">%</span></div></label>
-      <label className="text-[10px] font-bold text-[#777]">시작<div className="relative"><input aria-label={`변경 ${index + 1} 시작일`} type="number" min="0" max="365" value={event.startDay} onChange={e => onChange({ startDay: Math.max(0, Number(e.target.value) || 0) })} className="mt-1 w-full rounded-lg border bg-white px-2 py-2 pr-10 text-xs font-normal"/><span className="absolute right-2 top-3 text-[10px] text-[#999]">일 뒤</span></div></label>
-      <label className="text-[10px] font-bold text-[#777]">유지 기간<div className="relative"><input aria-label={`변경 ${index + 1} 유지 기간`} type="number" min="1" max="365" value={event.durationDays} onChange={e => onChange({ durationDays: Math.max(1, Number(e.target.value) || 1) })} className="mt-1 w-full rounded-lg border bg-white px-2 py-2 pr-7 text-xs font-normal"/><span className="absolute right-2 top-3 text-[10px] text-[#999]">일</span></div></label>
+  );
+}
+
+function OrderTable({ rows, snapshotAt }: { rows: MaterialRecommendation[]; snapshotAt: string }) {
+  if (rows.length === 0) return <div className="px-5 py-12 text-center text-sm text-emerald-700">이 시나리오 때문에 새로 늘어나는 발주량은 없습니다.</div>;
+  return (
+    <div className="max-h-[430px] overflow-auto">
+      <table className="w-full min-w-[980px] text-xs">
+        <thead className="sticky top-0 bg-[#F8F6F4] text-[#666]"><tr>{["상태", "자재", "기준 / 변경 소요", "가용·예약·확정입고", "기존 보충", "순수 추가발주", "입고 필요 / 발주 마감"].map(label => <th key={label} className="px-3 py-3 text-left">{label}</th>)}</tr></thead>
+        <tbody>{rows.map(row => {
+          const urgent = row.normalOrderByDay === null || row.normalOrderByDay <= 0;
+          const policyMissing = row.warnings.some(warning => warning.code === "PROCUREMENT_POLICY_MISSING");
+          return <tr key={row.material.id} className="border-t align-top">
+            <td className="px-3 py-3"><span className={`whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold ${urgent ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700"}`}>{urgent ? "즉시 확인" : "발주 예정"}</span></td>
+            <td className="px-3 py-3"><b>{row.material.name}</b><div className="mt-1 font-mono text-[10px] text-[#777]">{row.material.code} · {row.material.supplierName ?? "공급사 미등록"}</div></td>
+            <td className="px-3 py-3"><div>기준 {formatQty(row.baseline.grossRequirement)}</div><div className="mt-1 font-bold text-red-700">변경 {formatQty(row.scenario.grossRequirement)} <span className="text-[10px]">(+{formatQty(row.additionalRequirement)})</span></div></td>
+            <td className="px-3 py-3"><div>가용 {formatQty(row.netInputs.available)}</div><div className="mt-1 text-[#777]">예약 {formatQty(row.netInputs.reserved)} · 확정입고 {formatQty(row.netInputs.confirmedInbound)}</div></td>
+            <td className="px-3 py-3 text-right"><b>{formatQty(row.baseline.recommendedInbound)}</b> {row.material.unit}</td>
+            <td className="px-3 py-3 text-right"><div className="text-base font-extrabold text-[#EA002C]">{formatQty(row.policyAdjustedOrderQuantity)} {row.material.unit}</div><div className="mt-1 text-[10px] text-[#777]">순증분 {formatQty(row.incrementalOrderQuantity)}{policyMissing ? " · 구매조건 미반영" : " · MOQ 반영"}</div></td>
+            <td className="px-3 py-3"><b>입고 {dateAt(snapshotAt, row.needByDay)}</b><div className={`mt-1 text-[10px] font-bold ${urgent ? "text-red-700" : "text-blue-700"}`}>통상 발주 {dateAt(snapshotAt, row.normalOrderByDay)}</div><div className="mt-1 text-[10px] text-amber-700">안전 발주 {dateAt(snapshotAt, row.safeOrderByDay)}</div></td>
+          </tr>;
+        })}</tbody>
+      </table>
     </div>
-  </div>;
+  );
+}
+
+function AttentionTable({ rows, snapshotAt }: { rows: MaterialRecommendation[]; snapshotAt: string }) {
+  if (rows.length === 0) return <div className="px-5 py-12 text-center text-sm text-emerald-700">현재 조건에서 별도 주의 경보가 없습니다.</div>;
+  return (
+    <div className="max-h-[430px] overflow-auto">
+      <table className="w-full min-w-[860px] text-xs">
+        <thead className="sticky top-0 bg-[#F8F6F4] text-[#666]"><tr>{["자재", "주의 근거", "현재 가용", "기준 보충", "첫 필요일", "데이터 근거"].map(label => <th key={label} className="px-3 py-3 text-left">{label}</th>)}</tr></thead>
+        <tbody>{rows.map(row => <tr key={row.material.id} className="border-t align-top">
+          <td className="px-3 py-3"><b>{row.material.name}</b><div className="mt-1 font-mono text-[10px] text-[#777]">{row.material.code}</div></td>
+          <td className="px-3 py-3"><div className="flex max-w-[420px] flex-wrap gap-1">{row.warnings.map(warning => <span key={warning.code} className={`rounded-full px-2 py-1 text-[10px] font-bold ${warningStyle(warning.severity)}`}>{warning.label}</span>)}</div></td>
+          <td className="px-3 py-3"><b>{formatQty(row.netInputs.available)} {row.material.unit}</b><div className="mt-1 text-[10px] text-[#777]">현재고 {formatQty(row.netInputs.onHand)}</div></td>
+          <td className="px-3 py-3 text-right font-bold">{formatQty(row.baseline.recommendedInbound)} {row.material.unit}</td>
+          <td className="px-3 py-3 font-bold">{dateAt(snapshotAt, row.scenario.firstNeedDay)}</td>
+          <td className="px-3 py-3"><div>{row.evidence.usageSource}</div><div className="mt-1 font-mono text-[10px] text-[#777]">{row.evidence.usageSourceVersion ?? "버전 미등록"} · {row.evidence.formulaVersion}</div></td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+  );
 }
 
 export default function ProductionIncreasePlanner({ materials, snapshotAt }: { materials: ScenarioMaterial[]; snapshotAt: string }) {
-  const [input, setInput] = useState<ProductionPlanInput>({ events: INITIAL_EVENTS, horizonDays: 90, replenishmentMode: "ROP", coverageDays: 30 });
-  const plan = useMemo(() => planProductionChanges(materials, input), [materials, input]);
-  const urgent = plan.actions.filter(action => action.priority === "OVERDUE" || action.priority === "NOW").length;
-  const updateEvent = (id: string, patch: Partial<ProductionPlanEvent>) => setInput(current => ({ ...current, events: current.events.map(event => event.id === id ? { ...event, ...patch } : event) }));
-  const addEvent = (source?: ProductionPlanEvent) => setInput(current => ({ ...current, events: [...current.events, { id: crypto.randomUUID(), product: source?.product ?? "NAND", startDay: source?.startDay ?? 7, changePct: source?.changePct ?? 10, durationDays: source?.durationDays ?? 30 }] }));
+  const [prompt, setPrompt] = useState(EXAMPLES[0]);
+  const [interpretation, setInterpretation] = useState<MaterialScenarioInterpretation | null>(null);
+  const [selectedFab, setSelectedFab] = useState<CopilotFab | null>(null);
+  const [input, setInput] = useState<ProductionPlanInput>({ events: [], horizonDays: 90, replenishmentMode: "ROP", coverageDays: 30 });
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"ORDER" | "ATTENTION">("ORDER");
+
+  const result = useMemo(() => recommendMaterialOrders(materials, input, selectedFab), [materials, input, selectedFab]);
+  const orders = result.recommendations.filter(item => item.incrementalOrderQuantity > 0);
+  const attention = result.recommendations
+    .filter(item => item.warnings.length > 0)
+    .sort((a, b) => Number(b.warnings.some(w => w.severity === "HIGH")) - Number(a.warnings.some(w => w.severity === "HIGH")) || a.material.code.localeCompare(b.material.code));
+  const ready = interpretation !== null && interpretation.missingFields.length === 0;
+
+  async function analyze() {
+    if (!prompt.trim()) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/ai-material-scenario", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, snapshotAt }),
+      });
+      if (!response.ok) throw new Error("AI 해석 요청 실패");
+      const payload = await response.json() as { interpretation: MaterialScenarioInterpretation; notice?: string };
+      applyInterpretation(payload.interpretation);
+      setNotice(payload.notice ?? null);
+    } catch {
+      const fallback = parseMaterialScenarioPrompt(prompt, snapshotAt, "RULES_FALLBACK");
+      applyInterpretation(fallback);
+      setNotice("AI 연결이 원활하지 않아 안전 규칙으로 해석했습니다. 수량은 동일한 계산 엔진이 산출합니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function applyInterpretation(next: MaterialScenarioInterpretation) {
+    setInterpretation(next);
+    setSelectedFab(next.fabId);
+    setInput({ events: next.events, horizonDays: next.horizonDays, replenishmentMode: "ROP", coverageDays: next.coverageDays });
+    setActiveTab(next.intent === "RISK_REVIEW" ? "ATTENTION" : "ORDER");
+  }
+
+  function updateEvent(patch: Partial<ProductionPlanEvent>) {
+    setInput(current => ({ ...current, events: current.events.map((event, index) => index === 0 ? { ...event, ...patch } : event) }));
+  }
 
   return <div className="space-y-5">
-    <section className="grid grid-cols-[380px_1fr] gap-5 items-start">
-      <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
-        <div className="flex items-center justify-between"><div><div className="text-[11px] font-bold uppercase tracking-[.08em] text-[#777]">생산계획 이벤트</div><div className="mt-1 text-xs text-[#999]">여러 증·감산을 하나의 시나리오로 계산합니다.</div></div><span className="rounded-full bg-[#F3F0EE] px-2 py-1 text-[10px] font-bold">{input.events.length}개</span></div>
-        <div className="mt-4 max-h-[510px] space-y-3 overflow-y-auto pr-1">{input.events.map((event, index) => <EventCard key={event.id} event={event} index={index} canDelete={input.events.length > 1} onChange={patch => updateEvent(event.id, patch)} onCopy={() => addEvent(event)} onDelete={() => setInput(current => ({ ...current, events: current.events.filter(item => item.id !== event.id) }))}/>)}</div>
-        <button type="button" onClick={() => addEvent()} className="mt-3 w-full rounded-xl border-2 border-dashed py-2.5 text-xs font-bold text-[#2563EB]">+ 생산 변경 추가</button>
-        <div className="mt-5 border-t pt-4"><div className="text-[11px] font-bold uppercase tracking-[.08em] text-[#777]">공통 보충 설정</div><div className="mt-3 grid grid-cols-2 gap-2">
-          <label className="text-[10px] font-bold text-[#777]">입고 후 확보<div className="relative"><input aria-label="입고 후 확보 일수" type="number" min="1" max="90" value={input.coverageDays} onChange={e => setInput(current => ({ ...current, coverageDays: Math.max(1, Number(e.target.value) || 1) }))} className="mt-1 w-full rounded-lg border px-2 py-2 pr-7 text-xs"/><span className="absolute right-2 top-3 text-[10px] text-[#999]">일</span></div></label>
-          <label className="text-[10px] font-bold text-[#777]">보충 기준<select value={input.replenishmentMode} onChange={e => setInput(current => ({ ...current, replenishmentMode: e.target.value as "ROP" | "STOCKOUT" }))} className="mt-1 w-full rounded-lg border px-2 py-2 text-xs"><option value="ROP">ROP 유지</option><option value="STOCKOUT">결품 방지</option></select></label>
-        </div></div>
-      </div>
+    <WhatIfActionCopilot fabId={selectedFab} input={input} />
 
-      <div className="space-y-4 min-w-0">
-        <div className="rounded-2xl border bg-white p-4"><div className="text-xs font-bold">생산 변경 타임라인</div><div className="mt-3 space-y-2">{input.events.slice().sort((a,b) => a.startDay-b.startDay).map(event => <div key={event.id} className="grid grid-cols-[70px_1fr_80px] items-center gap-2 text-[11px]"><b style={{ color: PRODUCT_COLOR[event.product] }}>{event.product}</b><div className="h-6 rounded bg-[#F3F0EE] overflow-hidden"><div className="h-full rounded opacity-80" style={{ marginLeft: `${Math.min(90, event.startDay / input.horizonDays * 100)}%`, width: `${Math.max(2, Math.min(100, event.durationDays / input.horizonDays * 100))}%`, backgroundColor: PRODUCT_COLOR[event.product] }}/></div><span className="text-right font-bold">D+{event.startDay} {event.changePct >= 0 ? "+" : ""}{event.changePct}%</span></div>)}</div></div>
-        <div className="grid grid-cols-3 gap-3"><div className="rounded-2xl border bg-white p-4"><div className="text-[11px] text-[#888]">판정</div><div className={`mt-2 text-xl font-extrabold ${plan.status === "FEASIBLE" ? "text-emerald-600" : "text-[#EA002C]"}`}>{plan.status === "FEASIBLE" ? "계획 가능" : plan.status === "URGENT" ? "긴급 대응 필요" : "리드타임 확인 필요"}</div></div><div className="rounded-2xl border bg-white p-4"><div className="text-[11px] text-[#888]">영향 자재</div><div className="mt-2 text-2xl font-extrabold">{plan.materials.length}종</div></div><div className="rounded-2xl border bg-white p-4"><div className="text-[11px] text-[#888]">즉시 확인</div><div className="mt-2 text-2xl font-extrabold text-[#EA002C]">{urgent}건</div></div></div>
-        <div className="rounded-2xl border border-[var(--border)] bg-white overflow-hidden"><div className="flex items-center justify-between border-b px-5 py-4"><div><div className="font-extrabold">통합 자재 입고 액션</div><div className="mt-1 text-xs text-[#888]">모든 생산 변경을 날짜별 순수요로 합산했습니다.</div></div><span className="rounded-full bg-blue-50 px-3 py-1 text-[10px] font-bold text-blue-700">CALCULATED</span></div>
-          {plan.actions.length === 0 ? <div className="p-12 text-center text-sm text-emerald-700">분석기간 내 추가 입고 없이 생산계획을 충족합니다.</div> : <div className="max-h-[500px] overflow-auto"><table className="w-full text-xs"><thead className="sticky top-0 bg-[#F8F6F4] text-[#777]"><tr>{["상태","자재·공급사","통상 / 안전 발주","입고 마감","권장 수량","수요 원인"].map(label => <th key={label} className="px-3 py-3 text-left">{label}</th>)}</tr></thead><tbody>{plan.actions.map((action,index) => { const priority=PRIORITY[action.priority]; return <tr key={`${action.materialId}-${action.inboundDay}-${index}`} className="border-t"><td className="px-3 py-3"><span className={`whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-bold ${priority.style}`}>{priority.label}</span></td><td className="px-3 py-3"><b>{action.name}</b><div className="mt-0.5 font-mono text-[10px] text-[#888]">{action.code} · {action.supplierName ?? "승인 공급사 미등록"}</div>{action.procurementAlternatives.length>0&&<div className="mt-1 text-[10px] text-blue-700">대안: {action.procurementAlternatives.map(item=>`${item.supplierName}${item.emergencyOrderAllowed?"(긴급)":""}`).join(", ")}</div>}</td><td className="px-3 py-3"><div className="font-bold">통상 {dateAt(snapshotAt,action.orderDay)}</div><div className="mt-1 text-[10px] text-[#666]">{action.leadTimeDays??"?"}일 · {action.leadTimeSource}</div><div className="mt-1 font-bold text-amber-700">안전 {action.safeOrderDay===null?"범위 미등록":dateAt(snapshotAt,action.safeOrderDay)}</div></td><td className="px-3 py-3 font-bold">{dateAt(snapshotAt,action.inboundDay)}</td><td className="px-3 py-3 text-right font-extrabold">{formatQty(action.quantity)} {action.unit}</td><td className="px-3 py-3 text-[#666]">{action.reason === "EXISTING_RISK" ? <div className="font-bold text-amber-700">기존 재고도 기준 미달</div> : null}{action.drivers.length ? action.drivers.map(driver => <div key={driver.product}>{driver.product} {driver.changePct >= 0 ? "+" : ""}{driver.changePct}% <span className={driver.dailyDelta >= 0 ? "text-red-600" : "text-blue-600"}>({driver.dailyDelta >= 0 ? "+" : ""}{driver.dailyDelta.toFixed(1)}/일)</span></div>) : <span className="text-[#999]">기준 수요</span>}</td></tr>;})}</tbody></table></div>}
+    <section className="overflow-hidden rounded-3xl border border-[#D9D5D1] bg-[#171716] text-white shadow-[var(--shadow-1)]">
+      <div className="grid gap-6 p-6 lg:grid-cols-[1fr_320px]">
+        <div>
+          <div className="flex items-center gap-2"><span className="rounded-full bg-[#EA002C] px-2.5 py-1 text-[10px] font-extrabold tracking-[.08em]">AI COPILOT</span><span className="text-[11px] text-white/50">읽기 전용 추천</span></div>
+          <h2 className="mt-4 text-2xl font-extrabold leading-tight">생산 변경을 말하면,<br className="hidden sm:block"/> 필요한 자재 대응을 계산해 드려요.</h2>
+          <p className="mt-2 text-xs leading-5 text-white/55">AI는 문장을 조건으로만 해석하고, 발주 수량과 날짜는 재현 가능한 계산 엔진이 산출합니다.</p>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/[.06] p-4 text-xs text-white/70">
+          <div className="font-bold text-white">분석 기준</div>
+          <div className="mt-3 space-y-2"><div className="flex justify-between"><span>재고 스냅샷</span><b>{new Date(snapshotAt).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</b></div><div className="flex justify-between"><span>계산식</span><b>MATERIAL_COPILOT_V1</b></div><div className="flex justify-between"><span>실행 권한</span><b className="text-emerald-300">추천만 · 발주 안 함</b></div></div>
         </div>
       </div>
+      <div className="border-t border-white/10 bg-white/[.04] p-4 sm:p-6">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <textarea aria-label="자재 시나리오 입력" value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === "Enter") void analyze(); }} rows={2} className="min-h-[58px] flex-1 resize-none rounded-xl border border-white/10 bg-white px-4 py-3 text-sm font-medium text-[#141413] outline-none ring-[#EA002C] placeholder:text-[#999] focus:ring-2" placeholder="예: 다음 달부터 M20 HBM 생산을 20% 늘려줘"/>
+          <button type="button" disabled={busy || !prompt.trim()} onClick={() => void analyze()} className="min-w-36 rounded-xl bg-[#EA002C] px-5 py-3 text-sm font-extrabold text-white transition hover:bg-[#C90025] disabled:opacity-50">{busy ? "해석 중..." : "추천 분석"}</button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">{EXAMPLES.map(example => <button type="button" key={example} onClick={() => setPrompt(example)} className="rounded-full border border-white/15 px-3 py-1.5 text-[10px] text-white/65 hover:bg-white/10">{example}</button>)}</div>
+      </div>
     </section>
-    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900"><b>계산 규칙:</b> 이벤트는 시작일 포함·종료일 제외로 적용하며, 같은 제품의 중첩 변화율은 합산합니다. 감산은 최대 -100%까지 적용됩니다. 리드타임이 없어도 입고 필요일과 수량은 계산되고 발주일만 미표시됩니다.</div>
+
+    {interpretation && <section className="rounded-2xl border border-[var(--border)] bg-white p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[11px] font-bold uppercase tracking-[.08em] text-[#777]">입력 해석</div><div className="mt-1 text-xs text-[#777]">{interpretation.intent === "RISK_REVIEW" ? "현재 기준계획에서 주의할 자재를 조회합니다." : "확인된 조건으로 기준계획과 변경계획을 비교합니다."}</div></div><span className={`rounded-full px-3 py-1 text-[10px] font-bold ${interpretation.parsedBy === "AI" ? "bg-violet-50 text-violet-700" : "bg-slate-100 text-slate-600"}`}>{interpretation.parsedBy === "AI" ? "AI 해석" : "안전 규칙 해석"}</span></div>
+      {interpretation.missingFields.length > 0 ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><b>계산 전에 확인이 필요해요.</b><div className="mt-1 text-xs">문장에 {interpretation.missingFields.join(", ")} 정보를 포함해 다시 입력해 주세요. 누락값은 임의로 만들지 않았습니다.</div></div> : interpretation.intent === "PRODUCTION_CHANGE" && input.events[0] ? <InterpretationEditor fabId={selectedFab} event={input.events[0]} horizonDays={input.horizonDays} coverageDays={input.coverageDays} onFabChange={setSelectedFab} onEventChange={updateEvent} onSettingsChange={patch => setInput(current => ({ ...current, ...patch }))}/> : <div className="mt-4 rounded-xl bg-emerald-50 p-4 text-xs text-emerald-800">생산 변경 없이 현재 기준계획의 부족·리드타임·품질·원단위 위험을 확인합니다.</div>}
+      {interpretation.assumptions.length > 0 && <div className="mt-3 text-[11px] text-[#777]">해석 기준: {interpretation.assumptions.join(" ")}</div>}
+      {notice && <div className="mt-2 text-[11px] text-amber-700">{notice}</div>}
+    </section>}
+
+    {ready && <>
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="rounded-2xl border bg-white p-4"><div className="text-[11px] text-[#777]">영향 자재</div><div className="mt-2 text-2xl font-extrabold">{result.summary.affectedMaterials}종</div></div>
+        <div className="rounded-2xl border bg-white p-4"><div className="text-[11px] text-[#777]">추가 발주</div><div className="mt-2 text-2xl font-extrabold text-[#EA002C]">{result.summary.incrementalOrders}종</div></div>
+        <div className="rounded-2xl border bg-white p-4"><div className="text-[11px] text-[#777]">즉시 대응</div><div className="mt-2 text-2xl font-extrabold text-amber-600">{result.summary.urgentOrders}종</div></div>
+        <div className="rounded-2xl border bg-white p-4"><div className="text-[11px] text-[#777]">주의 자재</div><div className="mt-2 text-2xl font-extrabold text-blue-700">{result.summary.attentionMaterials}종</div></div>
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white">
+        <div className="flex flex-col gap-3 border-b px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div><div className="font-extrabold">AI 추천 결과</div><div className="mt-1 text-xs text-[#777]">기준계획과 변경계획을 같은 재고 스냅샷으로 비교했습니다.</div></div>
+          <div className="flex rounded-xl bg-[#F3F0EE] p-1"><button type="button" onClick={() => setActiveTab("ORDER")} className={`rounded-lg px-4 py-2 text-xs font-bold ${activeTab === "ORDER" ? "bg-white text-[#EA002C] shadow-sm" : "text-[#666]"}`}>추가 발주 {orders.length}</button><button type="button" onClick={() => setActiveTab("ATTENTION")} className={`rounded-lg px-4 py-2 text-xs font-bold ${activeTab === "ATTENTION" ? "bg-white text-blue-700 shadow-sm" : "text-[#666]"}`}>주의 자재 {attention.length}</button></div>
+        </div>
+        {activeTab === "ORDER" ? <OrderTable rows={orders} snapshotAt={snapshotAt}/> : <AttentionTable rows={attention} snapshotAt={snapshotAt}/>}
+      </section>
+
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900"><b>추천 해석:</b> 추가발주량은 변경계획 권장입고량에서 기준계획 권장입고량을 뺀 값입니다. 확정 입고만 날짜별로 반영하며, 예약·품질보류 수량은 가용재고에서 제외합니다. MOQ·발주배수 정보가 없으면 순부족량만 표시합니다. 이 화면에서는 발주나 입고계획을 생성하지 않습니다.</div>
+    </>}
   </div>;
 }

@@ -1,16 +1,21 @@
-export const dynamic = "force-dynamic";
+import "server-only";
 
-import { getInventoryRows, getProcessUsagesWithMaterial } from "@/lib/queries";
-import ProductionIncreasePlanner from "./ProductionIncreasePlanner";
-import type { ScenarioMaterial } from "@/lib/scenario-engine";
 import { materialFactor, WORKING_DAYS } from "@/lib/capacity";
 import { collections } from "@/lib/db";
 import { buildProcurementSummary } from "@/lib/procurement";
+import { getInventoryRows, getProcessUsagesWithMaterial } from "@/lib/queries";
+import type { ScenarioMaterial } from "@/lib/scenario-engine";
 
-export default async function ScenarioPage() {
-  const snapshot = new Date();
-  const snapshotAt = snapshot.toISOString();
-  const [rows, usages, dbCollections] = await Promise.all([getInventoryRows(true), getProcessUsagesWithMaterial(), collections()]);
+export async function loadLiveScenarioMaterials(now = new Date()): Promise<{
+  materials: ScenarioMaterial[];
+  snapshotAt: string;
+}> {
+  const snapshotAt = now.toISOString();
+  const [rows, usages, dbCollections] = await Promise.all([
+    getInventoryRows(true),
+    getProcessUsagesWithMaterial(),
+    collections(),
+  ]);
   const [supplierLinks, suppliers, lots, allocations, inboundPlans, agentPolicies] = await Promise.all([
     dbCollections.materialSuppliers.find({}).sort({ isPrimary: -1, leadTimeDays: 1 }).toArray(),
     dbCollections.suppliers.find({}).toArray(),
@@ -19,8 +24,12 @@ export default async function ScenarioPage() {
     dbCollections.inboundPlans.find({ status: "CONFIRMED", remainingQuantity: { $gt: 0 } }).toArray(),
     dbCollections.agentPolicies.find({}).toArray(),
   ]);
+
   const linksByMaterial = new Map<string, typeof supplierLinks>();
-  for (const link of supplierLinks) linksByMaterial.set(link.materialId, [...(linksByMaterial.get(link.materialId) ?? []), link]);
+  for (const link of supplierLinks) {
+    linksByMaterial.set(link.materialId, [...(linksByMaterial.get(link.materialId) ?? []), link]);
+  }
+
   const productMap = new Map<string, { HBM: number; DRAM: number; NAND: number }>();
   const usageMetadata = new Map<string, { sources: Set<string>; versions: Set<string> }>();
   for (const usage of usages) {
@@ -32,12 +41,17 @@ export default async function ScenarioPage() {
     if (usage.sourceVersion) metadata.versions.add(usage.sourceVersion);
     usageMetadata.set(usage.materialId, metadata);
   }
+
   const reservedByMaterial = new Map<string, number>();
-  for (const allocation of allocations) reservedByMaterial.set(allocation.materialId, (reservedByMaterial.get(allocation.materialId) ?? 0) + allocation.quantity);
+  for (const allocation of allocations) {
+    reservedByMaterial.set(allocation.materialId, (reservedByMaterial.get(allocation.materialId) ?? 0) + allocation.quantity);
+  }
+
   const blockedByMaterial = new Map<string, number>();
   const expiringByMaterial = new Map<string, number>();
   const lotLedgerByMaterial = new Map<string, number>();
-  const expiryLimit = new Date(snapshot); expiryLimit.setUTCDate(expiryLimit.getUTCDate() + 30);
+  const expiryLimit = new Date(now);
+  expiryLimit.setUTCDate(expiryLimit.getUTCDate() + 30);
   for (const lot of lots) {
     lotLedgerByMaterial.set(lot.materialId, (lotLedgerByMaterial.get(lot.materialId) ?? 0) + lot.availableQuantity);
     if (lot.qualityStatus === "HOLD" || lot.qualityStatus === "QUARANTINE") {
@@ -47,57 +61,65 @@ export default async function ScenarioPage() {
       expiringByMaterial.set(lot.materialId, (expiringByMaterial.get(lot.materialId) ?? 0) + lot.availableQuantity);
     }
   }
+
   const confirmedInboundByMaterial = new Map<string, { day: number; quantity: number }[]>();
   for (const plan of inboundPlans) {
-    const day = Math.max(0, Math.round((plan.plannedDate.getTime() - snapshot.getTime()) / 86_400_000));
+    const day = Math.max(0, Math.round((plan.plannedDate.getTime() - now.getTime()) / 86_400_000));
     confirmedInboundByMaterial.set(plan.materialId, [
       ...(confirmedInboundByMaterial.get(plan.materialId) ?? []),
       { day, quantity: plan.remainingQuantity },
     ]);
   }
+
   const policiesByMaterial = new Map<string, NonNullable<ScenarioMaterial["procurementPolicies"]>>();
   for (const policy of agentPolicies) {
     const policies = policiesByMaterial.get(policy.materialId) ?? {};
     policies[policy.fabId] = { moq: policy.moq, orderMultiple: policy.orderMultiple };
     policiesByMaterial.set(policy.materialId, policies);
   }
+
   const seen = new Set<string>();
   const materials: ScenarioMaterial[] = [];
   for (const row of rows) {
     if (seen.has(row.materialId)) continue;
     seen.add(row.materialId);
+    const metadata = usageMetadata.get(row.materialId);
+    const procurement = buildProcurementSummary(linksByMaterial.get(row.materialId) ?? [], suppliers);
     materials.push({
-      id: row.materialId, code: row.material.code, name: row.material.name, category: row.material.category, unit: row.material.unit,
-      currentQuantity: row.totalQuantity, baseDailyUsage: row.dailyUsage, ropDays: row.material.ropDays,
+      id: row.materialId,
+      code: row.material.code,
+      name: row.material.name,
+      category: row.material.category,
+      unit: row.material.unit,
+      currentQuantity: row.totalQuantity,
+      baseDailyUsage: row.dailyUsage,
+      ropDays: row.material.ropDays,
       productDailyUsage: productMap.get(row.materialId) ?? { HBM: 0, DRAM: 0, NAND: 0 },
-      warehouseCode: row.warehouse.code, warehouseName: row.warehouse.name,
+      warehouseCode: row.warehouse.code,
+      warehouseName: row.warehouse.name,
       occupancyFactor: ["HAZMAT", "MRO", "PRECURSOR"].includes(row.warehouse.type) ? 1 : materialFactor(row.material),
       reservedQuantity: reservedByMaterial.get(row.materialId) ?? 0,
       qualityBlockedQuantity: blockedByMaterial.get(row.materialId) ?? 0,
       expiringQuantity30d: expiringByMaterial.get(row.materialId) ?? 0,
       confirmedInboundByDay: confirmedInboundByMaterial.get(row.materialId) ?? [],
       procurementPolicies: policiesByMaterial.get(row.materialId) ?? {},
-      inventoryLedgerVariance: lotLedgerByMaterial.has(row.materialId) ? row.totalQuantity - (lotLedgerByMaterial.get(row.materialId) ?? 0) : null,
-      usageSource: usageMetadata.has(row.materialId) ? [...usageMetadata.get(row.materialId)!.sources].join(" + ") : row.usageSource,
-      usageSourceVersion: usageMetadata.has(row.materialId) ? [...usageMetadata.get(row.materialId)!.versions].join(", ") || null : null,
-      usageConfidence: row.material.assumptionConfidence ?? (usageMetadata.get(row.materialId)?.sources.has("MES_ACTUAL") ? "HIGH" : "MEDIUM"),
-      ...(() => { const summary = buildProcurementSummary(linksByMaterial.get(row.materialId) ?? [], suppliers); return {
-        leadTimeDays: summary?.normalDays ?? null, safeLeadTimeDays: summary?.safeDays ?? null,
-        supplierName: summary?.supplierName ?? null, leadTimeSource: summary?.normalSource ?? "MISSING" as const,
-        procurementAlternatives: summary?.alternatives.map(alternative => ({ supplierName: alternative.supplierName, standardDays: alternative.standardDays, emergencyOrderAllowed: alternative.emergencyOrderAllowed })) ?? [],
-      }; })(),
+      inventoryLedgerVariance: lotLedgerByMaterial.has(row.materialId)
+        ? row.totalQuantity - (lotLedgerByMaterial.get(row.materialId) ?? 0)
+        : null,
+      usageSource: metadata ? [...metadata.sources].join(" + ") : row.usageSource,
+      usageSourceVersion: metadata ? [...metadata.versions].join(", ") || null : null,
+      usageConfidence: row.material.assumptionConfidence ?? (metadata?.sources.has("MES_ACTUAL") ? "HIGH" : "MEDIUM"),
+      leadTimeDays: procurement?.normalDays ?? null,
+      safeLeadTimeDays: procurement?.safeDays ?? null,
+      supplierName: procurement?.supplierName ?? null,
+      leadTimeSource: procurement?.normalSource ?? "MISSING",
+      procurementAlternatives: procurement?.alternatives.map((alternative) => ({
+        supplierName: alternative.supplierName,
+        standardDays: alternative.standardDays,
+        emergencyOrderAllowed: alternative.emergencyOrderAllowed,
+      })) ?? [],
     });
   }
-  return (
-    <>
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <div className="text-2xl font-bold" style={{ color: "var(--text-1)" }}>운영 What-if 시나리오</div>
-          <div className="mt-1 text-xs" style={{ color: "var(--text-3)" }}>현재 재고 스냅샷에 명시한 수요·입고 조건만 적용하는 재현 가능한 분석입니다.</div>
-        </div>
-        <span className="rounded-full bg-[#E8F3FF] px-3 py-1 text-[11px] font-bold text-[#0078D4]">SIMULATION</span>
-      </div>
-      <ProductionIncreasePlanner materials={materials} snapshotAt={snapshotAt} />
-    </>
-  );
+
+  return { materials, snapshotAt };
 }

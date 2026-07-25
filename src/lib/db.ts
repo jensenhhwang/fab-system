@@ -695,6 +695,120 @@ export interface IntegrationOutboxDoc {
   sentAt?: Date;
 }
 
+export type WhatIfCopilotActionStatus = "NEW" | "ACKNOWLEDGED" | "SNOOZED" | "DISMISSED";
+
+export interface WhatIfCopilotActionDoc {
+  _id: string;
+  userId: string;
+  scopeHash: string;
+  candidateId: string;
+  status: WhatIfCopilotActionStatus;
+  snoozedUntil?: Date | null;
+  reason?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface WhatIfCopilotBriefingDoc {
+  _id: string;
+  candidateHash: string;
+  role: Role;
+  promptVersion: string;
+  model: string;
+  status: "GENERATING" | "COMPLETE" | "FAILED";
+  generationId: string;
+  narratives: {
+    candidateId: string;
+    actionCode: string;
+    title: string;
+    why: string;
+    action: string;
+    inactionImpact: string;
+  }[];
+  usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  error?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AIInvocationDoc {
+  _id: string;
+  feature: "WHAT_IF_COPILOT";
+  userId: string;
+  role: Role;
+  inputHash: string;
+  model: string;
+  promptVersion: string;
+  status: "SUCCESS" | "FAILED";
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number };
+  latencyMs: number;
+  error?: string | null;
+  createdAt: Date;
+}
+
+export type MarketSourceId = "TWSE" | "SEC";
+export type MarketSourceStatus = "HEALTHY" | "STALE" | "ERROR" | "DISABLED" | "NEVER_COLLECTED";
+
+export interface MarketSourceDoc {
+  _id: MarketSourceId;
+  label: string;
+  officialUrl: string;
+  cadence: string;
+  freshnessMs: number;
+  status: MarketSourceStatus;
+  lastAttemptAt?: Date | null;
+  lastSuccessAt?: Date | null;
+  lastError?: string | null;
+  updatedAt: Date;
+}
+
+export interface MarketIngestionRunDoc {
+  _id: string;
+  sourceId: MarketSourceId;
+  window: string;
+  status: "RUNNING" | "SUCCESS" | "FAILED" | "SKIPPED";
+  startedAt: Date;
+  finishedAt?: Date | null;
+  fetchedCount: number;
+  storedCount: number;
+  error?: string | null;
+}
+
+export interface MarketRawArtifactDoc {
+  _id: string;
+  sourceId: MarketSourceId;
+  hash: string;
+  sourceUrl: string;
+  contentType: string;
+  payload: string;
+  collectedAt: Date;
+}
+
+export interface MarketObservationDoc {
+  _id: string;
+  sourceId: MarketSourceId;
+  metricId: "MONTHLY_REVENUE" | "SEC_FILING";
+  entityId: string;
+  entityName: string;
+  period: string;
+  value?: number | null;
+  unit?: string | null;
+  changeMoM?: number | null;
+  changeYoY?: number | null;
+  title?: string | null;
+  detail?: string | null;
+  sourceUrl: string;
+  observedAt: Date;
+  publishedAt: Date;
+  collectedAt: Date;
+  rawHash: string;
+  artifactHash: string;
+  revision: number;
+  previousId?: string | null;
+  quality: "ACTUAL";
+  license: string;
+}
+
 export interface EquipmentAssignmentDoc {
   _id: string;
   workOrderId: string;
@@ -774,6 +888,13 @@ export async function collections(): Promise<{
   lotCarrierAssignments: Collection<LotCarrierAssignmentDoc>;
   foupWipBootstrapManifests: Collection<FoupWipBootstrapManifestDoc>;
   fabScenarios: Collection<FabScenarioDoc>;
+  whatIfCopilotActions: Collection<WhatIfCopilotActionDoc>;
+  whatIfCopilotBriefings: Collection<WhatIfCopilotBriefingDoc>;
+  aiInvocations: Collection<AIInvocationDoc>;
+  marketSources: Collection<MarketSourceDoc>;
+  marketIngestionRuns: Collection<MarketIngestionRunDoc>;
+  marketRawArtifacts: Collection<MarketRawArtifactDoc>;
+  marketObservations: Collection<MarketObservationDoc>;
 }> {
   const db = await getDb();
   return {
@@ -830,5 +951,12 @@ export async function collections(): Promise<{
     lotCarrierAssignments: db.collection<LotCarrierAssignmentDoc>("lotCarrierAssignments"),
     foupWipBootstrapManifests: db.collection<FoupWipBootstrapManifestDoc>("foupWipBootstrapManifests"),
     fabScenarios: db.collection<FabScenarioDoc>("fabScenarios"),
+    whatIfCopilotActions: db.collection<WhatIfCopilotActionDoc>("whatIfCopilotActions"),
+    whatIfCopilotBriefings: db.collection<WhatIfCopilotBriefingDoc>("whatIfCopilotBriefings"),
+    aiInvocations: db.collection<AIInvocationDoc>("aiInvocations"),
+    marketSources: db.collection<MarketSourceDoc>("marketSources"),
+    marketIngestionRuns: db.collection<MarketIngestionRunDoc>("marketIngestionRuns"),
+    marketRawArtifacts: db.collection<MarketRawArtifactDoc>("marketRawArtifacts"),
+    marketObservations: db.collection<MarketObservationDoc>("marketObservations"),
   };
 }

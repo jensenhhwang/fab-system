@@ -1,5 +1,7 @@
 # Material Consumption Master — M20 wafer당 자재 원단위
 
+상위 자재·FAB·공정 사용처 정의: [`material-master.md`](./material-master.md). 이 문서에는 상위 Master에서 `ACTIVE_BASELINE`으로 허용한 사용처의 수량 기준만 둔다.
+
 상태: `APPROVED_CALIBRATION_BASELINE`  
 버전: `MATERIAL_CONSUMPTION_M20_V3`
 기준일: 2026-07-19  

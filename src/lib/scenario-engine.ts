@@ -6,6 +6,15 @@ export type ScenarioMaterial = {
   leadTimeDays?: number | null; supplierName?: string | null;
   safeLeadTimeDays?: number | null; leadTimeSource?: "CURRENT" | "STANDARD" | "LEGACY" | "MISSING";
   procurementAlternatives?: { supplierName: string; standardDays: number | null; emergencyOrderAllowed: boolean }[];
+  reservedQuantity?: number;
+  qualityBlockedQuantity?: number;
+  expiringQuantity30d?: number;
+  confirmedInboundByDay?: { day: number; quantity: number }[];
+  procurementPolicies?: Partial<Record<"M20" | "M21" | "M22", { moq: number; orderMultiple: number }>>;
+  inventoryLedgerVariance?: number | null;
+  usageSource?: string;
+  usageSourceVersion?: string | null;
+  usageConfidence?: "HIGH" | "MEDIUM" | "LOW" | "CALIBRATION_REQUIRED";
 };
 
 export type ProductionIncreaseInput = {
@@ -63,6 +72,57 @@ export type ProductionIncreasePlan = {
   status: "FEASIBLE" | "URGENT" | "LEAD_TIME_MISSING";
 };
 
+export type MaterialRecommendationWarning = {
+  code:
+    | "EXISTING_SHORTAGE"
+    | "LEAD_TIME_MISSING"
+    | "SUPPLIER_MISSING"
+    | "PROCUREMENT_POLICY_MISSING"
+    | "QUALITY_BLOCKED"
+    | "RESERVED_STOCK"
+    | "EXPIRY_RISK"
+    | "INVENTORY_LEDGER_MISMATCH"
+    | "LOW_USAGE_CONFIDENCE";
+  label: string;
+  severity: "HIGH" | "MEDIUM" | "LOW";
+};
+
+export type MaterialRecommendation = {
+  material: ScenarioMaterial;
+  baseline: { grossRequirement: number; recommendedInbound: number; firstNeedDay: number | null };
+  scenario: { grossRequirement: number; recommendedInbound: number; firstNeedDay: number | null };
+  netInputs: {
+    onHand: number;
+    reserved: number;
+    qualityBlocked: number;
+    available: number;
+    confirmedInbound: number;
+  };
+  additionalRequirement: number;
+  incrementalOrderQuantity: number;
+  policyAdjustedOrderQuantity: number;
+  needByDay: number | null;
+  normalOrderByDay: number | null;
+  safeOrderByDay: number | null;
+  classification: "EXISTING_SHORTAGE" | "SCENARIO_CAUSED_SHORTAGE" | "NO_INCREMENTAL_ORDER";
+  warnings: MaterialRecommendationWarning[];
+  evidence: {
+    formulaVersion: "MATERIAL_COPILOT_V1";
+    usageSource: string;
+    usageSourceVersion: string | null;
+  };
+};
+
+export type MaterialRecommendationPlan = {
+  recommendations: MaterialRecommendation[];
+  summary: {
+    affectedMaterials: number;
+    incrementalOrders: number;
+    urgentOrders: number;
+    attentionMaterials: number;
+  };
+};
+
 function normalizeEvent(event: ProductionPlanEvent): ProductionPlanEvent {
   return {
     ...event,
@@ -93,6 +153,139 @@ function dailyUsageForPlan(material: ScenarioMaterial, events: ProductionPlanEve
     (sum, product) => sum + material.productDailyUsage[product] * (1 + changes[product] / 100),
     0,
   );
+}
+
+function simulateMaterialReplenishment(
+  material: ScenarioMaterial,
+  events: ProductionPlanEvent[],
+  input: Pick<ProductionPlanInput, "horizonDays" | "coverageDays" | "replenishmentMode">,
+) {
+  const reserved = Math.max(0, material.reservedQuantity ?? 0);
+  const qualityBlocked = Math.max(0, material.qualityBlockedQuantity ?? 0);
+  let quantity = Math.max(0, material.currentQuantity - reserved - qualityBlocked);
+  let grossRequirement = 0;
+  let recommendedInbound = 0;
+  let firstNeedDay: number | null = null;
+  const inboundByDay = new Map<number, number>();
+  for (const inbound of material.confirmedInboundByDay ?? []) {
+    const day = Math.max(0, Math.round(inbound.day));
+    inboundByDay.set(day, (inboundByDay.get(day) ?? 0) + Math.max(0, inbound.quantity));
+  }
+
+  for (let day = 0; day < input.horizonDays; day++) {
+    quantity += inboundByDay.get(day) ?? 0;
+    const usage = dailyUsageForPlan(material, events, day);
+    grossRequirement += usage;
+    quantity -= usage;
+    const target = input.replenishmentMode === "ROP" ? usage * material.ropDays : 0;
+    if (quantity < target) {
+      const inbound = Math.max(0, target + usage * input.coverageDays - quantity);
+      if (firstNeedDay === null) firstNeedDay = day;
+      recommendedInbound += inbound;
+      quantity += inbound;
+    }
+  }
+
+  return {
+    grossRequirement: Math.round(grossRequirement * 100) / 100,
+    recommendedInbound: Math.round(recommendedInbound * 100) / 100,
+    firstNeedDay,
+  };
+}
+
+function applyOrderPolicy(quantity: number, policy?: { moq: number; orderMultiple: number }) {
+  if (quantity <= 0) return 0;
+  if (!policy) return Math.ceil(quantity * 100) / 100;
+  const minimum = Math.max(quantity, Math.max(0, policy.moq));
+  if (policy.orderMultiple <= 0) return Math.ceil(minimum * 100) / 100;
+  return Math.ceil(minimum / policy.orderMultiple) * policy.orderMultiple;
+}
+
+export function recommendMaterialOrders(
+  sourceMaterials: ScenarioMaterial[],
+  rawInput: ProductionPlanInput,
+  fabId: "M20" | "M21" | "M22" | null,
+): MaterialRecommendationPlan {
+  const input: ProductionPlanInput = {
+    ...rawInput,
+    events: rawInput.events.map(normalizeEvent),
+    horizonDays: Math.max(1, Math.round(rawInput.horizonDays)),
+    coverageDays: Math.max(1, Math.round(rawInput.coverageDays)),
+  };
+  const products = new Set(input.events.map(event => event.product));
+  const relevant = sourceMaterials.filter(material => material.baseDailyUsage > 0 && (
+    products.size === 0 || [...products].some(product => material.productDailyUsage[product] > 0)
+  ));
+
+  const recommendations = relevant.map<MaterialRecommendation>(material => {
+    const baseline = simulateMaterialReplenishment(material, [], input);
+    const scenario = simulateMaterialReplenishment(material, input.events, input);
+    const incrementalRaw = Math.max(0, scenario.recommendedInbound - baseline.recommendedInbound);
+    const incrementalOrderQuantity = Math.round(incrementalRaw * 100) / 100;
+    const policy = fabId ? material.procurementPolicies?.[fabId] : undefined;
+    const policyAdjustedOrderQuantity = applyOrderPolicy(incrementalOrderQuantity, policy);
+    const reserved = Math.max(0, material.reservedQuantity ?? 0);
+    const qualityBlocked = Math.max(0, material.qualityBlockedQuantity ?? 0);
+    const confirmedInbound = (material.confirmedInboundByDay ?? []).reduce((sum, inbound) => sum + Math.max(0, inbound.quantity), 0);
+    const warnings: MaterialRecommendationWarning[] = [];
+    if (baseline.recommendedInbound > 0) warnings.push({ code: "EXISTING_SHORTAGE", label: "기준 계획에서도 보충 필요", severity: "HIGH" });
+    if (material.leadTimeDays == null) warnings.push({ code: "LEAD_TIME_MISSING", label: "리드타임 미등록", severity: "HIGH" });
+    if (!material.supplierName) warnings.push({ code: "SUPPLIER_MISSING", label: "승인 공급사 미등록", severity: "HIGH" });
+    if (incrementalOrderQuantity > 0 && !policy) warnings.push({ code: "PROCUREMENT_POLICY_MISSING", label: "MOQ·발주배수 미연결", severity: "MEDIUM" });
+    if (qualityBlocked > 0) warnings.push({ code: "QUALITY_BLOCKED", label: `품질 보류 ${qualityBlocked.toLocaleString("ko-KR")}${material.unit}`, severity: "HIGH" });
+    if (reserved > 0) warnings.push({ code: "RESERVED_STOCK", label: `예약 ${reserved.toLocaleString("ko-KR")}${material.unit}`, severity: "LOW" });
+    if ((material.expiringQuantity30d ?? 0) > 0) warnings.push({ code: "EXPIRY_RISK", label: `30일 내 만료 ${(material.expiringQuantity30d ?? 0).toLocaleString("ko-KR")}${material.unit}`, severity: "MEDIUM" });
+    if (material.inventoryLedgerVariance != null && Math.abs(material.inventoryLedgerVariance) > Math.max(1, material.currentQuantity * 0.01)) {
+      warnings.push({ code: "INVENTORY_LEDGER_MISMATCH", label: "집계재고·Lot 원장 차이", severity: "MEDIUM" });
+    }
+    if (material.usageConfidence === "LOW" || material.usageConfidence === "CALIBRATION_REQUIRED") {
+      warnings.push({ code: "LOW_USAGE_CONFIDENCE", label: "원단위 보정 필요", severity: "MEDIUM" });
+    }
+    const needByDay = scenario.firstNeedDay;
+    const normalOrderByDay = needByDay === null || material.leadTimeDays == null ? null : needByDay - material.leadTimeDays;
+    const safeOrderByDay = needByDay === null || material.safeLeadTimeDays == null ? null : needByDay - material.safeLeadTimeDays;
+    return {
+      material,
+      baseline,
+      scenario,
+      netInputs: {
+        onHand: material.currentQuantity,
+        reserved,
+        qualityBlocked,
+        available: Math.max(0, material.currentQuantity - reserved - qualityBlocked),
+        confirmedInbound,
+      },
+      additionalRequirement: Math.round(Math.max(0, scenario.grossRequirement - baseline.grossRequirement) * 100) / 100,
+      incrementalOrderQuantity,
+      policyAdjustedOrderQuantity,
+      needByDay,
+      normalOrderByDay,
+      safeOrderByDay,
+      classification: incrementalOrderQuantity > 0
+        ? "SCENARIO_CAUSED_SHORTAGE"
+        : baseline.recommendedInbound > 0 ? "EXISTING_SHORTAGE" : "NO_INCREMENTAL_ORDER",
+      warnings,
+      evidence: {
+        formulaVersion: "MATERIAL_COPILOT_V1",
+        usageSource: material.usageSource ?? "UNKNOWN",
+        usageSourceVersion: material.usageSourceVersion ?? null,
+      },
+    };
+  }).sort((a, b) => {
+    const aUrgency = a.normalOrderByDay ?? Number.MAX_SAFE_INTEGER;
+    const bUrgency = b.normalOrderByDay ?? Number.MAX_SAFE_INTEGER;
+    return aUrgency - bUrgency || b.policyAdjustedOrderQuantity - a.policyAdjustedOrderQuantity || a.material.code.localeCompare(b.material.code);
+  });
+
+  return {
+    recommendations,
+    summary: {
+      affectedMaterials: recommendations.length,
+      incrementalOrders: recommendations.filter(item => item.incrementalOrderQuantity > 0).length,
+      urgentOrders: recommendations.filter(item => item.incrementalOrderQuantity > 0 && (item.normalOrderByDay === null || item.normalOrderByDay <= 0)).length,
+      attentionMaterials: recommendations.filter(item => item.warnings.length > 0).length,
+    },
+  };
 }
 
 export function planProductionChanges(
