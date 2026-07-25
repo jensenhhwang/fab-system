@@ -3,6 +3,10 @@ import { collections } from "@/lib/db";
 import { getOrInitTwinState } from "@/lib/twin/state";
 import { M20_MATERIAL_CONSUMPTION } from "@/lib/material-consumption";
 
+// 실시간 엔진 상태/재고를 매 요청 라이브로 읽는다 — 프로덕션 빌드에서 정적 캐싱되면
+// 패널이 오래된 스냅샷에 멈추므로 강제 동적 렌더링. (코드베이스 라이브-데이터 라우트 컨벤션)
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const state = await getOrInitTwinState();
   const { inventory, materials, twinPurchaseOrders, twinBurnEvents } = await collections();
