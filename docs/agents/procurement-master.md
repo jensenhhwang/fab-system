@@ -140,4 +140,5 @@ docs/agents/procurement-master.md
 - UI: `src/app/(dashboard)/procurement-cockpit/`
 - 유닛테스트: `scripts/test-procurement-agent.ts` (`npm run test:procurement-agent`)
 - 레거시 M20 파일럿 에이전트(§2 비교 대상): `src/lib/m20-agent-service.ts`, `src/lib/m20-agent-policy.ts`
-- **미작성 — 다음 문서 후보:** `docs/agents/wms-master.md`, `docs/agents/mes-master.md`, `docs/agents/process-master.md`. 셋 다 레거시 코드(`m20-agent-service.ts`의 WMS 예약·피킹 오케스트레이션)는 있으나 이 문서와 같은 수준의 역할 재정의는 없다.
+- WMS 에이전트(작성됨, PROCUREMENT와 정반대 극단): [`wms-master.md`](./wms-master.md)
+- **미작성 — 다음 문서 후보:** `docs/agents/mes-master.md`, `docs/agents/process-master.md`. 둘 다 레거시 코드(`m20-agent-service.ts`)는 있으나 이 문서와 같은 수준의 역할 재정의는 없다.
