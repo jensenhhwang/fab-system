@@ -4,7 +4,7 @@ const BASE = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 
 async function loginAsAdmin(page: import("@playwright/test").Page) {
   await page.goto(`${BASE}/login`);
-  await page.getByText("황지훈").click();
+  await page.getByText("김구매").click();
   await page.waitForURL(`${BASE}/`, { timeout: 15_000 });
 }
 

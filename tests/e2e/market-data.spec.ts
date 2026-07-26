@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("시장 화면이 실제 소스 상태와 데모 가격을 구분한다", async ({ page }) => {
   await page.goto("/login");
-  await page.getByText("황지훈").click();
+  await page.getByText("김구매").click();
   await page.waitForURL("/", { timeout: 15_000 });
 
   await page.goto("/market");

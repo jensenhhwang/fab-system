@@ -29,10 +29,10 @@ async function main() {
   const pw = await bcrypt.hash("fab1234!", 10);
 
   const usersData = [
-    { _id: "admin@fab.skh",      email: "admin@fab.skh",      name: "황지훈", password: pw, role: "ADMIN",      department: "구매본부 자재관리팀", createdAt: new Date() },
-    { _id: "materials@fab.skh",  email: "materials@fab.skh",  name: "김재현", password: pw, role: "MATERIALS",  department: "구매본부 자재관리팀", createdAt: new Date() },
-    { _id: "production@fab.skh", email: "production@fab.skh", name: "이수진", password: pw, role: "PRODUCTION", department: "생산관리팀",       createdAt: new Date() },
-    { _id: "logistics@fab.skh",  email: "logistics@fab.skh",  name: "박민준", password: pw, role: "LOGISTICS",  department: "물류/인프라팀",     createdAt: new Date() },
+    { _id: "admin@fab.skh",      email: "admin@fab.skh",      name: "김구매", password: pw, role: "ADMIN",      department: "구매본부 자재관리팀", createdAt: new Date() },
+    { _id: "materials@fab.skh",  email: "materials@fab.skh",  name: "이자재", password: pw, role: "MATERIALS",  department: "구매본부 자재관리팀", createdAt: new Date() },
+    { _id: "production@fab.skh", email: "production@fab.skh", name: "최생산", password: pw, role: "PRODUCTION", department: "생산관리팀",       createdAt: new Date() },
+    { _id: "logistics@fab.skh",  email: "logistics@fab.skh",  name: "박물류", password: pw, role: "LOGISTICS",  department: "물류/인프라팀",     createdAt: new Date() },
   ];
   await col("users").insertMany(usersData);
   console.log(`✅ Users: ${usersData.length}명`);
@@ -634,10 +634,10 @@ async function main() {
 
   // ─── 10. 리스크 ──────────────────────────────────────────────
   const risks = [
-    { title: "EUV 포토레지스트 수급 불안 (JSR — 일본 수출 규제)", level: "HIGH" as const, category: "공급망", owner: "황지훈", status: "Active", description: "CHM-009 EUV PR: 단일 공급사(JSR) 의존도 100%, 리드타임 45일. 수출 규제 재발 시 즉시 생산 차질", mitigation: "국산 PR 대체 테스트 착수(덕산 3세대), 안전재고 2개월분 확보 계획" },
-    { title: "C동 위험물창고 Capacity 초과 임박 (91%)", level: "HIGH" as const, category: "창고 운영", owner: "박민준", status: "Active", description: "HF·NH₃ 추가 입고 시 법적 허용 한도 초과 위험. 7월 말 HF 정기 입고 예정과 충돌", mitigation: "HF 입고 분할 (2차 분납), C동 소분 창고 임시 지정 협의 중" },
-    { title: "He(헬륨) 글로벌 수급 불안 — 이온주입 라인 리스크", level: "MEDIUM" as const, category: "공급망", owner: "황지훈", status: "Active", description: "글로벌 He 생산 감소로 Air Products 납기 지연 통보. 현 재고 21일치", mitigation: "He 리사이클링 설비 점검, 대체 공급사(린데) 견적 진행 중" },
-    { title: "CMP Probe Card HBM 교체 임박 (P09 테스터 1)", level: "MEDIUM" as const, category: "인프라", owner: "박민준", status: "Active", description: "KGD 스크리닝용 Probe Card 잔여 사용량 32K. 약 7일 후 교체 필요. 교체 카드 재고 6장뿐", mitigation: "FormFactor 긴급 발주 진행 (납기 확인 중), 테스터 2 우선 배정 검토" },
+    { title: "EUV 포토레지스트 수급 불안 (JSR — 일본 수출 규제)", level: "HIGH" as const, category: "공급망", owner: "김구매", status: "Active", description: "CHM-009 EUV PR: 단일 공급사(JSR) 의존도 100%, 리드타임 45일. 수출 규제 재발 시 즉시 생산 차질", mitigation: "국산 PR 대체 테스트 착수(덕산 3세대), 안전재고 2개월분 확보 계획" },
+    { title: "C동 위험물창고 Capacity 초과 임박 (91%)", level: "HIGH" as const, category: "창고 운영", owner: "박물류", status: "Active", description: "HF·NH₃ 추가 입고 시 법적 허용 한도 초과 위험. 7월 말 HF 정기 입고 예정과 충돌", mitigation: "HF 입고 분할 (2차 분납), C동 소분 창고 임시 지정 협의 중" },
+    { title: "He(헬륨) 글로벌 수급 불안 — 이온주입 라인 리스크", level: "MEDIUM" as const, category: "공급망", owner: "김구매", status: "Active", description: "글로벌 He 생산 감소로 Air Products 납기 지연 통보. 현 재고 21일치", mitigation: "He 리사이클링 설비 점검, 대체 공급사(린데) 견적 진행 중" },
+    { title: "CMP Probe Card HBM 교체 임박 (P09 테스터 1)", level: "MEDIUM" as const, category: "인프라", owner: "박물류", status: "Active", description: "KGD 스크리닝용 Probe Card 잔여 사용량 32K. 약 7일 후 교체 필요. 교체 카드 재고 6장뿐", mitigation: "FormFactor 긴급 발주 진행 (납기 확인 중), 테스터 2 우선 배정 검토" },
   ];
 
   await col("risks").insertMany(
@@ -662,10 +662,10 @@ async function main() {
   console.log("\n🎉 Seed 완료!");
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("📋 계정 목록 (비밀번호: fab1234!)");
-  console.log("  ADMIN:      admin@fab.skh      (황지훈 — 전체 접근)");
-  console.log("  MATERIALS:  materials@fab.skh  (김재현 — 자재관리팀)");
-  console.log("  PRODUCTION: production@fab.skh (이수진 — 생산관리팀)");
-  console.log("  LOGISTICS:  logistics@fab.skh  (박민준 — 물류/인프라팀)");
+  console.log("  ADMIN:      admin@fab.skh      (김구매 — 전체 접근)");
+  console.log("  MATERIALS:  materials@fab.skh  (이자재 — 자재관리팀)");
+  console.log("  PRODUCTION: production@fab.skh (최생산 — 생산관리팀)");
+  console.log("  LOGISTICS:  logistics@fab.skh  (박물류 — 물류/인프라팀)");
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 }
 

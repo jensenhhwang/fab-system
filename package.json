@@ -59,6 +59,7 @@
     "db:migrate-m20-equipment-master": "tsx scripts/migrate-m20-equipment-master.ts",
     "db:migrate-m20-agents": "tsx scripts/migrate-m20-agents.ts",
     "db:migrate-agent-policies": "tsx scripts/migrate-agent-policies.ts",
+    "db:migrate-demo-user-names": "tsx scripts/migrate-demo-user-display-names.ts",
     "db:migrate-route-master": "tsx scripts/migrate-route-master.ts",
     "db:migrate-m20-backend-materials": "tsx scripts/migrate-m20-backend-materials.ts",
     "db:migrate-m20-consumption": "tsx scripts/migrate-m20-material-consumption.ts",

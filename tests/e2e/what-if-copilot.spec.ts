@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("운영 What-if가 지금 할 일을 실시간 행동 카드로 보여준다", async ({ page }) => {
   await page.goto("/login");
-  await page.getByText("황지훈").click();
+  await page.getByText("김구매").click();
   await page.waitForURL("/", { timeout: 15_000 });
 
   await page.goto("/simulation");
