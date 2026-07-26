@@ -1,11 +1,11 @@
 # Process Agent Master — 설비·공정 배정 담당 에이전트
 
-상태: `LIVE_NARROW_SCOPE_HAS_BUG`
+상태: `LIVE_NARROW_SCOPE`
 버전: `PROCESS_AGENT_MASTER_V0` (실행 로직 자체는 레거시 `M20_AGENT_POLICY_V1` 공유)
 기준일: 2026-07-26
 대상: `AgentRole = "PROCESS"`
 
-이 문서는 [`procurement-master.md`](./procurement-master.md)·[`wms-master.md`](./wms-master.md)·[`mes-master.md`](./mes-master.md)의 틀을 따른다. 상태 코드에 `HAS_BUG`를 넣은 이유는 §3.3에서 바로 설명한다 — 실제로 발견한 결함이다.
+이 문서는 [`procurement-master.md`](./procurement-master.md)·[`wms-master.md`](./wms-master.md)·[`mes-master.md`](./mes-master.md)의 틀을 따른다. §3.3에 이 문서 작성 중 발견해 같은 세션에서 수정한 결함을 기록한다.
 
 ## 1. 문서 목적
 
@@ -41,11 +41,13 @@ PROCESS 에이전트가 **실제로 무엇을 배정하는지, "공정(Process)"
 - **Route/Recipe 결정** — `route-master.md`가 정의하는 정적 마스터다. 에이전트 판단 대상이 아니다.
 - **공정 파라미터·수율·품질 판정** — 이 코드베이스 어디에도 없다. "PROCESS 에이전트가 공정을 운영한다"는 사용자의 비전에 가장 못 미치는 지점이 여기다.
 
-### 3.3 발견한 결함 — HUMAN 모드 토글이 작동하지 않는다
+### 3.3 발견한 결함(수정됨) — HUMAN 모드 토글이 작동하지 않았다
 
-`M20PilotFlowCard.tsx`는 PROCUREMENT·WMS·MES·PROCESS 4개 역할 전부에 대해 "공정 담당"(`AGENT_LABEL.PROCESS`) AGENT/HUMAN 토글 버튼을 사용자에게 보여준다. 그런데 `orchestrateM20Agents()`(`src/lib/m20-agent-service.ts`)를 끝까지 확인한 결과, `roleModes.PROCUREMENT`·`roleModes.WMS`·`roleModes.MES`는 각각 코드에서 `=== "HUMAN"`으로 실제 체크되지만 **`roleModes.PROCESS`는 단 한 번도 체크되지 않는다.**
+`M20PilotFlowCard.tsx`는 PROCUREMENT·WMS·MES·PROCESS 4개 역할 전부에 대해 "공정 담당"(`AGENT_LABEL.PROCESS`) AGENT/HUMAN 토글 버튼을 사용자에게 보여준다. 그런데 `orchestrateM20Agents()`(`src/lib/m20-agent-service.ts`)를 끝까지 확인한 결과, `roleModes.PROCUREMENT`·`roleModes.WMS`·`roleModes.MES`는 각각 코드에서 `=== "HUMAN"`으로 실제 체크되지만 **`roleModes.PROCESS`는 단 한 번도 체크되지 않았다.**
 
-즉 사용자가 화면에서 "공정 담당"을 HUMAN으로 바꿔도, 설비 배정은 여전히 100% 자동 실행된다. **UI가 주는 통제감과 실제 동작이 다르다.** 이건 새 기능 요청이 아니라 기존 코드의 결함이라, 이 문서에서는 사실만 기록하고 수정은 별도 버그픽스로 분리한다.
+즉 사용자가 화면에서 "공정 담당"을 HUMAN으로 바꿔도, 설비 배정은 여전히 100% 자동 실행됐다. **UI가 주는 통제감과 실제 동작이 달랐다.**
+
+**같은 세션에서 수정 완료** — WMS/MES와 동일한 `HUMAN_MODE_HOLD` 패턴을 PROCESS에도 적용(`roleModes.PROCESS === "HUMAN" && trigger === "AUTO"` 체크 추가, `nextHumanAction: "PROCESS_MANUAL_RUN"`). typecheck·lint·기존 유닛테스트 통과, 브라우저에서 토글 왕복 동작 확인. 다만 검증 시점에 M20 파일럿 WO가 업스트림 WMS 단계에서 이미 BLOCKED(`FEFO_EXACT_HU_UNAVAILABLE`, 이 결함과 무관한 별개 재고 이슈) 상태라 PROCESS 게이트까지 실제로 도달하는 hold 동작의 완전한 E2E 확인은 못 했다 — 코드는 이미 라이브로 검증된 WMS/MES 패턴을 정확히 미러링한다.
 
 ## 4. 트리거
 
@@ -77,7 +79,7 @@ WMS처럼 "위험도 기반 자율 등급"을 설계하기 전에, **PROCESS는 
 | 단계 | 내용 | 상태 |
 |---|---|---|
 | 현재 | 실측 우선 OEE 기반 단일 설비 배정, M20 파일럿 범위 | ✅ 라이브 (`M20_AGENT_POLICY_V1`) |
-| PROCESS-0 (버그픽스, 별도 트랙) | `roleModes.PROCESS === "HUMAN"` 체크를 `orchestrateM20Agents()`에 추가 — UI 토글을 실제로 작동시킴 | ❌ 미착수, 이 문서와 별개로 버그픽스 필요 |
+| PROCESS-0 (버그픽스) | `roleModes.PROCESS === "HUMAN"` 체크를 `orchestrateM20Agents()`에 추가 — UI 토글을 실제로 작동시킴 | ✅ 수정 완료(§3.3) |
 | PROCESS-1 | 배정 판단 서술화 — 왜 이 설비를 골랐는지(OEE·실측/모델 출처) 사람이 읽는 화면으로 노출 | ❌ 미착수 |
 | PROCESS-2 | 다중 조건 최적화 — 잔여 Capacity·PM 일정·셋업 시간까지 배정 기준에 반영 | ❌ 미착수 |
 | PROCESS-3 (범위 재정의) | Route/Recipe·공정 파라미터 판단을 실제로 담당할지 결정 — 지금 이름과 실제 역할의 간극(§2)을 이 단계에서 좁히거나, 역할명을 재정의 | ❌ 미착수, 설계 결정 필요 |
