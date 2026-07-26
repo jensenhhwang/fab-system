@@ -122,6 +122,13 @@ const LOGS = [
     "트윈 엔진이 실제 생산 WIP를 소모하지 못하던 코호트 이름 불일치 버그 발견 — 실 가동 WIP는 cohort=MODELED_FOUP(14,028개)인데 advanceAggregateWip은 cohort=AGGREGATE만 진행하고 있었음(후속 수정 대상으로 기록)",
     "무거워진 시스템 정리 — 참조·네비 링크 없는 고아 화면(/risk·/wiki)과 스텁 화면(/value·/scm route)을 제거하고 재사용 컴포넌트(ProcurementMasterClient)는 유지, 실시간 연동 통합 Control Tower 뷰(심박 스트립·Runway·탱크 액위 게이지) 설계 확정",
   ] },
+  { day: 16, date: "2026-07-26", label: "입고 에이전트 그림자 조종석 + 에이전트 문서 체계 착수", color: "#CA8A04", items: [
+    "전날 미완이던 시장·수요 라이브 연동(TWSE/SEC)·자재/운영 What-if 코파일럿을 브라우저 실검증(TWSE FRESH 실매출·SEC DISABLED 폴백·AI 39자재 추천·PATCH 확인 왕복) 후 병합 — LOGISTICS 계정에 노출되던 날것 'Forbidden' 문구를 권한 안내 문구로 교체",
+    "'오늘의 입고 실적'을 신규 페이지로 만들었다가 WMS 입출고 이력과 정보구조상 중복된다는 지적을 받아 WMS 서브탭([오늘 입고 실적|입출고 이력|재고 Lot])으로 재통합 — 입고 등록 버튼을 1개로 단일화하고 히어로 펄스(건수·카테고리별 단위 총량·건수기반 계획 달성률·시간대 스파크라인)와 계획 vs 실입고 레이스 트랙은 유지",
+    "입고(PROCUREMENT) 에이전트 MVP-0 '그림자 조종석' 구축 — 크리·패브·엑스 3인 기획 검토(위험물·단일소싱 자재 L2 자동입고 상한 하드가드, 리드타임·공급사 미등록 시 BLOCKED, 실측 리드타임 원장 없이는 자동 승급·강등 보류) 반영, 결정론 엔진 결과를 4단계 추론 사슬(생산계획 신호→부족 예측→리드타임 커버리지→발주 판단)로 서술화, 실제 발주·입고 실행은 0건(그림자모드) — 실데이터로 조치대상 59·제안 31·보류 28 렌더 검증",
+    "입고 관제 화면에서 CSM-016~019(Edge Trim Blade·Dicing Blade·Dicing UV Tape·KGD Die Tray)가 정보 없이 비는 원인 진단 — RATE_TBD 미보정 스텁이라 원단위·재고·공급사가 전부 비어있었음을 확인, 계획 가정치(CSM_BACKEND_PLANNING_V0)로 원단위·공급사(Disco·Peak International)·재고 포지션을 idempotent 마이그레이션으로 채움",
+    "docs/agents/ 폴더 신설, PROCUREMENT 에이전트 정식 설계 문서(procurement-master.md) 작성 — 레거시 M20 파일럿 에이전트(WO 트리거·agentDecisions 영속)와 신규 그림자 에이전트(화면 트리거·미영속)가 서로 다른 두 시스템임을 명시하고, '그림자모드는 MVP-0 시작점이지 종착점이 아니다'로 경계를 MVP 임시제약과 다른 에이전트 역할분담으로 재구성 — 이 틀로 WMS·MES·PROCESS 에이전트 문서를 다음 세션에서 이어 작성 예정",
+  ] },
 ];
 
 export default function DevlogPage() {
