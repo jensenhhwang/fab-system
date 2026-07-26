@@ -479,6 +479,21 @@ export async function orchestrateM20Agents(
       } });
       return getM20AgentSnapshot(workOrderId);
     }
+    if (roleModes.PROCESS === "HUMAN" && trigger === "AUTO") {
+      await recordDecision({
+        runId, workOrderId: wo._id, traceId: transfer._id, agentRole: "PROCESS",
+        policyVersion: M20_AGENT_POLICY_VERSION,
+        inputSnapshot: { transferStatus: transfer.status, allocationStatus: allocation.status },
+        reasonCodes: ["HUMAN_MODE_ACTIVE"], proposedAction: "MANUAL_EQUIPMENT_ASSIGN_REQUIRED",
+        result: "HUMAN_MODE_HOLD", idempotencyKey: `${runId}:PROCESS:HOLD`,
+      });
+      await agentRuns.updateOne({ _id: runId }, { $set: {
+        status: "HUMAN_MODE_HOLD", stage: "RELEASED", nextHumanAction: "PROCESS_MANUAL_RUN",
+        blockedReason: "공정(설비배정) 담당이 HUMAN 모드입니다. 담당자가 직접 설비를 배정해야 합니다.",
+        lastTrigger: trigger, updatedAt: new Date(),
+      } });
+      return getM20AgentSnapshot(workOrderId);
+    }
     await releaseMesAndAssignEquipment(wo, transfer._id);
     wo = await workOrders.findOne({ _id: wo._id }) ?? wo;
   } else if (wo.status === "MATERIAL_WAIT") {

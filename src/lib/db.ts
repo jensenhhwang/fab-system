@@ -698,7 +698,7 @@ export interface AgentRunDoc {
   stage: AgentRunStage;
   policyVersion: string;
   nextHumanAction?: "PICK_CONFIRM" | "STAGE_CONFIRM" | "DEPART_CONFIRM" | "RECEIVE_CONFIRM" | "DELIVER_CONFIRM" | "CONSUME_CONFIRM" | "PO_APPROVAL"
-    | "PROCUREMENT_MANUAL_RUN" | "WMS_MANUAL_RUN" | "MES_MANUAL_RUN";
+    | "PROCUREMENT_MANUAL_RUN" | "WMS_MANUAL_RUN" | "MES_MANUAL_RUN" | "PROCESS_MANUAL_RUN";
   blockedReason?: string | null;
   lastTrigger?: "AUTO" | "MANUAL";
   createdBy: string;
