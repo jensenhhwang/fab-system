@@ -27,6 +27,7 @@ const NAV = [
   { group: "계획·시뮬레이션", items: [
     { href: "/erp-bridge", label: "계획·실행 브리지" },
     { href: "/simulation", label: "운영 What-if" },
+    { href: "/procurement-cockpit", label: "입고 관제 (에이전트)" },
     { href: "/market", label: "시장·수요 정보" },
   ] },
   { group: "분석·관리", items: [
