@@ -141,4 +141,6 @@ docs/agents/procurement-master.md
 - 유닛테스트: `scripts/test-procurement-agent.ts` (`npm run test:procurement-agent`)
 - 레거시 M20 파일럿 에이전트(§2 비교 대상): `src/lib/m20-agent-service.ts`, `src/lib/m20-agent-policy.ts`
 - WMS 에이전트(작성됨, PROCUREMENT와 정반대 극단): [`wms-master.md`](./wms-master.md)
-- **미작성 — 다음 문서 후보:** `docs/agents/mes-master.md`, `docs/agents/process-master.md`. 둘 다 레거시 코드(`m20-agent-service.ts`)는 있으나 이 문서와 같은 수준의 역할 재정의는 없다.
+- MES 에이전트(작성됨, 실제 자동판단은 이진 게이트 1건뿐): [`mes-master.md`](./mes-master.md)
+- PROCESS 에이전트(작성됨, HUMAN 토글 미작동 결함 발견): [`process-master.md`](./process-master.md)
+- 4개 문서 모두 작성 완료. 다음은 서로 연결(§7 로드맵 각 단계)하는 구현 작업이다.
