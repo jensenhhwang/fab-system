@@ -166,6 +166,11 @@ equivalentPerWafer = 기존 HBM monthlyQty ÷ 45,000 legacy wafer starts
 
 따라서 기존 수치 표는 V1에서 승계한 호환 기준이며 실제 M20 계측값은 아니다. 모든 승계 행의 기본 출처는 `LEGACY_DERIVED`, 신뢰도는 `LOW`이며 MES 투입 실적이나 공급설비 유량으로 보정해야 한다.
 
+> 이 절의 `재고 단위`는 legacy 소비 원단위의 출처 단위다. 운영재고
+> `OPERATIONAL_REALISM_V1`에서는 벌크·실린더 가스를 `Nm³`, 벌크 케미컬과
+> 전구체를 `L`, Base Die를 `KGD_DIE`로 정규화하며 발주·보관 환산을 별도
+> 필드로 관리한다. 따라서 아래 숫자를 봄베·드럼 개수로 직접 해석하지 않는다.
+
 ### 5.1 케미컬·포토
 
 | 자재 | 공정 | native basis | 재고 단위 | wafer당 환산량 | NORMAL 월소요 |

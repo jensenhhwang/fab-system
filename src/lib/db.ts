@@ -1,5 +1,11 @@
 import { MongoClient, Db, Collection } from "mongodb";
 import type { FabId, FacilityRole } from "@/lib/fab-domain";
+import type {
+  InventoryBalanceV2Doc,
+  InventoryMovementV2Doc,
+  MaterialUomLockV2Doc,
+  MaterialUomRuleV2Doc,
+} from "@/lib/inventory-v2-contract";
 
 // MongoDB(Atlas) 네이티브 드라이버. TCP 기반이라 Next.js fetch 패치 영향 없음.
 // 서버리스 콜드스타트에서 커넥션을 재사용하도록 클라이언트를 글로벌 캐시.
@@ -39,6 +45,8 @@ export interface MaterialDoc {
   materialType?: "CONSUMABLE" | "DIRECT_COMPONENT" | "REUSABLE_CARRIER";
   purchaseUnit?: string;
   purchaseToInventoryFactor?: number;
+  inventoryToStorageFactor?: number;
+  inventoryBaselineVersion?: string;
   assumptionConfidence?: "HIGH" | "MEDIUM" | "LOW" | "CALIBRATION_REQUIRED";
   palletFactor?: number; // 파렛트 환산 예외 override (없으면 단위표 사용)
   supplyMode?: SupplyMode; // 공급 형태 (기존 문서는 분류 규칙으로 fallback)
@@ -60,6 +68,7 @@ export interface InventoryDoc {
   avgDailyBurn?: number; // twin 엔진이 실측한 일일 소모 EMA
   capacityLimit?: number; // 벌크 탱크별 최대량 (자재 unit 기준)
   status?: InventoryStatus;
+  updatedAt?: Date;
 }
 export interface TwinEngineStateDoc {
   _id: "singleton";
@@ -97,14 +106,27 @@ export interface StorageLocationDoc {
   locationType: "PALLET" | "SHELF" | "BIN" | "CYLINDER" | "TANK" | "CANISTER" | "PROCESS";
   capacity: number; status: "AVAILABLE" | "OCCUPIED" | "BLOCKED" | "MAINTENANCE";
   position: { x: number; y: number; z: number };
+  operationalPurpose?: "RECONCILIATION_HOLD";
+}
+export interface InventoryReconciliationMetadata {
+  version: "OPENING_RECONCILIATION_V1";
+  batchId: string;
+  fingerprint: string;
+  origin: "MODELED_OPENING_PROJECTION";
+  verificationStatus: "PENDING_PHYSICAL_VERIFICATION";
+  projectionKind: "RECOVERED_LOT_REFERENCE" | "MODELED_CONTAINER_GROUP";
+  sourceInventoryIds?: string[];
+  sourceHandlingUnitIds?: string[];
+  createdAt: Date;
 }
 export interface InventoryLotDoc {
   _id: string; materialId: string; lotNo: string; quantity: number; availableQuantity: number;
-  receivedAt: Date; manufactureDate?: Date; expiryDate?: Date;
+  receivedAt?: Date; manufactureDate?: Date; expiryDate?: Date;
   qualityStatus: InventoryStatus; holdReason?: string; updatedAt: Date;
   warehouseId?: string; slotId?: string;
   inboundPlanId?: string;
   simulated?: true;
+  reconciliation?: InventoryReconciliationMetadata;
 }
 export interface HandlingUnitDoc {
   _id: string; inventoryLotId: string; materialId: string; warehouseId: string; locationId: string;
@@ -115,6 +137,81 @@ export interface HandlingUnitDoc {
   reservedWorkOrderId?: string;
   reservedTransferOrderId?: string;
   version?: number;
+  reconciliation?: InventoryReconciliationMetadata;
+}
+export interface InventoryReconciliationBatchDoc {
+  _id: string;
+  version: "OPENING_RECONCILIATION_V1";
+  fingerprint: string;
+  status: "APPLIED" | "ROLLED_BACK";
+  createdAt: Date;
+  rolledBackAt?: Date;
+  aggregateHashBefore: string;
+  aggregateHashAfter: string;
+  createdLotIds: string[];
+  createdHandlingUnitIds: string[];
+  createdLocationIds: string[];
+  createdZoneIds: string[];
+  preExistingHandlingUnitIdsByCreatedLot: Record<string, string[]>;
+  createdLots: InventoryLotDoc[];
+  createdHandlingUnits: HandlingUnitDoc[];
+}
+export interface InventoryReconciliationEntryDoc {
+  _id: string;
+  batchId: string;
+  materialId: string;
+  warehouseId?: string;
+  kind: "RECOVER_ORPHAN_HU_LOT" | "FILL_EXISTING_LOT_HU" | "OPENING_POSITION" | "SKIP" | "ROLLBACK";
+  status: "APPLIED" | "SKIPPED_UNCALIBRATED_ZERO_BASELINE" | "ROLLED_BACK";
+  quantity: number;
+  referenceIds: string[];
+  createdAt: Date;
+}
+export type InventoryVerificationCaseStatus = "AWAITING_OBSERVATION" | "OBSERVED" | "SOURCE_DRIFT";
+export interface InventoryVerificationCaseDoc {
+  _id: string;
+  reconciliationBatchId: string;
+  reconciliationFingerprint: string;
+  materialId: string;
+  materialCode: string;
+  materialName: string;
+  warehouseId: string;
+  sourceLotId: string;
+  sourceHandlingUnitId: string;
+  expectedQuantity: number;
+  uom: string;
+  reconciliationHoldLocationId: string;
+  sourceSnapshotHash: string;
+  status: InventoryVerificationCaseStatus;
+  version: number;
+  createdAt: Date;
+  updatedAt: Date;
+  observedAt?: Date;
+  observedBy?: string;
+  observationId?: string;
+}
+export interface InventoryVerificationObservationDoc {
+  _id: string;
+  requestId: string;
+  requestHash: string;
+  caseId: string;
+  caseVersion: number;
+  observedQuantity: string;
+  uom: string;
+  actualLocationId: string;
+  evidenceReference: string;
+  observedBy: string;
+  recordedAt: Date;
+}
+export interface InventoryVerificationEventDoc {
+  _id: string;
+  caseId: string;
+  sequence: number;
+  type: "CASE_CREATED" | "OBSERVATION_SUBMITTED";
+  actorId: string;
+  at: Date;
+  requestId?: string;
+  observationId?: string;
 }
 export interface InventoryMovementDoc {
   _id: string; handlingUnitId?: string; materialId: string; type: "RECEIPT" | "PUTAWAY" | "MOVE" | "PICK" | "ISSUE" | "HOLD" | "RELEASE" | "QUARANTINE" | "ADJUSTMENT";
@@ -854,6 +951,15 @@ export async function collections(): Promise<{
   inventoryLots: Collection<InventoryLotDoc>;
   handlingUnits: Collection<HandlingUnitDoc>;
   inventoryMovements: Collection<InventoryMovementDoc>;
+  inventoryReconciliationBatches: Collection<InventoryReconciliationBatchDoc>;
+  inventoryReconciliationEntries: Collection<InventoryReconciliationEntryDoc>;
+  inventoryVerificationCases: Collection<InventoryVerificationCaseDoc>;
+  inventoryVerificationObservations: Collection<InventoryVerificationObservationDoc>;
+  inventoryVerificationEvents: Collection<InventoryVerificationEventDoc>;
+  inventoryBalancesV2: Collection<InventoryBalanceV2Doc>;
+  inventoryMovementsV2: Collection<InventoryMovementV2Doc>;
+  materialUomLocksV2: Collection<MaterialUomLockV2Doc>;
+  materialUomRulesV2: Collection<MaterialUomRuleV2Doc>;
   facilityTelemetry: Collection<FacilityTelemetryDoc>;
   benefitCases: Collection<BenefitCaseDoc>;
   simState: Collection<SimStateDoc>;
@@ -917,6 +1023,15 @@ export async function collections(): Promise<{
     inventoryLots: db.collection<InventoryLotDoc>("inventoryLots"),
     handlingUnits: db.collection<HandlingUnitDoc>("handlingUnits"),
     inventoryMovements: db.collection<InventoryMovementDoc>("inventoryMovements"),
+    inventoryReconciliationBatches: db.collection<InventoryReconciliationBatchDoc>("inventoryReconciliationBatches"),
+    inventoryReconciliationEntries: db.collection<InventoryReconciliationEntryDoc>("inventoryReconciliationEntries"),
+    inventoryVerificationCases: db.collection<InventoryVerificationCaseDoc>("inventoryVerificationCases"),
+    inventoryVerificationObservations: db.collection<InventoryVerificationObservationDoc>("inventoryVerificationObservations"),
+    inventoryVerificationEvents: db.collection<InventoryVerificationEventDoc>("inventoryVerificationEvents"),
+    inventoryBalancesV2: db.collection<InventoryBalanceV2Doc>("inventoryBalancesV2"),
+    inventoryMovementsV2: db.collection<InventoryMovementV2Doc>("inventoryMovementsV2"),
+    materialUomLocksV2: db.collection<MaterialUomLockV2Doc>("materialUomLocksV2"),
+    materialUomRulesV2: db.collection<MaterialUomRuleV2Doc>("materialUomRulesV2"),
     facilityTelemetry: db.collection<FacilityTelemetryDoc>("facilityTelemetry"),
     benefitCases: db.collection<BenefitCaseDoc>("benefitCases"),
     simState: db.collection<SimStateDoc>("simState"),

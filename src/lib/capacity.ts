@@ -22,7 +22,8 @@ export const UNIT_PALLET_FACTOR: Record<string, number> = {
 export const DEFAULT_PALLET_FACTOR = 0.1;
 
 // 자재 1단위가 차지하는 파렛트 환산 (override > 단위표 > 기본)
-export function materialFactor(m: Pick<MaterialDoc, "unit" | "palletFactor">): number {
+export function materialFactor(m: Pick<MaterialDoc, "unit" | "palletFactor" | "inventoryToStorageFactor">): number {
+  if (typeof m.inventoryToStorageFactor === "number") return m.inventoryToStorageFactor;
   if (typeof m.palletFactor === "number") return m.palletFactor;
   return UNIT_PALLET_FACTOR[m.unit] ?? DEFAULT_PALLET_FACTOR;
 }

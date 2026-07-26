@@ -62,7 +62,7 @@ export function processTick(input: TickInput): TickResult {
       if (a.expiryDate && b.expiryDate) return a.expiryDate.getTime() - b.expiryDate.getTime();
       if (a.expiryDate) return -1;
       if (b.expiryDate) return 1;
-      return a.receivedAt.getTime() - b.receivedAt.getTime();
+      return (a.receivedAt ?? a.updatedAt).getTime() - (b.receivedAt ?? b.updatedAt).getTime();
     });
 
   // 소비 후 가용 수량 추적 (ROP 체크에도 사용)

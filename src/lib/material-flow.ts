@@ -93,15 +93,18 @@ export type CampusUsageInput = {
 };
 
 export type CampusLotInput = {
+  _id?: string;
   materialId: string;
   availableQuantity: number;
   qualityStatus: InventoryStatus;
 };
 
 export type CampusHandlingUnitInput = {
+  inventoryLotId?: string;
   materialId: string;
   quantity: number;
   status: InventoryStatus;
+  logisticsStatus?: "STORED" | "RESERVED" | "STAGED" | "IN_TRANSIT" | "RECEIVED" | "LINE_SIDE" | "CONSUMED";
 };
 
 export type CampusAllocationInput = {
@@ -125,10 +128,18 @@ function consistencyFor(
   lots: readonly CampusLotInput[],
   handlingUnits: readonly CampusHandlingUnitInput[],
 ): LedgerConsistency {
-  const materialLots = lots.filter((lot) => lot.qualityStatus === "AVAILABLE");
-  const materialUnits = handlingUnits.filter((unit) => unit.status === "AVAILABLE");
+  const materialLots = lots.filter((lot) => lot.qualityStatus !== "CONSUMED");
+  const materialUnits = handlingUnits.filter((unit) => (
+    unit.status !== "CONSUMED"
+    && !["IN_TRANSIT", "RECEIVED", "LINE_SIDE", "CONSUMED"].includes(unit.logisticsStatus ?? "")
+  ));
+  const reservedByLot = new Map<string, number>();
+  for (const unit of materialUnits) {
+    if (!unit.inventoryLotId || !["RESERVED", "STAGED"].includes(unit.logisticsStatus ?? "")) continue;
+    reservedByLot.set(unit.inventoryLotId, (reservedByLot.get(unit.inventoryLotId) ?? 0) + unit.quantity);
+  }
   const availableLots = materialLots.length
-    ? materialLots.reduce((sum, lot) => sum + lot.availableQuantity, 0)
+    ? materialLots.reduce((sum, lot) => sum + lot.availableQuantity + (lot._id ? reservedByLot.get(lot._id) ?? 0 : 0), 0)
     : null;
   const unitQuantity = materialUnits.length
     ? materialUnits.reduce((sum, unit) => sum + unit.quantity, 0)

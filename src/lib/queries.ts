@@ -201,7 +201,17 @@ export async function getWarehouseCapacity(): Promise<WarehouseCapacity[]> {
     } else if (mode === "CONTINUOUS") {
       occ = 100;
       for (const it of items) catMap.set(it.material.category, 100);
-    } else if (["HAZMAT", "MRO", "PRECURSOR"].includes(wh.type)) {
+    } else if (["HAZMAT", "PRECURSOR"].includes(wh.type)) {
+      for (const it of items) {
+        const quantity = it.quantity * (
+          typeof it.material.inventoryToStorageFactor === "number"
+            ? it.material.inventoryToStorageFactor
+            : 1
+        );
+        occ += quantity;
+        catMap.set(it.material.category, (catMap.get(it.material.category) ?? 0) + quantity);
+      }
+    } else if (wh.type === "MRO") {
       for (const it of items) {
         occ += it.quantity;
         catMap.set(it.material.category, (catMap.get(it.material.category) ?? 0) + it.quantity);

@@ -22,7 +22,7 @@ export function computeFefo(lots: InventoryLotDoc[], requestQty: number): FefoRe
     if (a.expiryDate && b.expiryDate) return a.expiryDate.getTime() - b.expiryDate.getTime();
     if (a.expiryDate) return -1;
     if (b.expiryDate) return 1;
-    return a.receivedAt.getTime() - b.receivedAt.getTime();
+    return (a.receivedAt ?? a.updatedAt).getTime() - (b.receivedAt ?? b.updatedAt).getTime();
   });
 
   const totalAvailable = sorted.reduce((s, l) => s + l.availableQuantity, 0);

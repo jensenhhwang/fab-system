@@ -1,7 +1,7 @@
 # 재고 프로비저닝 · 창고 Capacity 진단 및 수정 계획
 
 - **작성일**: 2026-07-25
-- **상태**: 진단 완료 · 수정 미실행 (파괴적 변경 전 승인 대기)
+- **상태**: 운영재고 집계 현실화 적용 완료 · LOT/HU 상세 투영 보정은 후속
 - **발단**: 사용자 "가용 재고가 너무 적은 애들이 많다, 왜 이런 문제가 생겼는지 보자. 엔진이 안정적으로 돌게 자재를 여유있게 셋팅하고 창고 capacity·3D까지 검토하자."
 
 ## 진단 (systematic-debugging, 근거 기반)
@@ -49,3 +49,40 @@ GAS-001(24,283/일), GAS-003(1,891), GAS-008(1,208), GAS-004(560), GAS-006(220),
 
 ## 재현/검증에 쓴 방법
 - `twinBurnEvents` 집계로 엔진 소비량 확인 / `m20MaterialDemandForScenario` vs DB processUsage 비교 / `apply-opening-inventory-scaleup` DRY-RUN(totalDelta 286,399) / `capacity.ts materialFactor`로 창고별 점유 투영.
+
+## [2026-07-26] 운영재고 현실화 적용 결과
+
+- 적용 버전: `OPERATIONAL_REALISM_V1`
+- 감사 배치: `REALISM-2026-07-26T00:16:09.918Z-46d8db`
+- 63개 자재를 공급모드별 기준 시설에 하나의 운영재고 행으로 정규화했다. GAS-001의 BGY/HZW 중복 행도 BGY 기준 행으로 통합했다.
+- 벌크 가스는 `Nm³`, 벌크 케미컬과 전구체는 `L`, Base Die는 `KGD_DIE`를 운영 기준단위로 사용한다. 발주단위와 보관공간 환산은 별도 필드로 분리했다.
+- 목표수량은 `max(현재수량, 안전재고, 일사용량 × max(ROP일수, 리드타임))`으로 설정했다. 적용 후 5일 미만 자재는 26개에서 0개, 사용량 스케일 불일치 후보는 39개에서 0개, 중복 재고행은 1개에서 0개가 됐다.
+- 재실행 드라이런은 `totalDelta=0`, `duplicateRows=0`으로 멱등성을 확인했다. 모든 시설의 계획 점유율은 한도 이내다.
+- MWH-01 3,500 pallet, PRS-01 800 canister slot은 실제 WMS 실측이 아닌 계획 기준값이다. 자재 사용량도 다수가 `LEGACY_DERIVED / LOW`이므로 MES·유량계·WMS 실적이 들어오면 교체해야 한다.
+- aggregate 운영재고와 기존 LOT/HU 상세 투영은 아직 일치하지 않는다. 재감사 결과 LOT 7개, HU 57개가 불일치하며, 운영재고 현실화 배치가 임의의 제조 LOT나 용기를 생성하지는 않았다.
+- 원복: `npm run db:realize-operational-inventory -- --rollback REALISM-2026-07-26T00:16:09.918Z-46d8db`
+
+## [2026-07-26] LOT/HU 실물 투영 정합화
+
+- 적용 버전: `OPENING_RECONCILIATION_V1`
+- 적용 배치: `RECON-2026-07-26T00:59:34.729Z-c9025d`
+- stale 예약 복구 배치: `RESERVATION-REPAIR-2026-07-26T00:55:40.940Z-b7bb39`
+- 삭제된 테스트 WorkOrder·Transfer를 참조하던 PKG-001 HU 98kg 예약 1건을 해제하고 Lot 가용량으로 되돌렸다.
+- 기존 58개 고아 HU는 삭제하거나 수량을 바꾸지 않고, 원래 `inventoryLotId`로 HOLD 복구 Lot을 생성해 참조를 복원했다.
+- 기존 실물 투영을 제외한 부족량은 자재별 모델 재고 포지션 58개로 추가했다. 생성 Lot/HU는 모두 `HOLD`, `PENDING_PHYSICAL_VERIFICATION`, `MODELED_CONTAINER_GROUP`이며 실제 공급사 Lot·제조일·유효기한을 만들지 않았다.
+- aggregate `inventory`는 변경하지 않았다. 적용 후 재실행은 `recoveryLots=0`, `fillHU=0`, `openingPositions=0`, `blocked=0`이다.
+- 상태 기반 재감사 결과 `lotMismatch=0`, `huMismatch=0`, `orphanHu=0`이다. `IN_TRANSIT`, `RECEIVED`, `LINE_SIDE`, `CONSUMED`는 창고 on-hand에서 제외하고 `RESERVED`, `STAGED`는 Lot 가용량에 다시 더해 비교한다.
+- CSM-016~019는 `RATE_TBD / CALIBRATION_REQUIRED`이고 수요·안전재고·aggregate가 모두 0이므로 `SKIPPED_UNCALIBRATED_ZERO_BASELINE`으로 기록했으며 Lot/HU를 생성하지 않았다.
+- 정합화 원복: `npm run db:reconcile-inventory-projections -- --rollback RECON-2026-07-26T00:59:34.729Z-c9025d`
+- stale 예약 복구 원복: `npx tsx scripts/repair-stale-inventory-reservations.ts --rollback RESERVATION-REPAIR-2026-07-26T00:55:40.940Z-b7bb39`
+
+## [2026-07-26] 현장 실물검증 큐 V1
+
+- 적용 버전: `INVENTORY_VERIFICATION_V1`
+- `OPENING_RECONCILIATION_V1`이 만든 Opening Position 58개와 1:1인 Verification Case 58개를 생성했다.
+- 재실행 결과 `planned=0`, `existing=58`, `blocked=0`으로 중복 생성되지 않는다.
+- CSM-016~019는 `RATE_TBD / CALIBRATION_REQUIRED`이므로 Case 생성 0건이다.
+- 관측 제출은 `LOGISTICS` 역할만 가능하며 `requestId`, Case `version`, 평문 십진수량, Case UOM, 동일 창고의 실제 등록 위치, 외부 증빙 참조를 요구한다.
+- Observation과 Event는 불변 이력으로 추가하고 Case만 `AWAITING_OBSERVATION → OBSERVED`로 전환한다. inventory, Lot, HU, Movement는 변경하지 않는다.
+- reconciliation hold 위치는 실제 관측 위치로 제출할 수 없다. 현재 실제 위치 마스터는 MWH-02에만 2개가 있으며, BCY-01·MWH-01·MRO-01·BGY-01·HZW-01·PRS-01은 실제 위치 등록 전까지 제출 버튼이 비활성화된다.
+- 독립 검토, 차이 승인·전표, HOLD 해제는 V2 후속 슬라이스이며 이번 단계에서는 제공하지 않는다.

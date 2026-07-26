@@ -4,6 +4,10 @@ import { MongoClient } from "mongodb";
 import { randomUUID } from "crypto";
 import { FACILITY_MASTER, getCanonicalFacility, getSupplyProfile } from "../src/lib/warehouse-storage-rules";
 import { m20ProcessUsageForScenario } from "../src/lib/material-consumption";
+import {
+  OPERATIONAL_INVENTORY_BASELINE_VERSION,
+  operationalInventoryProfile,
+} from "../src/lib/inventory-realism";
 
 // MongoDB(Atlas) 네이티브 드라이버로 시드. _id는 자연키(코드) 사용.
 const client = new MongoClient(process.env.DATABASE_URL as string);
@@ -142,9 +146,32 @@ async function main() {
     { code: "CSM-019", name: "Memory KGD Die Tray", nameEn: "Memory KGD Die Tray", category: "CSM", unit: "TRAY", safetyStock: 0, ropDays: 30, materialType: "REUSABLE_CARRIER", assumptionConfidence: "CALIBRATION_REQUIRED", notes: "P10.DIE_SORT_KGD 산출 carrier. 적재량·회수율 RATE_TBD" },
   ];
 
-  await col("materials").insertMany(
-    materialDefs.map((def) => ({ _id: def.code, ...def, supplyMode: getSupplyProfile(def.code).mode, createdAt: new Date() }))
-  );
+  await col("materials").insertMany(materialDefs.map((def) => {
+    const supplyMode = getSupplyProfile(def.code).mode;
+    const profile = operationalInventoryProfile({
+      materialCode: def.code,
+      currentUnit: def.unit,
+      supplyMode,
+    });
+    return {
+      _id: def.code,
+      ...def,
+      unit: profile.inventoryUnit,
+      supplyMode,
+      inventoryBaselineVersion: OPERATIONAL_INVENTORY_BASELINE_VERSION,
+      ...(profile.purchaseUnit ? { purchaseUnit: profile.purchaseUnit } : {}),
+      ...(profile.purchaseToInventoryFactor != null
+        ? { purchaseToInventoryFactor: profile.purchaseToInventoryFactor }
+        : {}),
+      ...(profile.inventoryToStorageFactor != null
+        ? { inventoryToStorageFactor: profile.inventoryToStorageFactor }
+        : {}),
+      ...(profile.unitBasis === "MODELED_PHYSICAL_BASE" && !("assumptionConfidence" in def)
+        ? { assumptionConfidence: "LOW" }
+        : {}),
+      createdAt: new Date(),
+    };
+  }));
   // 자재 코드가 곧 _id (관계 참조용)
   const materials: Record<string, { id: string }> = {};
   for (const def of materialDefs) materials[def.code] = { id: def.code };
@@ -221,19 +248,27 @@ async function main() {
     { code: "CSM-009", whCode: "MRO-01", qty: 96,   daily: 0.72 },
     { code: "CSM-010", whCode: "MRO-01", qty: 128,  daily: 0.88 },
     { code: "CSM-015", whCode: "MRO-01", qty: 240,  daily: 1.6  },
+    // 신규 마스터 — 활성 소요가 있는 Base Die는 opening baseline에서 30일분을 생성한다.
+    { code: "PKG-LBD-001", whCode: "MWH-02", qty: 0, daily: 0 },
+    { code: "CSM-016", whCode: "MRO-01", qty: 0, daily: 0 },
+    { code: "CSM-017", whCode: "MRO-01", qty: 0, daily: 0 },
+    { code: "CSM-018", whCode: "MWH-02", qty: 0, daily: 0 },
+    { code: "CSM-019", whCode: "MWH-01", qty: 0, daily: 0 },
   ];
 
   const validMat = (code: string) => Boolean(materials[code]);
   await col("inventory").insertMany(
     inventoryData
       .filter((inv) => validMat(inv.code))
-      .map((inv) => ({
-        _id: `${inv.code}__${inv.whCode}`,
+      .map((inv) => {
+        const facilityId = getCanonicalFacility(inv.code);
+        return {
+        _id: `${inv.code}__${facilityId}`,
         materialId: inv.code, warehouseId: getCanonicalFacility(inv.code),
         quantity: inv.qty, avgDailyUsage: inv.daily, status: "AVAILABLE",
         capacityLimit: inv.qty > 0 ? Math.ceil(inv.qty / 0.68) : undefined,
         updatedAt: new Date(),
-      }))
+      }})
   );
   console.log(`✅ Inventory: ${inventoryData.length}건`);
 
@@ -483,9 +518,17 @@ async function main() {
     if (!material || material.ropDays <= 0) continue;
     const dailyUsage = (monthlyUsageByMaterial.get(inv.code) ?? inv.daily * 30) / 30;
     const openingQuantity = Math.ceil(Math.max(inv.qty, material.safetyStock + dailyUsage, dailyUsage * material.ropDays));
-    await col("inventory").updateOne({ _id: `${inv.code}__${inv.whCode}` }, {
+    const facilityId = getCanonicalFacility(inv.code);
+    const supplyMode = getSupplyProfile(inv.code).mode;
+    await col("inventory").updateOne({ _id: `${inv.code}__${facilityId}` }, {
       $set: { quantity: openingQuantity, avgDailyUsage: dailyUsage,
-        capacityLimit: Math.ceil(openingQuantity / 0.68), updatedAt: new Date() },
+        ...(supplyMode === "BULK_GAS" || supplyMode === "BULK_CHEMICAL"
+          ? { capacityLimit: Math.ceil(openingQuantity / 0.68) }
+          : {}),
+        updatedAt: new Date() },
+      ...(!(supplyMode === "BULK_GAS" || supplyMode === "BULK_CHEMICAL")
+        ? { $unset: { capacityLimit: "" } }
+        : {}),
     });
   }
   console.log("✅ Inventory opening baseline: safety stock + ROP demand");

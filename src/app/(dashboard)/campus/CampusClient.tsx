@@ -438,7 +438,7 @@ export default function CampusClient({ snapshot, usageTwin, initialTransfers, in
               </div>
               <div className="space-y-1 font-mono text-[10px] text-[#6F6963]">
                 <div className="flex justify-between"><span>집계재고</span><span>{format(material.consistency.aggregateInventory)}</span></div>
-                <div className="flex justify-between"><span>Available Lot</span><span>{material.consistency.availableLots === null ? "미연결" : format(material.consistency.availableLots)}</span></div>
+                <div className="flex justify-between"><span>Physical Lot</span><span>{material.consistency.availableLots === null ? "미연결" : format(material.consistency.availableLots)}</span></div>
                 <div className="flex justify-between"><span>Handling Unit</span><span>{material.consistency.handlingUnits === null ? "미연결" : format(material.consistency.handlingUnits)}</span></div>
               </div>
             </div>

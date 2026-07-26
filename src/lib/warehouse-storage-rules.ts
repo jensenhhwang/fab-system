@@ -9,13 +9,13 @@ export type SupplyProfile = {
 };
 
 export const FACILITY_MASTER = [
-  { _id: "MWH-01", code: "MWH-01", name: "자동화 자재창고 (AS/RS)", type: "AS_RS", capacityMode: "SPACE", totalCapacity: 2000, unit: "pallet", temperature: "20~25°C / 습도 45~55%", notes: "표준 팔레트 일반 소모품·슬러리·포장 자재 자동보관" },
+  { _id: "MWH-01", code: "MWH-01", name: "자동화 자재창고 (AS/RS)", type: "AS_RS", capacityMode: "SPACE", totalCapacity: 3500, unit: "pallet", temperature: "20~25°C / 습도 45~55%", notes: "OPERATIONAL_REALISM_V1 계획 기준 3,500 pallet-position. 실측 WMS capacity로 교체 필요" },
   { _id: "MWH-02", code: "MWH-02", name: "항온 자재창고", type: "FLAT", capacityMode: "SPACE", totalCapacity: 2600, unit: "pallet", temperature: "항온 Zone 5~25°C", notes: "포토레지스트·필름·온도민감 자재 보관" },
   { _id: "HZW-01", code: "HZW-01", name: "특수가스 위험물창고", type: "HAZMAT", capacityMode: "SPACE", totalCapacity: 7500, unit: "cylinder-slot", temperature: "15~20°C / 방폭·강제배기", notes: "독성·부식성·자연발화성 특수가스 예비 실린더 보관", legalLimit: 6750 },
   { _id: "MRO-01", code: "MRO-01", name: "공구·MRO 창고", type: "MRO", capacityMode: "SPACE", totalCapacity: 2200, unit: "slot", temperature: "실온", notes: "Probe Card·PVD Target·Quartz Kit 등 개체관리" },
   { _id: "BGY-01", code: "BGY-01", name: "벌크가스 야드", type: "BULK_GAS", capacityMode: "TANK_LEVEL", totalCapacity: 100, unit: "%", temperature: "옥외 탱크·기화기·정제기", notes: "N₂·Ar·O₂·H₂·He·CO₂ 중앙공급" },
   { _id: "BCY-01", code: "BCY-01", name: "벌크케미컬 야드", type: "BULK_CHEM", capacityMode: "TANK_LEVEL", totalCapacity: 100, unit: "%", temperature: "물질별 탱크·방유 구획", notes: "HF·H₂O₂·H₂SO₄·NH₄OH·HCl·H₃PO₄·TMAH BCDS" },
-  { _id: "PRS-01", code: "PRS-01", name: "전구체 공급실", type: "PRECURSOR", capacityMode: "SPACE", totalCapacity: 500, unit: "canister-slot", temperature: "물질별 항온·건조", notes: "TEOS·BDEAS·TiCl₄·TDMAT·TEMAHf·DIPAS 캐니스터" },
+  { _id: "PRS-01", code: "PRS-01", name: "전구체 공급실", type: "PRECURSOR", capacityMode: "SPACE", totalCapacity: 800, unit: "canister-slot", temperature: "물질별 항온·건조", notes: "OPERATIONAL_REALISM_V1 계획 기준 800 canister-slot. 실측 PRS capacity로 교체 필요" },
   { _id: "UPW-01", code: "UPW-01", name: "초순수 생산시설", type: "ON_SITE", capacityMode: "CONTINUOUS", totalCapacity: 100, unit: "%", temperature: "연속 수질 모니터링", notes: "UPW 현장 생산·순환 Loop 공급" },
 ] as const;
 
@@ -84,7 +84,7 @@ export function getCanonicalFacility(materialCode: string): string {
   if (mode === "BULK_CHEMICAL") return "BCY-01";
   if (mode === "PRECURSOR_CANISTER") return "PRS-01";
   if (mode === "SPECIALTY_CYLINDER") return "HZW-01";
-  if (["CHM-007","CHM-008","CHM-009","CHM-012","CHM-013","PKG-001","PKG-002","CSM-014"].includes(materialCode)) return "MWH-02";
+  if (["CHM-007","CHM-008","CHM-009","CHM-012","CHM-013","PKG-001","PKG-002","PKG-LBD-001","CSM-014","CSM-018"].includes(materialCode)) return "MWH-02";
   if (["CSM-006","CSM-007","CSM-008","CSM-009","CSM-010","CSM-015"].includes(materialCode)) return "MRO-01";
   return "MWH-01";
 }

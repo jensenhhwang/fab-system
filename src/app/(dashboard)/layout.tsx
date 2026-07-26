@@ -16,6 +16,7 @@ const NAV = [
   ] },
   { group: "자재·창고", items: [
     { href: "/inventory", label: "재고·보관일수" },
+    { href: "/inventory/verification", label: "현장 실물검증" },
     { href: "/warehouse", label: "창고 Capacity" },
     { href: "/wms", label: "창고관리 (WMS)" },
   ] },
@@ -43,6 +44,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   function isActive(href: string) {
     if (href === "/") return pathname === "/";
     if (href === "/simulation") return pathname === "/simulation";
+    if (href === "/inventory") return pathname === "/inventory" || pathname.startsWith("/inventory/materials/");
     return pathname.startsWith(href);
   }
 

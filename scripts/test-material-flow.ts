@@ -42,4 +42,19 @@ console.assert(liveFlow.mode === "LIVE_LEDGER", "Allocation·Flow Event가 있�
 console.assert(liveM20.plannedAllocation === 6_000, "M20 배분량은 실제 Allocation을 우선해야 한다");
 console.assert(liveM20.steps.find((step) => step.stage === "PICKING")?.quantity === 2_000, "피킹 수량은 실제 Flow Event를 사용해야 한다");
 console.assert(liveM20.steps.find((step) => step.stage === "PICKING")?.mode === "LIVE_LEDGER", "실제 피킹을 LIVE로 표시해야 한다");
+
+const reconciledFlow = buildCampusMaterialFlowSnapshot(
+  tower,
+  inventory,
+  usage,
+  [{ _id: "RECON-LOT", materialId: "MAT-1", availableQuantity: 12_000, qualityStatus: "HOLD" }],
+  [{
+    inventoryLotId: "RECON-LOT",
+    materialId: "MAT-1",
+    quantity: 12_000,
+    status: "HOLD",
+    logisticsStatus: "STORED",
+  }],
+);
+console.assert(reconciledFlow.materials[0].consistency.status === "MATCHED", "검증대기 HOLD 실물 투영도 창고 on-hand에 포함해야 한다");
 console.log("✅ campus material flow rules passed");
