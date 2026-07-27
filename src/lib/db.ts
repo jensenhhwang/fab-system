@@ -745,6 +745,34 @@ export interface AgentPolicyDoc {
   updatedAt: Date;
 }
 
+// 자율등급 사람 확정값 — AgentPolicyDoc과 별도 컬렉션으로 둔다.
+// AgentPolicyDoc은 moq/orderMultiple 등 필수 필드를 가정하는 기존 발주량 계산
+// (scenario-engine.applyOrderPolicy)이 의존하고 있어, 그 필드 없이 자율등급만
+// upsert하면 부분 문서가 생겨 MOQ 계산이 NaN으로 깨질 위험이 있다.
+export type AgentAutonomyLevel = 2 | 4;
+export interface AgentAutonomyOverrideDoc {
+  _id: string; // `${fabId ?? "ALL"}:${materialId}`
+  materialId: string;
+  fabId: FabId | null;
+  level: AgentAutonomyLevel;
+  updatedBy: string;
+  updatedAt: Date;
+}
+
+// PROCUREMENT 그림자 조종석이 읽는 "현재 활성 시나리오". 사람이 /simulation에서
+// What-if를 세우고 "입고 관제에 반영"을 누르면 이 싱글턴에 저장된다. 없으면
+// 그림자 에이전트는 이벤트 없는 "현재 재고 기준 위험 점검"으로 되돌아간다.
+export interface ProcurementActiveScenarioDoc {
+  _id: "singleton";
+  label: string;
+  events: { id: string; product: "HBM" | "DRAM" | "NAND"; startDay: number; changePct: number; durationDays: number }[];
+  horizonDays: number;
+  coverageDays: number;
+  fabId: FabId | null;
+  submittedBy: string;
+  submittedAt: Date;
+}
+
 export type PurchaseOrderDraftStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED" | "OUTBOXED" | "CANCELLED";
 export interface PurchaseOrderDraftDoc {
   _id: string;
@@ -982,6 +1010,8 @@ export async function collections(): Promise<{
   agentDecisions: Collection<AgentDecisionDoc>;
   agentPolicies: Collection<AgentPolicyDoc>;
   agentRoleModes: Collection<AgentRoleModeDoc>;
+  agentAutonomyOverrides: Collection<AgentAutonomyOverrideDoc>;
+  procurementActiveScenario: Collection<ProcurementActiveScenarioDoc>;
   purchaseOrderDrafts: Collection<PurchaseOrderDraftDoc>;
   integrationOutbox: Collection<IntegrationOutboxDoc>;
   equipmentAssignments: Collection<EquipmentAssignmentDoc>;
@@ -1054,6 +1084,8 @@ export async function collections(): Promise<{
     agentDecisions: db.collection<AgentDecisionDoc>("agentDecisions"),
     agentPolicies: db.collection<AgentPolicyDoc>("agentPolicies"),
     agentRoleModes: db.collection<AgentRoleModeDoc>("agentRoleModes"),
+    agentAutonomyOverrides: db.collection<AgentAutonomyOverrideDoc>("agentAutonomyOverrides"),
+    procurementActiveScenario: db.collection<ProcurementActiveScenarioDoc>("procurementActiveScenario"),
     purchaseOrderDrafts: db.collection<PurchaseOrderDraftDoc>("purchaseOrderDrafts"),
     integrationOutbox: db.collection<IntegrationOutboxDoc>("integrationOutbox"),
     equipmentAssignments: db.collection<EquipmentAssignmentDoc>("equipmentAssignments"),

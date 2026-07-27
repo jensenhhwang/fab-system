@@ -62,6 +62,7 @@
     "db:migrate-demo-user-names": "tsx scripts/migrate-demo-user-display-names.ts",
     "db:migrate-route-master": "tsx scripts/migrate-route-master.ts",
     "db:migrate-m20-backend-materials": "tsx scripts/migrate-m20-backend-materials.ts",
+    "db:migrate-csm-backend-calibration": "tsx scripts/migrate-csm-backend-calibration.ts",
     "db:migrate-m20-consumption": "tsx scripts/migrate-m20-material-consumption.ts",
     "db:migrate-m20-foup-wip": "tsx scripts/migrate-m20-foup-wip.ts",
     "db:migrate-m21-equipment-master": "tsx scripts/migrate-m21-equipment-master.ts",

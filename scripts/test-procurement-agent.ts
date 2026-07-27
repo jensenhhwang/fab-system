@@ -93,14 +93,18 @@ const csm = report.chains.find((c) => c.materialId === "CSM-004")!;
 const gas = report.chains.find((c) => c.materialId === "GAS-004")!;
 const probe = report.chains.find((c) => c.materialId === "CSM-009")!;
 
-// L4 소모품 → 잠정입고 실행했을 것
-assert.equal(csm.autonomyCeiling, 4, "CSM 다중공급사 → L4");
-assert.equal(csm.verdict, "WOULD_AUTO_RECEIVE");
-assert.ok(csm.verdictText.includes("잠정입고"), "L4 판정 문구");
+// CSM-004: 상한은 L4지만 SCENARIO_CAUSED_SHORTAGE(신규 변화)라 에이전트는 L2를 추천 → 기본은 제안까지만
+assert.equal(csm.autonomyCeiling, 4, "CSM 다중공급사 → 상한 L4");
+assert.equal(csm.autonomyRecommendation.level, 2, "신규 변화라 에이전트 추천은 L2");
+assert.equal(csm.autonomyRecommendation.code, "NOVEL_SHORTAGE_L2");
+assert.equal(csm.effectiveAutonomy, 2, "override 없으면 추천값 그대로 적용");
+assert.equal(csm.verdict, "WOULD_PROPOSE", "추천이 L2라 기본은 제안");
 assert.equal(csm.proposedQuantity, 500, "MOQ 반영 발주량");
 
-// 위험물 → L2 상한, 제안만
+// 위험물 → L2 상한, 제안만, 추천도 상한에 고정
 assert.equal(gas.autonomyCeiling, 2, "GAS → L2 상한");
+assert.equal(gas.autonomyRecommendation.level, 2, "상한이 2면 추천도 2로 고정");
+assert.equal(gas.autonomyRecommendation.code, "CEILING_LOCKED");
 assert.equal(gas.verdict, "WOULD_PROPOSE");
 assert.ok(gas.reasonCodes.includes("HAZMAT_AUTONOMY_CAP"), "위험물 상한 reasonCode");
 assert.ok(gas.ceilingReason?.includes("위험물"));
@@ -116,15 +120,54 @@ for (const c of report.chains) {
   assert.deepEqual(c.steps.map((s) => s.key), ["PLAN_SIGNAL", "SHORTAGE", "LEAD_TIME", "ORDER_DECISION"], "4단계 사슬");
 }
 
-// 요약 집계
+// 요약 집계 (CSM-004 기본이 WOULD_PROPOSE로 바뀌어 GAS-004와 합쳐 2건)
 assert.equal(report.summary.actionable, 3);
-assert.equal(report.summary.wouldAutoReceive, 1);
-assert.equal(report.summary.wouldPropose, 1);
+assert.equal(report.summary.wouldAutoReceive, 0);
+assert.equal(report.summary.wouldPropose, 2);
 assert.equal(report.summary.blocked, 1);
+
+// ── 에이전트 추천: 안정적 반복 부족(EXISTING_SHORTAGE) + 위험신호 없음 + 다중공급사 → L4 추천 ──
+const stableRec = rec({
+  material: mat({
+    id: "CSM-020", code: "CSM-020", name: "PVD 타겟", category: "CSM", unit: "EA",
+    procurementAlternatives: [
+      { supplierName: "A", standardDays: 14, emergencyOrderAllowed: true },
+      { supplierName: "B", standardDays: 20, emergencyOrderAllowed: false },
+    ],
+  }),
+  classification: "EXISTING_SHORTAGE",
+  baseline: { grossRequirement: 0, recommendedInbound: 200, firstNeedDay: 5 },
+  incrementalOrderQuantity: 0,
+  policyAdjustedOrderQuantity: 0,
+  warnings: [],
+});
+const stableReport = buildProcurementShadow([stableRec], "위험 점검", now);
+const stable = stableReport.chains[0];
+assert.equal(stable.autonomyRecommendation.level, 4, "안정적 반복 부족 + 무경고 → 에이전트가 L4 추천");
+assert.equal(stable.autonomyRecommendation.code, "STABLE_PATTERN_L4");
+assert.equal(stable.effectiveAutonomy, 4, "override 없어도 추천대로 적용");
+assert.equal(stable.verdict, "WOULD_AUTO_RECEIVE");
+assert.ok(stable.verdictText.includes("에이전트 추천 L4"), "판정문구에 추천 출처 표기");
+
+// ── 사람 override: 에이전트가 L2 추천했어도 사람이 L4로 확정하면 상한 이내에서 반영 ──
+const overrideUp = buildProcurementShadow(recs, "M20 HBM +20%", now, { "CSM-004": 4 });
+const csmOverridden = overrideUp.chains.find((c) => c.materialId === "CSM-004")!;
+assert.equal(csmOverridden.autonomyRecommendation.level, 2, "에이전트 추천 자체는 안 바뀜");
+assert.equal(csmOverridden.autonomyOverride, 4, "사람 override 기록됨");
+assert.equal(csmOverridden.effectiveAutonomy, 4, "override가 적용값을 덮어씀");
+assert.equal(csmOverridden.verdict, "WOULD_AUTO_RECEIVE");
+assert.ok(csmOverridden.verdictText.includes("사람이 L4 확정"));
+
+// ── 안전 백스탑: 위험물(상한 L2)에 사람이 L4 override를 시도해도 절대 못 넘는다 ──
+const overrideBlocked = buildProcurementShadow(recs, "M20 HBM +20%", now, { "GAS-004": 4 });
+const gasOverridden = overrideBlocked.chains.find((c) => c.materialId === "GAS-004")!;
+assert.equal(gasOverridden.autonomyOverride, 4, "override 시도 자체는 기록");
+assert.equal(gasOverridden.effectiveAutonomy, 2, "하드 상한이 override를 이긴다");
+assert.equal(gasOverridden.verdict, "WOULD_PROPOSE", "위험물은 override로도 자동입고로 못 감");
 
 // 빈 입력
 const empty = buildProcurementShadow([], "없음", now);
 assert.equal(empty.chains.length, 0);
 assert.equal(empty.summary.actionable, 0);
 
-console.log("✅ procurement-agent 그림자 로직 통과");
+console.log("✅ procurement-agent 그림자 로직 + 자율등급 추천/override 통과");

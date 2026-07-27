@@ -53,7 +53,7 @@ docs/agents/procurement-master.md
 - **실제 발주 생성** — `purchaseOrderDrafts`를 아직 안 만든다. L3(자동승인)에서 자동 생성·승인으로 전환 예정([§7 MVP-2](#7-로드맵)).
 - **실제 발주 전송** — 승인된 발주도 실제 공급사로 안 나간다. 단 이건 자율 등급과 별개로 **외부 ERP/EDI 연동이 없어서 생기는 인프라 제약**이다(`integrationOutbox`가 스텁). 연동이 붙기 전까지는 L4여도 "OUTBOXED·미전송"에서 멈춘다 — 자동화를 안 하는 게 아니라 나갈 통로가 아직 없는 것.
 - **실제 입고 등록** — `inventoryLots`/`inventoryMovements`에 아직 안 쓴다. L4(자동입고) 자재는 QUARANTINE 로트로 자동 등록하도록 전환 예정([§7 MVP-2](#7-로드맵)).
-- **What-if 시나리오 자동 반영** — 지금은 이벤트가 없는 "현재 재고 기준 위험 점검"만 돈다. What-if 화면에서 세운 시나리오를 자동으로 읽어와 판단에 반영하도록 전환 예정([§7 MVP-1](#7-로드맵)).
+- ~~**What-if 시나리오 자동 반영**~~ — MVP-1에서 구현됨. `/simulation`에서 "입고 관제에 반영" 버튼으로 `procurementActiveScenario` 싱글턴에 저장하면, 그림자 조종석이 다음 조회부터 그 시나리오로 판단한다. 없으면 이벤트 없는 "현재 재고 기준 위험 점검"으로 자동 폴백.
 
 **이 에이전트는 영원히 안 하는 것 — 다른 에이전트가 실제로 자동 실행함:**
 
@@ -105,25 +105,31 @@ docs/agents/procurement-master.md
 
 ## 6. 자율 등급 (Autonomy)
 
-레거시 프레임워크의 `AgentRoleMode`(역할 전체 2단 토글)와 다르게, **자재 단위로 상한을 계산**한다. 지금은 저장하지 않고 매 요청 코드로 재계산한다(`autonomyCeiling()`).
+**역할 3단 분리** — 사람이 자율등급을 그냥 드롭다운으로 고르는 게 아니라, 엔진·에이전트·사람이 각자 다른 일을 한다(MVP-1에서 확정).
+
+1. **엔진(결정론, `autonomyCeiling()`)** — 사실만 계산한다. 위험물·단일소싱 여부로 **하드 상한**을 정한다. 추천이나 판단이 아니라 물리·조달 제약이다.
+2. **에이전트(결정론 규칙, `recommendAutonomyLevel()`)** — 상한 이내에서 **자율등급을 추천**한다. LLM이 아니라 이미 계산된 사실(분류·경고)만 보는 투명한 규칙이다: 반복적으로 발생하는 안정적 부족(`EXISTING_SHORTAGE`)이고 HIGH 경고가 없으면 L4 추천, 생산계획/What-if로 새로 생긴 부족(`SCENARIO_CAUSED_SHORTAGE`)이거나 경고가 있으면 L2 추천. 근거(`rationale`)를 항상 동반한다.
+3. **사람(`agentAutonomyOverrides` 컬렉션, UI)** — 에이전트 추천을 승인하거나 조정해서 확정값을 남긴다. `/procurement-cockpit`에서 자재별로 L2/L4를 클릭해 저장하고, "추천대로" 버튼으로 되돌릴 수 있다.
+
+**적용값 = `사람 확정값 ?? 에이전트 추천값`, 그리고 항상 `min(그 값, 하드 상한)`으로 다시 자른다.** 사람이 위험물에 L4를 강제로 넣으려 해도 서버가 최종 계산에서 L2로 되돌린다 — 이 안전 백스탑은 실제 API 호출로 검증됨(override 시도는 기록되지만 `effectiveAutonomy`는 상한을 못 넘음).
 
 | 등급 | 의미 | 지금 조건 |
 |---|---|---|
 | L1 관측 | 판단만, 표시 안 함 | 미사용 (모든 대상 자재는 L2 이상으로 표시) |
-| **L2 제안** | 발주까지만, 사람 승인 필요 | `category ∈ {GAS, CHM}` (위험물) **또는** 승인 공급사 1개 이하(단일소싱) |
+| **L2 제안** | 발주까지만, 사람 승인 필요 | 하드 상한이거나 에이전트/사람이 L2로 선택 |
 | L3 자동승인 | 발주안 자동 승인, 전송은 대기 | 미구현 (레거시에도 없음) |
-| **L4 자동입고** | 잠정입고까지 자동 (구현되면) | 위 두 조건에 해당하지 않는 자재 |
+| **L4 자동입고** | 잠정입고까지 자동 (구현되면) | 하드 상한이 L4이고 에이전트/사람이 L4로 선택 |
 
-**하드가드:** 위험물·단일소싱 자재는 코드에서 L2로 상한이 고정된다. 화면 UI에서 L3/L4 선택을 막는 것(엑스 설계)과 서버가 L2로 클램프하는 것, 두 겹으로 막는다 — 아직 UI 잠금은 미구현이나 서버 계산은 이미 이렇게 동작한다.
+**AgentPolicyDoc을 재사용하지 않은 이유:** 원래 계획은 "agentPolicies에 영속화"였으나, 그 컬렉션은 `moq`/`orderMultiple` 등 필수 필드를 기존 발주량 계산(`scenario-engine.applyOrderPolicy`)이 가정하고 있어, 자율등급만 있는 부분 문서를 넣으면 `NaN` 전파로 MOQ 계산이 깨질 위험이 있었다. 별도 컬렉션 `agentAutonomyOverrides`로 분리해 기존 로직을 건드리지 않았다.
 
-**의도적으로 안 하는 것:** 자율 등급의 자동 승급·강등. 예측이 맞았는지 판정하려면 발주→실제 입고를 잇는 실측 리드타임 원장이 필요한데, 지금은 그 원장이 없다(레거시 발주도 `integrationOutbox` 스텁에서 끊긴다). 데이터 없이 승급 로직을 만들면 근거 없는 자동화가 된다. [§7 MVP-3](#7-로드맵) 전까지 보류.
+**의도적으로 안 하는 것:** 자율 등급의 자동 승급·강등(에이전트 추천 자체가 실적을 학습해 바뀌는 것). 예측이 맞았는지 판정하려면 발주→실제 입고를 잇는 실측 리드타임 원장이 필요한데, 지금은 그 원장이 없다(레거시 발주도 `integrationOutbox` 스텁에서 끊긴다). 데이터 없이 승급 로직을 만들면 근거 없는 자동화가 된다. [§7 MVP-3](#7-로드맵) 전까지 보류 — 지금 있는 "추천"은 매번 같은 사실에서 같은 결론을 내는 정적 규칙이지, 과거 성과를 학습하는 게 아니다.
 
 ## 7. 로드맵
 
 | 단계 | 내용 | 상태 |
 |---|---|---|
 | MVP-0 | 그림자모드 read-only. 실제 발주·입고 없음. `agentDecisions` 저장도 안 함(온디맨드 계산만) | ✅ 구현 (`PROCUREMENT_SHADOW_V0`) |
-| MVP-1 | 생산계획·What-if 시나리오를 입력으로 연결. 자율 등급을 `agentPolicies`에 영속화하고 사람이 수동 지정하는 UI | ❌ 미착수 |
+| MVP-1 | What-if 시나리오를 입력으로 연결(`procurementActiveScenario`). 자율등급을 엔진(상한)·에이전트(추천)·사람(확정, `agentAutonomyOverrides`) 3단으로 분리해 영속화 + UI | ✅ 구현 완료(§6) — 단, 라이브 데모 자재 48건이 전부 하드상한 L2라 L2/L4 선택 UI 자체는 아직 실데이터로 시각 확인 못 함(API로는 안전백스탑 검증됨) |
 | MVP-2 | L3 자재는 `purchaseOrderDrafts` 자동 생성·승인. L4 자재는 잠정입고(QUARANTINE 로트)까지 자동 실행 + 원클릭 롤백. 위험물/단일소싱은 계속 L2 고정 | ❌ 미착수 |
 | MVP-3 | 발주↔실입고 링크·실측 리드타임 원장 적재 → 자동 승급/강등 | ❌ 미착수 |
 | MVP-4 (별도 트랙) | 외부 ERP/EDI 연동 — `integrationOutbox` 스텁을 실제 공급사 전송으로 교체. 자율 등급과 무관하게 이 연동 전까지는 L4여도 발주가 "OUTBOXED"에서 멈춘다 | ❌ 미착수, 연동 주체 미정 |
@@ -136,8 +142,8 @@ docs/agents/procurement-master.md
 - 원단위: [`material-consumption-master.md`](../material-consumption-master.md)
 - 판단 로직: `src/lib/procurement-agent.ts`
 - 데이터 연결: `src/lib/procurement-agent-server.ts`, `src/lib/material-scenario-server.ts`, `src/lib/scenario-engine.ts`
-- API: `src/app/api/agents/procurement/preview/route.ts`
-- UI: `src/app/(dashboard)/procurement-cockpit/`
+- API: `src/app/api/agents/procurement/preview/route.ts`(조회), `.../autonomy/route.ts`(자율등급 확정 PATCH/DELETE), `.../scenario/route.ts`(시나리오 반영 POST/DELETE)
+- UI: `src/app/(dashboard)/procurement-cockpit/`, 시나리오 반영 버튼은 `src/app/(dashboard)/simulation/ProductionIncreasePlanner.tsx`
 - 유닛테스트: `scripts/test-procurement-agent.ts` (`npm run test:procurement-agent`)
 - 레거시 M20 파일럿 에이전트(§2 비교 대상): `src/lib/m20-agent-service.ts`, `src/lib/m20-agent-policy.ts`
 - WMS 에이전트(작성됨, PROCUREMENT와 정반대 극단): [`wms-master.md`](./wms-master.md)

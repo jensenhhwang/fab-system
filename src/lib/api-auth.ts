@@ -19,6 +19,8 @@ export const WRITE_ROLES = {
   transferTransition: ["ADMIN", "MATERIALS", "LOGISTICS"],
   materialConsume: ["ADMIN", "PRODUCTION"],
   agentRoleMode: ["ADMIN", "MATERIALS"],
+  agentAutonomyOverride: ["ADMIN", "MATERIALS"],
+  procurementScenario: ["ADMIN", "MATERIALS"],
   productionActualConfirm: ["ADMIN", "PRODUCTION"],
   materialReroute: ["ADMIN", "MATERIALS"],
   fabScenario: ["ADMIN", "PRODUCTION"],

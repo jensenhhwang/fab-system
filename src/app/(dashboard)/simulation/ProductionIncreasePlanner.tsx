@@ -145,6 +145,8 @@ export default function ProductionIncreasePlanner({ materials, snapshotAt }: { m
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"ORDER" | "ATTENTION">("ORDER");
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushNotice, setPushNotice] = useState<string | null>(null);
 
   const result = useMemo(() => recommendMaterialOrders(materials, input, selectedFab), [materials, input, selectedFab]);
   const orders = result.recommendations.filter(item => item.incrementalOrderQuantity > 0);
@@ -181,6 +183,32 @@ export default function ProductionIncreasePlanner({ materials, snapshotAt }: { m
     setSelectedFab(next.fabId);
     setInput({ events: next.events, horizonDays: next.horizonDays, replenishmentMode: "ROP", coverageDays: next.coverageDays });
     setActiveTab(next.intent === "RISK_REVIEW" ? "ATTENTION" : "ORDER");
+  }
+
+  // 이 What-if 시나리오를 입고(PROCUREMENT) 그림자 조종석의 판단 입력으로 반영한다(MVP-1).
+  async function pushToProcurement() {
+    setPushBusy(true);
+    setPushNotice(null);
+    try {
+      const response = await fetch("/api/agents/procurement/scenario", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          label: prompt.trim().slice(0, 200) || "What-if 시나리오",
+          events: input.events,
+          horizonDays: input.horizonDays,
+          coverageDays: input.coverageDays,
+          fabId: selectedFab,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "입고 관제 반영 실패");
+      setPushNotice("입고 관제(Procurement Cockpit)에 반영했습니다.");
+    } catch (cause) {
+      setPushNotice(cause instanceof Error ? cause.message : "입고 관제 반영 실패");
+    } finally {
+      setPushBusy(false);
+    }
   }
 
   function updateEvent(patch: Partial<ProductionPlanEvent>) {
@@ -231,6 +259,17 @@ export default function ProductionIncreasePlanner({ materials, snapshotAt }: { m
           <div><div className="font-extrabold">AI 추천 결과</div><div className="mt-1 text-xs text-[#777]">기준계획과 변경계획을 같은 재고 스냅샷으로 비교했습니다.</div></div>
           <div className="flex rounded-xl bg-[#F3F0EE] p-1"><button type="button" onClick={() => setActiveTab("ORDER")} className={`rounded-lg px-4 py-2 text-xs font-bold ${activeTab === "ORDER" ? "bg-white text-[#EA002C] shadow-sm" : "text-[#666]"}`}>추가 발주 {orders.length}</button><button type="button" onClick={() => setActiveTab("ATTENTION")} className={`rounded-lg px-4 py-2 text-xs font-bold ${activeTab === "ATTENTION" ? "bg-white text-blue-700 shadow-sm" : "text-[#666]"}`}>주의 자재 {attention.length}</button></div>
         </div>
+        {input.events.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-[#F8F9FB] px-5 py-2.5 text-xs">
+            <span className="text-[#666]">이 시나리오를 입고 관제(그림자 조종석)의 판단 입력으로 반영할 수 있습니다.</span>
+            <div className="flex items-center gap-2">
+              {pushNotice && <span className="text-[#0078D4]">{pushNotice}</span>}
+              <button type="button" disabled={pushBusy} onClick={() => void pushToProcurement()} className="rounded-lg bg-[#141413] px-3 py-1.5 font-bold text-white disabled:opacity-50">
+                {pushBusy ? "반영 중…" : "입고 관제에 반영"}
+              </button>
+            </div>
+          </div>
+        )}
         {activeTab === "ORDER" ? <OrderTable rows={orders} snapshotAt={snapshotAt}/> : <AttentionTable rows={attention} snapshotAt={snapshotAt}/>}
       </section>
 

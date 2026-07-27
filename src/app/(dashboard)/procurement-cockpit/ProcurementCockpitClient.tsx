@@ -3,11 +3,23 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   REASON_NARRATIVE,
+  type AutonomyLevel,
   type ProcurementReasoningChain,
-  type ProcurementShadowReport,
   type ProcurementStepStatus,
   type ShadowVerdict,
 } from "@/lib/procurement-agent";
+
+type ActiveScenarioInfo = { label: string; submittedBy: string; submittedAt: string } | null;
+
+type ProcurementShadowPayload = {
+  generatedAt: string;
+  policyVersion: string;
+  scenarioLabel: string;
+  shadowMode: true;
+  chains: ProcurementReasoningChain[];
+  summary: { actionable: number; wouldAutoReceive: number; wouldPropose: number; blocked: number };
+  activeScenario: ActiveScenarioInfo;
+};
 
 const STEP_DOT: Record<ProcurementStepStatus, string> = {
   OK: "#00875A",
@@ -21,20 +33,63 @@ const VERDICT_STYLE: Record<ShadowVerdict, { label: string; color: string; bg: s
   BLOCKED: { label: "판단 보류", color: "#EA002C", bg: "#FFF0F2" },
 };
 
-function AutonomyPill({ level, reason }: { level: 2 | 4; reason: string | null }) {
-  const capped = level === 2;
+// 역할 3단: 엔진(상한 계산) → 에이전트(추천) → 사람(승인/조정). 사람 확정은 상한을 절대 못 넘는다(서버가 다시 clamp).
+function AutonomySection({ chain, busy, onSet, onReset }: {
+  chain: ProcurementReasoningChain;
+  busy: boolean;
+  onSet: (materialId: string, level: AutonomyLevel) => void;
+  onReset: (materialId: string) => void;
+}) {
+  const capped = chain.autonomyCeiling === 2;
+  const overridden = chain.autonomyOverride !== null;
+  const source = overridden ? "사람 확정" : "에이전트 추천";
+
   return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold"
-      style={capped ? { background: "#FFF7E6", color: "#B97500" } : { background: "#E6FAF1", color: "#00875A" }}
-      title={reason ?? "자동입고(L4) 가능"}
-    >
-      {capped ? "🔒 L2 상한" : "🤖 L4"}
-    </span>
+    <div className="flex flex-col items-end gap-1">
+      <span
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold"
+        style={capped ? { background: "#FFF7E6", color: "#B97500" } : { background: "#E6FAF1", color: "#00875A" }}
+        title={chain.ceilingReason ?? "자동입고(L4)까지 가능한 자재입니다."}
+      >
+        {capped ? "🔒 상한 L2" : "상한 L4"}
+      </span>
+      <span
+        className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
+        style={{ background: "#F1F1F0", color: "#555" }}
+        title={chain.autonomyRecommendation.rationale}
+      >
+        {chain.effectiveAutonomy === 4 ? "🤖" : "💡"} 적용 L{chain.effectiveAutonomy} · {source}
+      </span>
+      {!capped && (
+        <div className="mt-0.5 flex gap-1">
+          {([2, 4] as AutonomyLevel[]).map((lvl) => (
+            <button
+              key={lvl}
+              disabled={busy || chain.effectiveAutonomy === lvl}
+              onClick={() => onSet(chain.materialId, lvl)}
+              className="rounded-full px-2 py-0.5 text-[10px] font-bold disabled:opacity-40"
+              style={chain.effectiveAutonomy === lvl ? { background: "#141413", color: "#fff" } : { background: "#fff", border: "1px solid var(--border)", color: "#777" }}
+            >
+              L{lvl}
+            </button>
+          ))}
+          {overridden && (
+            <button disabled={busy} onClick={() => onReset(chain.materialId)} className="rounded-full px-2 py-0.5 text-[10px] font-bold text-[#0078D4] underline disabled:opacity-40">
+              추천대로
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
-function ChainCard({ chain }: { chain: ProcurementReasoningChain }) {
+function ChainCard({ chain, busy, onSet, onReset }: {
+  chain: ProcurementReasoningChain;
+  busy: boolean;
+  onSet: (materialId: string, level: AutonomyLevel) => void;
+  onReset: (materialId: string) => void;
+}) {
   const [showReasons, setShowReasons] = useState(false);
   const v = VERDICT_STYLE[chain.verdict];
   return (
@@ -44,7 +99,7 @@ function ChainCard({ chain }: { chain: ProcurementReasoningChain }) {
           <div className="text-lg font-black text-[#141413]">{chain.materialName}</div>
           <div className="text-[11px] text-[#999]">{chain.materialCode} · {chain.category}{chain.supplierName ? ` · ${chain.supplierName}` : ""}</div>
         </div>
-        <AutonomyPill level={chain.autonomyCeiling} reason={chain.ceilingReason} />
+        <AutonomySection chain={chain} busy={busy} onSet={onSet} onReset={onReset} />
       </div>
 
       {/* 추론 사슬 4스텝 */}
@@ -98,9 +153,11 @@ function ChainCard({ chain }: { chain: ProcurementReasoningChain }) {
 }
 
 export default function ProcurementCockpitClient() {
-  const [report, setReport] = useState<ProcurementShadowReport | null>(null);
+  const [report, setReport] = useState<ProcurementShadowPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busyMaterialId, setBusyMaterialId] = useState<string | null>(null);
+  const [scenarioBusy, setScenarioBusy] = useState(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -111,7 +168,7 @@ export default function ProcurementCockpitClient() {
         if (res.status === 401) throw new Error("세션이 만료되었습니다. 다시 로그인해 주세요.");
         throw new Error(payload.error ?? "입고 에이전트 미리보기를 불러오지 못했습니다.");
       }
-      setReport(payload as ProcurementShadowReport);
+      setReport(payload as ProcurementShadowPayload);
       setError(null);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
@@ -140,6 +197,49 @@ export default function ProcurementCockpitClient() {
     };
   }, [load]);
 
+  async function setAutonomy(materialId: string, level: AutonomyLevel) {
+    setBusyMaterialId(materialId);
+    try {
+      const res = await fetch("/api/agents/procurement/autonomy", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ materialId, fabId: null, level }),
+      });
+      if (!res.ok) { const p = await res.json().catch(() => ({})); throw new Error(p.error ?? "자율등급 저장 실패"); }
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "자율등급 저장 실패");
+    } finally {
+      setBusyMaterialId(null);
+    }
+  }
+
+  async function resetAutonomy(materialId: string) {
+    setBusyMaterialId(materialId);
+    try {
+      const res = await fetch(`/api/agents/procurement/autonomy?materialId=${encodeURIComponent(materialId)}`, { method: "DELETE" });
+      if (!res.ok) { const p = await res.json().catch(() => ({})); throw new Error(p.error ?? "자율등급 초기화 실패"); }
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "자율등급 초기화 실패");
+    } finally {
+      setBusyMaterialId(null);
+    }
+  }
+
+  async function clearScenario() {
+    setScenarioBusy(true);
+    try {
+      const res = await fetch("/api/agents/procurement/scenario", { method: "DELETE" });
+      if (!res.ok) { const p = await res.json().catch(() => ({})); throw new Error(p.error ?? "시나리오 초기화 실패"); }
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "시나리오 초기화 실패");
+    } finally {
+      setScenarioBusy(false);
+    }
+  }
+
   const s = report?.summary;
 
   return (
@@ -160,6 +260,23 @@ export default function ProcurementCockpitClient() {
       >
         <span className="rounded-full bg-[#6B4EAA] px-2 py-0.5 text-[10px] font-extrabold text-white">SHADOW</span>
         그림자 모드 — 에이전트는 판단만 하고 <b>실제 발주·입고는 실행하지 않습니다.</b> 「자동이었다면 이렇게 했을 것」을 보여줍니다.
+      </div>
+
+      {/* 반영된 시나리오 */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-white px-4 py-2.5 text-xs" style={{ borderColor: "var(--border)" }}>
+        {report?.activeScenario ? (
+          <>
+            <span className="text-[#555]">
+              반영 시나리오 <b className="text-[#141413]">{report.activeScenario.label}</b>
+              <span className="ml-2 text-[#999]">{report.activeScenario.submittedBy} · {new Date(report.activeScenario.submittedAt).toLocaleString("ko-KR")}</span>
+            </span>
+            <button disabled={scenarioBusy} onClick={() => void clearScenario()} className="font-bold text-[#0078D4] underline disabled:opacity-40">
+              기본값(현재 재고 위험점검)으로 되돌리기
+            </button>
+          </>
+        ) : (
+          <span className="text-[#999]">현재 재고 기준 위험 점검(기본값) — 운영 What-if에서 시나리오를 반영할 수 있어요.</span>
+        )}
       </div>
 
       {/* 요약 스트립 */}
@@ -191,7 +308,9 @@ export default function ProcurementCockpitClient() {
 
       {/* 추론 사슬 카드 목록 */}
       <div className="grid gap-4 lg:grid-cols-2">
-        {report?.chains.map((c) => <ChainCard key={c.materialId} chain={c} />)}
+        {report?.chains.map((c) => (
+          <ChainCard key={c.materialId} chain={c} busy={busyMaterialId === c.materialId} onSet={setAutonomy} onReset={resetAutonomy} />
+        ))}
       </div>
     </div>
   );

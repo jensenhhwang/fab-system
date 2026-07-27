@@ -11,8 +11,13 @@ import type { MaterialRecommendation } from "@/lib/scenario-engine";
 export const PROCUREMENT_AGENT_POLICY_VERSION = "PROCUREMENT_SHADOW_V0";
 
 export type AutonomyCeiling = 2 | 4;
+export type AutonomyLevel = 2 | 4;
 export type ProcurementStepStatus = "OK" | "WARN" | "BLOCKED";
 export type ShadowVerdict = "WOULD_AUTO_RECEIVE" | "WOULD_PROPOSE" | "BLOCKED";
+
+// 역할 분담: 엔진(사실 계산) → 에이전트(추천+근거, 여기) → 사람(승인/조정, UI).
+// 추천은 결정론 규칙이다(LLM 아님) — 근거를 기존 reasonCodes와 같은 방식으로 투명하게 노출한다.
+export type AutonomyRecommendation = { level: AutonomyLevel; rationale: string; code: string };
 
 export type ProcurementChainStep = {
   key: "PLAN_SIGNAL" | "SHORTAGE" | "LEAD_TIME" | "ORDER_DECISION";
@@ -32,6 +37,9 @@ export type ProcurementReasoningChain = {
   urgencyDay: number | null; // safeOrderByDay (작을수록 급함, null은 뒤로)
   autonomyCeiling: AutonomyCeiling;
   ceilingReason: string | null;
+  autonomyRecommendation: AutonomyRecommendation;
+  autonomyOverride: AutonomyLevel | null;
+  effectiveAutonomy: AutonomyLevel;
   reasonCodes: string[];
   proposedQuantity: number;
   supplierName: string | null;
@@ -61,6 +69,10 @@ export const REASON_NARRATIVE: Record<string, string> = {
   EXPIRY_RISK: "30일 내 만료 예정 재고가 있습니다.",
   HAZMAT_AUTONOMY_CAP: "위험물(가스·케미컬)은 안전 정책상 자동입고가 금지되어 제안까지만 가능합니다.",
   SINGLE_SOURCE_CAP: "단일 승인 공급사 자재라 자동입고가 제한되어 제안까지만 가능합니다.",
+  CEILING_LOCKED: "자율 상한이 L2로 고정돼 있어 에이전트가 추천할 여지가 없습니다.",
+  STABLE_PATTERN_L4: "반복적으로 발생하는 안정적 부족 패턴이고 위험 신호가 없어 에이전트가 자동입고를 추천합니다.",
+  NOVEL_SHORTAGE_L2: "생산계획/What-if 변경으로 새로 발생한 부족이라 에이전트가 사람 확인을 추천합니다.",
+  WARNING_PRESENT_L2: "품질보류·만료임박 등 주의 신호가 있어 에이전트가 사람 확인을 추천합니다.",
 };
 
 const nf = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
@@ -83,16 +95,37 @@ function autonomyCeiling(r: MaterialRecommendation): { level: AutonomyCeiling; r
   return { level: 4, reason: null, code: null };
 }
 
+// 에이전트 추천 레이어: 엔진이 이미 계산한 사실(분류·경고)만 보고 자율등급을 "추천"한다.
+// 상한을 넘는 추천은 절대 하지 않는다 — 상한이 2면 추천도 2로 고정.
+function recommendAutonomyLevel(r: MaterialRecommendation, ceiling: AutonomyCeiling): AutonomyRecommendation {
+  if (ceiling === 2) {
+    return { level: 2, rationale: REASON_NARRATIVE.CEILING_LOCKED, code: "CEILING_LOCKED" };
+  }
+  const hasHighWarning = r.warnings.some((w) => w.severity === "HIGH");
+  if (r.classification === "EXISTING_SHORTAGE" && !hasHighWarning) {
+    return { level: 4, rationale: REASON_NARRATIVE.STABLE_PATTERN_L4, code: "STABLE_PATTERN_L4" };
+  }
+  if (r.classification === "SCENARIO_CAUSED_SHORTAGE") {
+    return { level: 2, rationale: REASON_NARRATIVE.NOVEL_SHORTAGE_L2, code: "NOVEL_SHORTAGE_L2" };
+  }
+  return { level: 2, rationale: REASON_NARRATIVE.WARNING_PRESENT_L2, code: "WARNING_PRESENT_L2" };
+}
+
 export function buildProcurementShadow(
   recommendations: MaterialRecommendation[],
   scenarioLabel: string,
   now: string,
+  overrides: Record<string, AutonomyLevel> = {},
 ): ProcurementShadowReport {
   const actionable = recommendations.filter((r) => r.classification !== "NO_INCREMENTAL_ORDER");
 
   const chains: ProcurementReasoningChain[] = actionable.map((r) => {
     const m = r.material;
     const ceiling = autonomyCeiling(r);
+    const agentRecommendation = recommendAutonomyLevel(r, ceiling.level);
+    const humanOverride = overrides[m.id] ?? null;
+    // 안전 백스탑: 사람 override든 에이전트 추천이든 상한을 절대 넘지 못한다.
+    const effectiveAutonomy = Math.min(humanOverride ?? agentRecommendation.level, ceiling.level) as AutonomyLevel;
     // EXISTING_SHORTAGE(이벤트 없는 위험점검)는 incremental=0이므로 기준 계획의 보충량을 쓴다.
     const proposedQuantity = r.classification === "EXISTING_SHORTAGE"
       ? r.baseline.recommendedInbound
@@ -100,6 +133,7 @@ export function buildProcurementShadow(
 
     const reasonCodes: string[] = [r.classification, ...r.warnings.map((w) => w.code)];
     if (ceiling.code) reasonCodes.push(ceiling.code);
+    reasonCodes.push(agentRecommendation.code);
 
     const leadTimeMissing = m.leadTimeDays == null;
     const supplierMissing = !m.supplierName;
@@ -157,6 +191,8 @@ export function buildProcurementShadow(
           { label: "순부족", value: `${nf.format(r.incrementalOrderQuantity)} ${m.unit}` },
           { label: "발주 권장", value: `${nf.format(proposedQuantity)} ${m.unit}` },
           { label: "자율 상한", value: `L${ceiling.level}` },
+          { label: "에이전트 추천", value: `L${agentRecommendation.level}` },
+          { label: "적용 등급", value: `L${effectiveAutonomy}${humanOverride ? " (사람 확정)" : " (에이전트 추천)"}` },
         ],
       },
     ];
@@ -166,12 +202,13 @@ export function buildProcurementShadow(
     if (leadBlocked) {
       verdict = "BLOCKED";
       verdictText = `${leadTimeMissing ? "리드타임" : "승인 공급사"} 미등록으로 자동 판단 보류 — 사람이 마스터를 정비해야 합니다.`;
-    } else if (ceiling.level === 4) {
+    } else if (effectiveAutonomy === 4) {
       verdict = "WOULD_AUTO_RECEIVE";
-      verdictText = `자동모드였다면 → ${nf.format(proposedQuantity)}${m.unit} 잠정입고(격리) 실행했을 것.`;
+      verdictText = `자동모드였다면 → ${nf.format(proposedQuantity)}${m.unit} 잠정입고(격리) 실행했을 것 (${humanOverride ? "사람이 L4 확정" : "에이전트 추천 L4"}).`;
     } else {
       verdict = "WOULD_PROPOSE";
-      verdictText = `자동모드였다면 → ${nf.format(proposedQuantity)}${m.unit} 발주 제안했을 것 (${ceiling.reason}: 사람 승인 필요).`;
+      const proposeReason = ceiling.reason ?? (humanOverride === 2 ? "사람이 L2로 확정" : agentRecommendation.rationale);
+      verdictText = `자동모드였다면 → ${nf.format(proposedQuantity)}${m.unit} 발주 제안했을 것 (${proposeReason}: 사람 승인 필요).`;
     }
 
     return {
@@ -184,6 +221,9 @@ export function buildProcurementShadow(
       urgencyDay: r.safeOrderByDay,
       autonomyCeiling: ceiling.level,
       ceilingReason: ceiling.reason,
+      autonomyRecommendation: agentRecommendation,
+      autonomyOverride: humanOverride,
+      effectiveAutonomy,
       reasonCodes,
       proposedQuantity,
       supplierName: m.supplierName ?? null,
