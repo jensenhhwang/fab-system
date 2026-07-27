@@ -129,7 +129,7 @@ docs/agents/procurement-master.md
 | 단계 | 내용 | 상태 |
 |---|---|---|
 | MVP-0 | 그림자모드 read-only. 실제 발주·입고 없음. `agentDecisions` 저장도 안 함(온디맨드 계산만) | ✅ 구현 (`PROCUREMENT_SHADOW_V0`) |
-| MVP-1 | What-if 시나리오를 입력으로 연결(`procurementActiveScenario`). 자율등급을 엔진(상한)·에이전트(추천)·사람(확정, `agentAutonomyOverrides`) 3단으로 분리해 영속화 + UI | ✅ 구현 완료(§6) — 단, 라이브 데모 자재 48건이 전부 하드상한 L2라 L2/L4 선택 UI 자체는 아직 실데이터로 시각 확인 못 함(API로는 안전백스탑 검증됨) |
+| MVP-1 | What-if 시나리오를 입력으로 연결(`procurementActiveScenario`). 자율등급을 엔진(상한)·에이전트(추천)·사람(확정, `agentAutonomyOverrides`) 3단으로 분리해 영속화 + UI | ✅ 구현 완료(§6) — 초기 검증 때 라이브 자재가 전부 하드상한 L2로 보였는데, 확인해보니 `autonomyCeiling()`이 `procurementAlternatives`(주 공급사 제외 목록)를 전체 공급사 수로 착각해 승인 공급사 정확히 2곳인 자재도 단일소싱으로 오판하던 실제 버그였음(수정 완료). 수정 후 CSM-001로 L4 상한 카드가 실제로 렌더 → L4 버튼 클릭 → 판정 갱신 → 새로고침 후 영속 → 추천대로 리셋까지 전 구간 실제 클릭으로 확인 |
 | MVP-2 | L3 자재는 `purchaseOrderDrafts` 자동 생성·승인. L4 자재는 잠정입고(QUARANTINE 로트)까지 자동 실행 + 원클릭 롤백. 위험물/단일소싱은 계속 L2 고정 | ❌ 미착수 |
 | MVP-3 | 발주↔실입고 링크·실측 리드타임 원장 적재 → 자동 승급/강등 | ❌ 미착수 |
 | MVP-4 (별도 트랙) | 외부 ERP/EDI 연동 — `integrationOutbox` 스텁을 실제 공급사 전송으로 교체. 자율 등급과 무관하게 이 연동 전까지는 L4여도 발주가 "OUTBOXED"에서 멈춘다 | ❌ 미착수, 연동 주체 미정 |
