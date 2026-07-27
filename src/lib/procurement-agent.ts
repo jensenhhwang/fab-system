@@ -88,8 +88,10 @@ function autonomyCeiling(r: MaterialRecommendation): { level: AutonomyCeiling; r
   if (cat === "GAS" || cat === "CHM") {
     return { level: 2, reason: "위험물(가스·케미컬) 자동입고 금지", code: "HAZMAT_AUTONOMY_CAP" };
   }
+  // procurementAlternatives는 "주 공급사를 제외한" 대체 공급사 목록이다(buildProcurementSummary).
+  // 즉 승인 공급사가 1곳뿐이면 alternatives는 0건 — 단일소싱 판정은 <=1이 아니라 0건이어야 한다.
   const alt = r.material.procurementAlternatives ?? [];
-  if (alt.length <= 1) {
+  if (alt.length === 0) {
     return { level: 2, reason: "단일 승인 공급사 — 자동입고 제한", code: "SINGLE_SOURCE_CAP" };
   }
   return { level: 4, reason: null, code: null };

@@ -149,6 +149,22 @@ assert.equal(stable.effectiveAutonomy, 4, "override 없어도 추천대로 적�
 assert.equal(stable.verdict, "WOULD_AUTO_RECEIVE");
 assert.ok(stable.verdictText.includes("에이전트 추천 L4"), "판정문구에 추천 출처 표기");
 
+// ── 회귀: procurementAlternatives는 "주 공급사 제외" 목록이라, 승인 공급사 정확히 2곳(대체 1건)이면
+// 이미 단일소싱이 아니다. 라이브에서 발견된 버그(alt.length<=1로 잘못 체크 → 2공급사도 L2로 오판)의 재발 방지. ──
+const twoSupplierRec = rec({
+  material: mat({
+    id: "CSM-001", code: "CSM-001", name: "CMP 슬러리", category: "CSM", unit: "캔",
+    procurementAlternatives: [{ supplierName: "대체공급사", standardDays: 20, emergencyOrderAllowed: false }],
+  }),
+  classification: "EXISTING_SHORTAGE",
+  baseline: { grossRequirement: 0, recommendedInbound: 100, firstNeedDay: 5 },
+  incrementalOrderQuantity: 0,
+  policyAdjustedOrderQuantity: 0,
+  warnings: [],
+});
+const twoSupplierChain = buildProcurementShadow([twoSupplierRec], "위험 점검", now).chains[0];
+assert.equal(twoSupplierChain.autonomyCeiling, 4, "승인 공급사 2곳(대체 1건)이면 단일소싱 아님 → L4 상한");
+
 // ── 사람 override: 에이전트가 L2 추천했어도 사람이 L4로 확정하면 상한 이내에서 반영 ──
 const overrideUp = buildProcurementShadow(recs, "M20 HBM +20%", now, { "CSM-004": 4 });
 const csmOverridden = overrideUp.chains.find((c) => c.materialId === "CSM-004")!;
