@@ -28,6 +28,7 @@
     "test:twin-state": "tsx scripts/test-twin-state.ts",
     "test:twin-engine": "tsx scripts/test-twin-engine.ts",
     "test:twin-calibration": "tsx scripts/test-twin-calibration.ts",
+    "test:twin-equilibrium": "tsx scripts/test-twin-equilibrium.ts",
     "test:twin-api": "tsx scripts/test-twin-api.ts",
     "test:material-copilot": "tsx scripts/test-material-copilot.ts",
     "test:what-if-copilot": "tsx scripts/test-what-if-copilot.ts",

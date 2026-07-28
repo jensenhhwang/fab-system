@@ -213,8 +213,10 @@ export async function advanceAggregateWip(fabId: FabId, product: Product): Promi
   const totalSteps = visits.length;
   if (totalSteps === 0) return { advanced: 0, completed: 0, advancedFromStepIndex: {} };
 
+  // 라이브 WIP 원장은 MODELED_FOUP 코호트로 만들어지는데, 진행기가 옛 이름 AGGREGATE만
+  // 조회해 실제로는 아무 로트도 진행·소모되지 않던 버그(Day15 발견). 두 코호트 모두 진행한다.
   const due = await waferLots.find({
-    fabId, product, cohort: "AGGREGATE", status: "IN_PROGRESS",
+    fabId, product, cohort: { $in: ["AGGREGATE", "MODELED_FOUP"] }, status: "IN_PROGRESS",
     lastEventAt: { $lte: new Date(Date.now() - AUTO_ADVANCE_INTERVAL_MS) },
   }).limit(AGGREGATE_ADVANCE_BATCH_MAX).toArray();
   if (due.length === 0) return { advanced: 0, completed: 0, advancedFromStepIndex: {} };

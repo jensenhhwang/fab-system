@@ -64,6 +64,10 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
     const adv = await advanceAggregateWip("M20", "HBM");
     const { stepConsumption, totalSteps } = await getStepConsumption();
     const simDays = simDaysPerTick(M20_CYCLE_DAYS, totalSteps);
+    // 소모는 tick당 simDays만큼 가속되는데(1 sim-day ≈ 6.7 실초), 리드타임을 실벽시계 day로
+    // 잡으면 재고는 초 단위로 마르는데 발주는 실제 며칠 뒤 도착해 영구 결품이 된다.
+    // 발주 리드타임도 같은 가속 sim-time으로 환산한다.
+    const simMsPerDay = simDays > 0 ? state.tickIntervalMs / simDays : 86_400_000;
     const burn = computeBurn(adv.advancedFromStepIndex, stepConsumption);
 
     const burnedByMaterial: Record<string, number> = {};
@@ -103,7 +107,7 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
         const leadTimeDays = getBaseLeadTime(mat.category);
         await twinPurchaseOrders.insertOne({
           _id: randomUUID(), materialId, qty: plan.qty, orderedAt: now,
-          etaAt: new Date(now.getTime() + leadTimeDays * 86_400_000), leadTimeDays, status: "ORDERED",
+          etaAt: new Date(now.getTime() + leadTimeDays * simMsPerDay), leadTimeDays, status: "ORDERED",
         });
         newPOs++;
       }
