@@ -3,7 +3,8 @@ import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 import { collections } from "@/lib/db";
 import { M20_MATERIAL_CONSUMPTION } from "@/lib/material-consumption";
 import { runProcurementShadow } from "@/lib/procurement-agent-server";
-import { getProcurementVoice } from "@/lib/procurement-voice-server";
+import { getLatestControlTowerAIEpisode } from "@/lib/control-tower-episode-server";
+import { CONTROL_TOWER_AI_MODEL } from "@/lib/control-tower-openai-server";
 import {
   CONTROL_TOWER_PERSONAS,
   CONTROL_TOWER_ROLE_ORDER,
@@ -26,7 +27,7 @@ export async function GET() {
     const { twinEngineState, twinBurnEvents, twinPurchaseOrders, inventory, materials, workOrders, waferLots } = await collections();
     const materialIds = [...new Set(M20_MATERIAL_CONSUMPTION.map((r) => r.materialId))];
 
-    const [state, matDocs, invDocs, recentBurns, totalBurnEvents, openPOs, recentPOs, wipCount, queuedWO] = await Promise.all([
+    const [state, matDocs, invDocs, recentBurns, totalBurnEvents, openPOs, recentPOs, wipCount, queuedWO, latestAI] = await Promise.all([
       twinEngineState.findOne({ _id: "singleton" }),
       materials.find({ _id: { $in: materialIds } }).toArray(),
       inventory.find({ materialId: { $in: materialIds } }).toArray(),
@@ -36,6 +37,7 @@ export async function GET() {
       twinPurchaseOrders.find({}).sort({ orderedAt: -1 }).limit(8).toArray(),
       waferLots.countDocuments({ fabId: "M20", product: "HBM", cohort: { $in: ["AGGREGATE", "MODELED_FOUP"] }, status: "IN_PROGRESS" }),
       workOrders.countDocuments({ status: { $in: ["QUEUED", "MATERIAL_WAIT"] } }),
+      getLatestControlTowerAIEpisode(),
     ]);
 
     const matById = new Map(matDocs.map((m) => [m._id, m]));
@@ -72,20 +74,13 @@ export async function GET() {
     const topChain = shadow.chains[0] ?? null;
     let top: NonNullable<ProcurementJudgmentView["top"]> | null = null;
     if (topChain) {
-      // 숫자·판정은 결정론 엔진(topChain) 그대로. 김구매 목소리(각색)만 LLM으로.
-      const voice = await getProcurementVoice({
-        materialName: topChain.materialName,
-        materialCode: topChain.materialCode,
-        verdict: topChain.verdict,
-        verdictText: topChain.verdictText,
-      });
       top = {
         materialCode: topChain.materialCode,
         materialName: topChain.materialName,
         verdict: topChain.verdict,
         verdictText: topChain.verdictText,
-        voice: voice.text,
-        voiceSource: voice.source,
+        voice: topChain.verdictText,
+        voiceSource: "FALLBACK",
       };
     }
     judgment = {
@@ -122,7 +117,7 @@ export async function GET() {
       const p = CONTROL_TOWER_PERSONAS[role];
       return {
         role, name: p.name, team: p.team, color: p.color, remit: p.remit,
-        consciousness: p.consciousness, roadmapNote: p.roadmapNote,
+        consciousness: p.consciousness, judgmentMode: p.judgmentMode, roadmapNote: p.roadmapNote,
         watching: watching[role] ?? [],
         judgment: role === "PROCUREMENT" ? judgment : null,
       };
@@ -168,6 +163,11 @@ export async function GET() {
         tickIntervalMs: state?.tickIntervalMs ?? 5000,
         totalBurnEvents,
         openPOs: openPOs.length,
+      },
+      ai: {
+        configured: Boolean(process.env.OPENAI_API_KEY),
+        model: CONTROL_TOWER_AI_MODEL,
+        episode: latestAI,
       },
       agents,
       events: events.slice(0, 18),

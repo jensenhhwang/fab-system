@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ControlTowerView, ControlTowerAgentView, TwinEventView, AgentWatchMetric } from "@/lib/control-tower-live";
+import type {
+  AgentWatchMetric,
+  ControlTowerAIEpisodeView,
+  ControlTowerAgentView,
+  ControlTowerRole,
+  ControlTowerView,
+  TwinEventView,
+} from "@/lib/control-tower-live";
 
 const EVENT_STYLE: Record<TwinEventView["type"], { color: string; bg: string; label: string }> = {
   BURN: { color: "#777", bg: "#F1F1F0", label: "소모" },
@@ -23,6 +30,7 @@ function relTime(iso: string | null, now: number): string {
 
 function HeartbeatStrip({ view, now, pulse }: { view: ControlTowerView; now: number; pulse: boolean }) {
   const hb = view.heartbeat;
+  const ai = view.ai ?? { configured: false, model: "—", episode: null };
   const running = hb.status === "RUNNING";
   const sinceTick = hb.lastTickAt ? (now - new Date(hb.lastTickAt).getTime()) : 0;
   const nextIn = Math.max(0, Math.ceil((hb.tickIntervalMs - (sinceTick % hb.tickIntervalMs)) / 1000));
@@ -37,6 +45,14 @@ function HeartbeatStrip({ view, now, pulse }: { view: ControlTowerView; now: num
       {running && <span className="text-xs text-[#888]">다음 tick <b className="text-[#EA002C]">{nextIn}초</b></span>}
       <span className="text-xs text-[#888]">누적 소모 <b className="text-[#141413]">{hb.totalBurnEvents.toLocaleString("ko-KR")}</b></span>
       <span className="text-xs text-[#888]">입고 중 PO <b className="text-[#141413]">{hb.openPOs}</b></span>
+      <span
+        className="rounded-full px-2 py-1 text-[10px] font-extrabold"
+        style={ai.configured
+          ? { background: "#EEF4FF", color: "#3538CD" }
+          : { background: "#FFF0F2", color: "#C01048" }}
+      >
+        OpenAI {ai.configured ? `연결 · ${ai.model}` : "미연결"}
+      </span>
       <span className="ml-auto flex items-center gap-1.5 text-[11px] font-bold text-[#00875A]">
         <span className="h-2 w-2 rounded-full bg-[#00875A]" /> LIVE · 3초 갱신
       </span>
@@ -44,8 +60,28 @@ function HeartbeatStrip({ view, now, pulse }: { view: ControlTowerView; now: num
   );
 }
 
-function AgentCard({ agent }: { agent: ControlTowerAgentView }) {
+const SEVERITY_STYLE = {
+  NORMAL: { label: "정상 관찰", color: "#00875A", background: "#E6FAF1" },
+  ATTENTION: { label: "주의 판단", color: "#B54708", background: "#FFFAEB" },
+  CRITICAL: { label: "중요 판단", color: "#C01048", background: "#FFF1F3" },
+};
+
+const ROLE_NAMES: Record<ControlTowerRole, string> = {
+  PROCUREMENT: "김구매",
+  MATERIALS: "이자재",
+  PRODUCTION: "최생산",
+  LOGISTICS: "박물류",
+};
+
+function AgentCard({
+  agent,
+  episode,
+}: {
+  agent: ControlTowerAgentView;
+  episode: ControlTowerAIEpisodeView | null;
+}) {
   const active = agent.consciousness === "ACTIVE";
+  const aiJudgment = episode?.judgments.find((judgment) => judgment.role === agent.role) ?? null;
   return (
     <div className="rounded-2xl border bg-white p-4" style={{ borderColor: active ? agent.color : "var(--border)", boxShadow: "var(--shadow-1)" }}>
       <div className="flex items-start justify-between gap-2">
@@ -61,7 +97,7 @@ function AgentCard({ agent }: { agent: ControlTowerAgentView }) {
         <span className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-extrabold"
           style={active ? { background: "#E6FAF1", color: "#00875A" } : { background: "#F3F0EE", color: "#999" }}>
           <span className="h-1.5 w-1.5 rounded-full" style={{ background: active ? "#00875A" : "#BBB", animation: active ? "ct-pulse 1.4s infinite" : undefined }} />
-          {active ? "판단 가동" : "관측 전용"}
+          {active ? (agent.judgmentMode === "RULE_LLM" ? "RULE + LLM" : "LLM 판단") : "관측 전용"}
         </span>
       </div>
       <div className="mt-1.5 text-[11px] text-[#888]">{agent.remit}</div>
@@ -76,8 +112,30 @@ function AgentCard({ agent }: { agent: ControlTowerAgentView }) {
         ))}
       </div>
 
-      {/* 판단 (ACTIVE만) */}
-      {agent.judgment ? (
+      {/* OpenAI 공개 판단 */}
+      {aiJudgment ? (
+        <div className="mt-3 rounded-xl border border-dashed p-2.5" style={{ borderColor: agent.color, background: "#FAFAFF" }}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] font-bold text-[#667085]">
+              자동 판단 · {aiJudgment.mode === "RULE_LLM" ? "규칙 근거 포함" : "규칙 엔진 준비 중"}
+            </span>
+            <span
+              className="rounded-full px-1.5 py-0.5 text-[9px] font-extrabold"
+              style={SEVERITY_STYLE[aiJudgment.severity]}
+            >
+              {SEVERITY_STYLE[aiJudgment.severity].label}
+            </span>
+          </div>
+          <div className="mt-1.5 text-xs font-bold leading-5 text-[#141413]">「{aiJudgment.summary}」</div>
+          <div className="mt-1.5 text-[10px] leading-4 text-[#667085]">{aiJudgment.proposedDecision}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            {aiJudgment.evidenceRefs.map((ref) => (
+              <span key={ref} className="rounded bg-[#EEF4FF] px-1.5 py-0.5 font-mono text-[8px] text-[#3538CD]">{ref}</span>
+            ))}
+            <span className="ml-auto text-[8px] text-[#98A2B3]">{aiJudgment.usage.totalTokens.toLocaleString("ko-KR")} tokens</span>
+          </div>
+        </div>
+      ) : agent.role === "PROCUREMENT" && agent.judgment ? (
         <div className="mt-3 rounded-xl border border-dashed p-2.5" style={{ borderColor: agent.color, background: "#FFF7F8" }}>
           <div className="flex items-center gap-1.5">
             <span className="text-[10px] font-bold text-[#999]">방금 판단 · {agent.judgment.scenarioLabel}</span>
@@ -101,12 +159,115 @@ function AgentCard({ agent }: { agent: ControlTowerAgentView }) {
           )}
           <a href="/procurement-cockpit" className="mt-1.5 inline-block text-[11px] font-bold text-[#0078D4]">추론 사슬 전체 보기 →</a>
         </div>
+      ) : episode?.status === "RUNNING" ? (
+        <div className="mt-3 flex items-center gap-2 rounded-xl border border-dashed p-2.5 text-[11px] text-[#667085]" style={{ borderColor: agent.color }}>
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: agent.color }} />
+          운영 신호를 읽고 판단 중
+        </div>
       ) : (
         <div className="mt-3 rounded-xl border border-dashed p-2.5 text-[11px] text-[#aaa]" style={{ borderColor: "var(--border)" }}>
-          {agent.roadmapNote ?? "판단 로직 준비 중"}
+          {agent.roadmapNote ?? "첫 자동 판단을 기다리는 중"}
         </div>
       )}
     </div>
+  );
+}
+
+function AIConversation({ view }: { view: ControlTowerView }) {
+  const ai = view.ai ?? { configured: false, model: "—", episode: null };
+  const episode = ai.episode;
+  return (
+    <section className="overflow-hidden rounded-2xl border bg-white" style={{ borderColor: "var(--border)", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3" style={{ borderColor: "var(--border)" }}>
+        <div>
+          <div className="text-sm font-extrabold text-[#141413]">에이전트 공개 판단 · 대화</div>
+          <div className="mt-0.5 text-[10px] text-[#999]">숨은 사고과정이 아닌 결론·근거·질문·답변만 기록됩니다.</div>
+        </div>
+        {episode && (
+          <div className="text-right text-[10px] text-[#999]">
+            <div>{new Date(episode.snapshot.capturedAt).toLocaleString("ko-KR")} Snapshot</div>
+            <div className="mt-0.5">{episode.usage.totalTokens.toLocaleString("ko-KR")} tokens · {episode.model}</div>
+          </div>
+        )}
+      </div>
+
+      {!ai.configured && (
+        <div className="px-5 py-8 text-center text-xs text-[#C01048]">서버에 OPENAI_API_KEY를 연결하면 Twin이 자동 판단을 시작합니다.</div>
+      )}
+      {ai.configured && !episode && (
+        <div className="px-5 py-8 text-center text-xs text-[#667085]">
+          Twin의 다음 점검에서 첫 운영 Snapshot을 만들고 네 담당자를 자동으로 깨웁니다.
+        </div>
+      )}
+      {episode?.status === "RUNNING" && (
+        <div className="flex items-center justify-center gap-2 px-5 py-8 text-xs font-bold text-[#3538CD]">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-[#4F46E5]" />
+          네 담당자가 독립적으로 판단하고 있습니다.
+        </div>
+      )}
+      {episode && (episode.status === "FAILED" || episode.status === "PARTIAL") && (
+        <div className="mx-5 mt-4 rounded-xl border border-[#FDA29B] bg-[#FFF5F4] px-4 py-3 text-xs text-[#B42318]">
+          <b>{episode.status === "FAILED" ? "자동 판단 실패" : "일부 판단만 완료"}</b>
+          <span className="ml-2">{episode.errorMessage ?? "OpenAI 응답을 완성하지 못했습니다."}</span>
+        </div>
+      )}
+
+      {episode && episode.judgments.length > 0 && (
+        <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-4">
+          {episode.judgments.map((judgment) => (
+            <div key={judgment.role} className="rounded-xl border border-[#E4E7EC] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-extrabold text-[#344054]">{ROLE_NAMES[judgment.role]}</span>
+                <span className="rounded-full px-1.5 py-0.5 text-[8px] font-extrabold" style={SEVERITY_STYLE[judgment.severity]}>
+                  {SEVERITY_STYLE[judgment.severity].label}
+                </span>
+              </div>
+              <p className="mt-2 text-xs font-bold leading-5 text-[#141413]">{judgment.summary}</p>
+              <p className="mt-2 text-[10px] leading-4 text-[#667085]">{judgment.proposedDecision}</p>
+              {judgment.questionForRole && judgment.question && (
+                <div className="mt-2 rounded-lg bg-[#F8F9FC] px-2 py-1.5 text-[10px] leading-4 text-[#475467]">
+                  <b>→ {ROLE_NAMES[judgment.questionForRole]}</b> {judgment.question}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {episode && episode.replies.length > 0 && (
+        <div className="border-t px-5 py-4" style={{ borderColor: "var(--border)" }}>
+          <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.12em] text-[#98A2B3]">Public replies</div>
+          <div className="space-y-2">
+            {episode.replies.map((reply, index) => (
+              <div key={`${reply.speakerRole}-${reply.replyToRole}-${index}`} className="flex items-start gap-3 rounded-xl bg-[#F9FAFB] px-3 py-2.5">
+                <span className="shrink-0 text-[10px] font-extrabold text-[#344054]">
+                  {ROLE_NAMES[reply.speakerRole]} → {ROLE_NAMES[reply.replyToRole]}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs leading-5 text-[#475467]">{reply.message}</p>
+                  <p className="mt-1 text-[10px] font-semibold text-[#667085]">수정 결정 · {reply.revisedDecision}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {episode?.conclusion && (
+        <div className="border-t bg-[#FCFCFD] px-5 py-4" style={{ borderColor: "var(--border)" }}>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-[#F2F4F7] px-2 py-1 text-[9px] font-extrabold text-[#475467]">
+              {episode.conclusion.alignment === "ALIGNED" ? "의견 정렬" : episode.conclusion.alignment === "CONDITIONAL" ? "조건부 정렬" : "이견 유지"}
+            </span>
+            <span className="rounded-full bg-[#FFF0F2] px-2 py-1 text-[9px] font-extrabold text-[#C01048]">READ ONLY</span>
+          </div>
+          <p className="mt-2 text-sm font-bold leading-6 text-[#141413]">{episode.conclusion.summary}</p>
+          {episode.conclusion.openIssues.length > 0 && (
+            <p className="mt-2 text-[10px] leading-4 text-[#B54708]">남은 확인 · {episode.conclusion.openIssues.join(" · ")}</p>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -182,7 +343,7 @@ export default function ControlTowerLiveClient() {
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-extrabold text-[#141413]">관제탑 라이브 <span className="text-sm font-bold text-[#999]">Control Tower Live</span></h1>
-        <p className="mt-1 text-sm text-[#888]">살아있는 Twin이 재고를 소모·보충하고, 4명의 담당이 자기 신호를 지켜봅니다. 지금 판단하는 건 김구매(발주) 하나뿐 — 나머지는 관측만 합니다.</p>
+        <p className="mt-1 text-sm text-[#888]">살아있는 Twin의 의미 있는 변화가 네 담당자를 자동으로 깨웁니다. 각자 판단하고 질문하며, 공개 대화와 읽기 전용 결론을 남깁니다.</p>
       </div>
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">{error}</div>}
@@ -193,10 +354,11 @@ export default function ControlTowerLiveClient() {
           <HeartbeatStrip view={view} now={now} pulse={pulse} />
           <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
             <div className="grid gap-4 sm:grid-cols-2">
-              {view.agents.map((a) => <AgentCard key={a.role} agent={a} />)}
+              {view.agents.map((a) => <AgentCard key={a.role} agent={a} episode={view.ai?.episode ?? null} />)}
             </div>
             <EventFeed events={view.events} now={now} />
           </div>
+          <AIConversation view={view} />
         </>
       )}
     </div>

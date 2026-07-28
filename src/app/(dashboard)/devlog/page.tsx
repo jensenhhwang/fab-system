@@ -129,6 +129,14 @@ const LOGS = [
     "입고 관제 화면에서 CSM-016~019(Edge Trim Blade·Dicing Blade·Dicing UV Tape·KGD Die Tray)가 정보 없이 비는 원인 진단 — RATE_TBD 미보정 스텁이라 원단위·재고·공급사가 전부 비어있었음을 확인, 계획 가정치(CSM_BACKEND_PLANNING_V0)로 원단위·공급사(Disco·Peak International)·재고 포지션을 idempotent 마이그레이션으로 채움",
     "docs/agents/ 폴더 신설, PROCUREMENT 에이전트 정식 설계 문서(procurement-master.md) 작성 — 레거시 M20 파일럿 에이전트(WO 트리거·agentDecisions 영속)와 신규 그림자 에이전트(화면 트리거·미영속)가 서로 다른 두 시스템임을 명시하고, '그림자모드는 MVP-0 시작점이지 종착점이 아니다'로 경계를 MVP 임시제약과 다른 에이전트 역할분담으로 재구성 — 이 틀로 WMS·MES·PROCESS 에이전트 문서를 다음 세션에서 이어 작성 예정",
   ] },
+  { day: 17, date: "2026-07-28", label: "관제탑 라이브 4인 OpenAI 자동 판단", color: "#7C3AED", items: [
+    "별도 회의실 없이 기존 Control Tower Live에 김구매·이자재·최생산·박물류 4인의 판단과 대화 기록을 통합",
+    "김구매는 기존 결정론적 발주 판단을 LLM이 설명하는 RULE_LLM, 나머지 3인은 향후 규칙 엔진을 교체 연결할 수 있는 LLM_ONLY 모드로 구현",
+    "버튼 없이 Twin의 의미 있는 상태 변화에 4인 독립 판단→최대 2건의 담당자 답변→관제 결론을 자동 생성하고, 단순 수량 변화·화면 폴링에는 중복 호출하지 않도록 의미 스냅샷을 정규화",
+    "OpenAI Responses API Structured Outputs·근거 참조 검증·store:false·도구 미제공을 적용해 운영 원장을 변경하지 않는 읽기 전용 자문으로 제한",
+    "MongoDB 에피소드에 실행 lease·상태 중복 제거·재시도 간격·토큰 사용량을 기록하고 UI에 모델·연결 상태·4인 발언·질의응답·결론·오류를 표시",
+    "TypeScript·ESLint·Next.js production build·Playwright E2E 통과, 자동 스케줄러 호출 및 동일 상태 1회 실행 검증 — API 키 인증은 성공했으나 계정 크레딧 부족(insufficient_quota)으로 실제 답변 생성은 결제 후 활성화 예정",
+  ] },
 ];
 
 export default function DevlogPage() {

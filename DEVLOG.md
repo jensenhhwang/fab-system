@@ -83,4 +83,16 @@
 
 ---
 
+## Day 17 · 2026-07-28 · 관제탑 라이브 4인 OpenAI 자동 판단
+
+- 별도 회의실 없이 기존 `Control Tower Live`에 김구매·이자재·최생산·박물류 4인의 판단과 대화 기록을 통합
+- 김구매는 기존 결정론적 발주 판단을 LLM이 설명하는 `RULE_LLM`, 나머지 3인은 향후 규칙 엔진을 교체 연결할 수 있는 `LLM_ONLY` 모드로 구현
+- 버튼을 누르지 않아도 Twin의 의미 있는 상태가 바뀌면 4인 독립 판단 → 최대 2건의 담당자 답변 → 관제 결론이 자동 생성되며, 수량 변화나 화면 폴링만으로는 중복 호출하지 않도록 스냅샷을 정규화
+- OpenAI Responses API의 Structured Outputs, 근거 참조 검증, `store: false`, 도구 미제공을 적용해 운영 원장을 변경하지 않는 읽기 전용 자문으로 제한
+- MongoDB 에피소드에 실행 lease·상태 중복 제거·재시도 간격·토큰 사용량을 기록하고, UI에 모델·연결 상태·담당자별 발언·질의응답·결론·오류를 표시
+- TypeScript·ESLint·Next.js production build·Playwright E2E를 통과하고 자동 스케줄러 호출 및 동일 상태 1회 실행을 검증
+- 등록한 API 키의 인증은 성공했으나 OpenAI API 계정의 크레딧 부족(`insufficient_quota`)으로 실제 답변 생성은 대기 상태 — ChatGPT 구독과 별도로 API 결제/크레딧 충전 필요
+
+---
+
 ## Next · 입고 시뮬레이션 (`/simulation`) — VISION 원칙 1번

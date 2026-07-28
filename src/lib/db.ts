@@ -6,6 +6,7 @@ import type {
   MaterialUomLockV2Doc,
   MaterialUomRuleV2Doc,
 } from "@/lib/inventory-v2-contract";
+import type { ControlTowerAIEpisodeDoc } from "@/lib/control-tower-live";
 
 // MongoDB(Atlas) 네이티브 드라이버. TCP 기반이라 Next.js fetch 패치 영향 없음.
 // 서버리스 콜드스타트에서 커넥션을 재사용하도록 클라이언트를 글로벌 캐시.
@@ -1027,6 +1028,7 @@ export async function collections(): Promise<{
   whatIfCopilotActions: Collection<WhatIfCopilotActionDoc>;
   whatIfCopilotBriefings: Collection<WhatIfCopilotBriefingDoc>;
   aiInvocations: Collection<AIInvocationDoc>;
+  controlTowerAIEpisodes: Collection<ControlTowerAIEpisodeDoc>;
   marketSources: Collection<MarketSourceDoc>;
   marketIngestionRuns: Collection<MarketIngestionRunDoc>;
   marketRawArtifacts: Collection<MarketRawArtifactDoc>;
@@ -1101,6 +1103,7 @@ export async function collections(): Promise<{
     whatIfCopilotActions: db.collection<WhatIfCopilotActionDoc>("whatIfCopilotActions"),
     whatIfCopilotBriefings: db.collection<WhatIfCopilotBriefingDoc>("whatIfCopilotBriefings"),
     aiInvocations: db.collection<AIInvocationDoc>("aiInvocations"),
+    controlTowerAIEpisodes: db.collection<ControlTowerAIEpisodeDoc>("controlTowerAIEpisodes"),
     marketSources: db.collection<MarketSourceDoc>("marketSources"),
     marketIngestionRuns: db.collection<MarketIngestionRunDoc>("marketIngestionRuns"),
     marketRawArtifacts: db.collection<MarketRawArtifactDoc>("marketRawArtifacts"),

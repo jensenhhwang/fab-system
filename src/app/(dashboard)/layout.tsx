@@ -11,6 +11,7 @@ import { ROLE_COLOR, ROLE_LABEL, type DemoRole } from "@/lib/demo-accounts";
 const NAV = [
   { group: "오늘의 운영", items: [
     { href: "/", label: "Control Tower" },
+    { href: "/control-tower-live", label: "관제탑 라이브" },
     { href: "/campus", label: "WMS·3FAB 3D Twin" },
     { href: "/daily-control", label: "생산·자재 연동" },
   ] },
