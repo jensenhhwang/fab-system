@@ -57,7 +57,14 @@ export type ProcurementJudgmentView = {
   wouldAutoReceive: number;
   wouldPropose: number;
   blocked: number;
-  top: { materialCode: string; materialName: string; verdict: string; verdictText: string } | null;
+  top: {
+    materialCode: string;
+    materialName: string;
+    verdict: string;
+    verdictText: string;
+    voice: string; // 김구매 목소리(LLM 각색). 숫자는 verdictText 그대로.
+    voiceSource: "AI" | "FALLBACK" | "GUARD_FALLBACK";
+  } | null;
 };
 
 export type ControlTowerAgentView = {

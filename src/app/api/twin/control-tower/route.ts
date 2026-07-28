@@ -3,6 +3,7 @@ import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 import { collections } from "@/lib/db";
 import { M20_MATERIAL_CONSUMPTION } from "@/lib/material-consumption";
 import { runProcurementShadow } from "@/lib/procurement-agent-server";
+import { getProcurementVoice } from "@/lib/procurement-voice-server";
 import {
   CONTROL_TOWER_PERSONAS,
   CONTROL_TOWER_ROLE_ORDER,
@@ -69,13 +70,31 @@ export async function GET() {
     let judgment: ProcurementJudgmentView | null = null;
     const shadow = await runProcurementShadow({});
     const topChain = shadow.chains[0] ?? null;
+    let top: NonNullable<ProcurementJudgmentView["top"]> | null = null;
+    if (topChain) {
+      // 숫자·판정은 결정론 엔진(topChain) 그대로. 김구매 목소리(각색)만 LLM으로.
+      const voice = await getProcurementVoice({
+        materialName: topChain.materialName,
+        materialCode: topChain.materialCode,
+        verdict: topChain.verdict,
+        verdictText: topChain.verdictText,
+      });
+      top = {
+        materialCode: topChain.materialCode,
+        materialName: topChain.materialName,
+        verdict: topChain.verdict,
+        verdictText: topChain.verdictText,
+        voice: voice.text,
+        voiceSource: voice.source,
+      };
+    }
     judgment = {
       scenarioLabel: shadow.scenarioLabel,
       actionable: shadow.summary.actionable,
       wouldAutoReceive: shadow.summary.wouldAutoReceive,
       wouldPropose: shadow.summary.wouldPropose,
       blocked: shadow.summary.blocked,
-      top: topChain ? { materialCode: topChain.materialCode, materialName: topChain.materialName, verdict: topChain.verdict, verdictText: topChain.verdictText } : null,
+      top,
     };
 
     const watching: Record<string, AgentWatchMetric[]> = {

@@ -79,9 +79,23 @@ function AgentCard({ agent }: { agent: ControlTowerAgentView }) {
       {/* 판단 (ACTIVE만) */}
       {agent.judgment ? (
         <div className="mt-3 rounded-xl border border-dashed p-2.5" style={{ borderColor: agent.color, background: "#FFF7F8" }}>
-          <div className="text-[10px] font-bold text-[#999]">방금 판단 · {agent.judgment.scenarioLabel}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold text-[#999]">방금 판단 · {agent.judgment.scenarioLabel}</span>
+            {agent.judgment.top && (
+              <span className="rounded-full px-1.5 py-0.5 text-[9px] font-extrabold"
+                style={agent.judgment.top.voiceSource === "AI" ? { background: "#EEF0FF", color: "#4F46E5" } : { background: "#F1F1F0", color: "#999" }}
+                title={agent.judgment.top.voiceSource === "AI" ? "AI 각색 · 숫자는 엔진 그대로" : "AI 미연결/숫자검증 실패 — 엔진 원문 표시"}>
+                {agent.judgment.top.voiceSource === "AI" ? "🗣 AI 음성" : "엔진 원문"}
+              </span>
+            )}
+          </div>
           {agent.judgment.top ? (
-            <div className="mt-1 text-xs font-bold text-[#141413]">{agent.judgment.top.materialName} — {agent.judgment.top.verdictText}</div>
+            <>
+              <div className="mt-1 text-xs font-bold text-[#141413]">「{agent.judgment.top.voice}」</div>
+              {agent.judgment.top.voiceSource === "AI" && (
+                <div className="mt-1 text-[10px] text-[#aaa]">근거 판정: {agent.judgment.top.verdictText}</div>
+              )}
+            </>
           ) : (
             <div className="mt-1 text-xs text-[#888]">지금 조치가 필요한 자재 없음</div>
           )}
