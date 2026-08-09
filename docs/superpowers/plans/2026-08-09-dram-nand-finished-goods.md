@@ -747,3 +747,17 @@ git commit -m "feat(finished-goods): 3제품 스케일 스트립 + Gb 토글 + �
 - **Placeholder scan:** 각 코드 스텝에 실제 코드/명령/기대출력 포함. Task 5 Step 4는 "요지"로 표기했으나 핵심 변경점 5가지와 교체 코드 골격 제공 — 실행자는 기존 engine.ts를 제품 루프로 감싸면 됨.
 - **Type consistency:** `getProductionConfig(fabId, product)`, `finishedGoodsPerWafer(product)`, `finishedGoodsUnit(product)`, `materialConsumptionFor(product)`, `ACTIVE_PRODUCTION_PRODUCTS` 명칭이 Task 전반에서 일관.
 - **위험지점:** ① M20 회귀(Task 3·5의 회귀 테스트로 방어). ② 자재 이중소모 — 세 제품이 같은 fab 공유 재고를 쓰면 burn/발주가 중복될 수 있어 Task 5에서 발주·도착정산은 material 합집합으로 루프 밖 1회로 고정. ③ tick 성능 — MODELED_WIP_POOL_CAP=3000으로 DRAM/NAND 쓰기량 억제.
+
+---
+
+## 실행 중 아키텍처 변경 (2026-08-09, 검증으로 발견)
+
+계획의 per-lot 시드(Task 4)를 문서 충실 규모(DRAM 17,173 + NAND 18,720)로 실행하니 **틱 1회가 ~7분**이 됐다(원격 DB에 5만건 write). 이는 `foup-wip-master.md §22`가 애초에 M21/M22를 개별 FOUP가 아니라 **step bucket(120·256) 집계**로 설계한 이유다. 사용자 결정으로 **DRAM/NAND를 step-bucket 집계 엔진으로 전환**했다:
+
+- 신규 `src/lib/twin/step-bucket.ts` — `counts[stepIndex]`를 틱마다 한 스텝 시프트(O(스텝수) write). 순수함수(`computeStepAdvance`/`computeStepRelease`/`buildSeedCounts`)는 DB 없이 테스트(`scripts/test-step-bucket.ts`).
+- `wipStepBuckets` 컬렉션(db.ts), config에 `wipMode: "PER_LOT" | "STEP_BUCKET"`(HBM=PER_LOT, DRAM/NAND=STEP_BUCKET).
+- `migrate-fab-wip.ts`는 per-lot 대신 step-bucket을 시드(+기존 per-lot 로트 정리).
+- engine.ts 제품 루프가 `wipMode`로 분기.
+- 결과: 틱이 초~분 단위로 단축, DRAM/NAND 완제품 정상 적립(검증: DRAM 7.98M CHIP·NAND 6.56M DIE, 브라우저 렌더 확인).
+
+부수 결정: 완제품 창고 WH-FG01이 HBM 단일 기준(855,563)이라 3제품 공유 시 즉시 CAPACITY_OVER → 20,000,000으로 상향(`migrate-finished-goods-capacity.ts`). ⚠️ 혼합 단위(STACK+CHIP+DIE 합산)는 알려진 단순화 — **Gb 정규화 용량**이 후속 과제. 자재 서킷브레이커의 대량 차단(3제품이 공유 자재 소모)은 사용자 결정으로 현실적 동작으로 유지.
