@@ -13,6 +13,13 @@ export const M20_DOWNSTREAM_WIP_EQUIVALENT = 2_340;
 export const M20_END_TO_END_WIP_EQUIVALENT = 16_380;
 export const M20_WAFERS_PER_FOUP = 25;
 
+// docs/foup-wip-master.md §M21 — DRAM. Occupied FOUP = wafer/FOUP 구간 70일 × 245.3 lots/day.
+export const M21_DAILY_LOT_RELEASE = 245.3;
+export const M21_TARGET_OCCUPIED_FOUP = 17_173;
+// docs/foup-wip-master.md §M22 — NAND. Occupied FOUP = wafer/FOUP 구간 130일 × 144 lots/day.
+export const M22_DAILY_LOT_RELEASE = 144;
+export const M22_TARGET_OCCUPIED_FOUP = 18_720;
+
 const DAY_MS = 86_400_000;
 
 export type FoupFleetProjection = {

@@ -23,6 +23,30 @@ export const M20_HBM_OUTPUT_MODEL = {
   assemblyYield: 0.90,
 } as const;
 
+// M21-DDR5-16Gb-V1 완제품 환산. 값은 docs/foup-wip-master.md §M21·§14에서 연동
+// (759 양품 die/wafer · 98% 조립수율 · 적층 없음 = 1 die 1 package). capacityGbPerUnit만 문서밖 modeled.
+export const M21_DRAM_OUTPUT_MODEL = {
+  modelProduct: "M21-DDR5-16Gb-V1",
+  capacityGbPerUnit: 16, // MODELED (문서 미기재 — DDR5 16Gb 가정)
+  knownGoodDiesPerWafer: 759, // foup-wip-master.md §M21 수량보존
+  assemblyYield: 0.98,
+  unit: "CHIP" as const,
+} as const;
+
+// M22-NAND321L-1Tb-TLC 완제품 환산. 값은 docs/foup-wip-master.md §M22·§14에서 연동
+// (1,249 양품 die/wafer · 96% 조립수율). native는 good die 단위(사용자 결정).
+export const M22_NAND_OUTPUT_MODEL = {
+  modelProduct: "M22-NAND321L-1Tb-TLC",
+  capacityGbPerUnit: 1_024, // MODELED (문서 미기재 — 1Tb TLC die 가정)
+  knownGoodDiesPerWafer: 1_249, // foup-wip-master.md §M22 수량보존
+  assemblyYield: 0.96,
+  unit: "DIE" as const,
+} as const;
+
+// DRAM/NAND 사이클타임 — docs/foup-wip-master.md §M21(80=70+10)·§M22(150=130+20)에서 연동.
+export const M21_CYCLE_DAYS = 80;
+export const M22_CYCLE_DAYS = 150;
+
 export type FabProduct = "HBM" | "DRAM" | "NAND";
 
 export type FabScenario = {
