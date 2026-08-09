@@ -1,4 +1,5 @@
-import type { FabId, Product } from "@/lib/db";
+import type { Product } from "@/lib/db";
+import type { FabId } from "@/lib/fab-domain";
 import { collections } from "@/lib/db";
 import type { StepConsumption } from "@/lib/twin/burn";
 import { computeAggregateReleasePlan } from "@/lib/lot-route";

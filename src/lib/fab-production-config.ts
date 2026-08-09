@@ -1,4 +1,5 @@
-import type { FabId, Product } from "@/lib/db";
+import type { Product } from "@/lib/db";
+import type { FabId } from "@/lib/fab-domain";
 import {
   M20_PRODUCTION_SCENARIOS, M20_HBM_OUTPUT_MODEL, FAB_SCENARIO,
   M21_DRAM_OUTPUT_MODEL, M22_NAND_OUTPUT_MODEL, M21_CYCLE_DAYS, M22_CYCLE_DAYS, WAFERS_PER_FOUP,

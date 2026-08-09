@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
-import type { FabId, Product } from "@/lib/db";
+import type { Product } from "@/lib/db";
+import type { FabId } from "@/lib/fab-domain";
 import { collections } from "@/lib/db";
 import { advanceAggregateWip, releaseAggregateWip } from "@/lib/lot-route";
 import { getRouteMaster, expandRouteMaster } from "@/lib/route-master";
