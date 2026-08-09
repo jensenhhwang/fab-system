@@ -182,8 +182,18 @@ export async function getAggregateWipSummary(fabId: FabId, product: Product): Pr
     };
   }
 
-  const { waferLots } = await collections();
+  const { waferLots, wipStepBuckets } = await collections();
   const targetWip = targetWipCount(cfg.waferStartsPerMonth, cfg.cycleTimeDays);
+  // STEP_BUCKET(DRAM/NAND)은 개별 waferLots가 없고 step별 count 집계로 WIP를 표현한다.
+  if (cfg.wipMode === "STEP_BUCKET") {
+    const bucket = await wipStepBuckets.findOne({ _id: `${fabId}__${product}` });
+    const aggregateWip = bucket ? bucket.counts.reduce((s, c) => s + c, 0) : 0;
+    return {
+      targetWip, currentWip: aggregateWip, aggregateWip, visualWip: 0,
+      occupiedTarget: cfg.targetOccupiedFoup, downstreamWipEquivalent: 0,
+      downstreamStatus: "NOT_BOOTSTRAPPED", unit: "FOUP_EQUIVALENT",
+    };
+  }
   const [aggregateWip, visualWip] = await Promise.all([
     waferLots.countDocuments({ fabId, product, cohort: "MODELED_FOUP", status: "IN_PROGRESS" }),
     waferLots.countDocuments({ fabId, product, cohort: "WATCHED", status: "IN_PROGRESS" }),

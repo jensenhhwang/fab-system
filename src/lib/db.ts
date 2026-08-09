@@ -79,6 +79,18 @@ export interface TwinEngineStateDoc {
   speedMultiplier: number;
   lockedBy?: string | null;
   lockExpiresAt?: Date | null;
+  // MODELED_FOUP 재투입 목표(dailyRate*simDays)의 tick간 소수부 이월분 — 드리프트 방지용.
+  // releaseCarry는 HBM 하위호환. 다제품(HBM/DRAM/NAND)은 releaseCarryByProduct를 쓴다.
+  releaseCarry?: number;
+  releaseCarryByProduct?: Partial<Record<Product, number>>;
+  pausedAt?: Date;
+  pausedBy?: string;
+}
+export interface ControlTowerAIStateDoc {
+  _id: "singleton";
+  aiEnabled: boolean;
+  updatedAt: Date;
+  updatedBy: string;
 }
 export interface TwinPurchaseOrderDoc {
   _id: string;
@@ -87,7 +99,18 @@ export interface TwinPurchaseOrderDoc {
   orderedAt: Date;
   etaAt: Date;
   leadTimeDays: number;
-  status: "ORDERED" | "IN_TRANSIT" | "RECEIVED";
+  status: "PENDING_APPROVAL" | "ORDERED" | "IN_TRANSIT" | "RECEIVED" | "REJECTED" | "INBOUND_HOLD";
+  // PENDING_APPROVAL(자율등급 L2 — 위험물·단일소싱) 판정 근거. 승인/반려 UI에 그대로 노출한다.
+  autonomyCeiling?: 2 | 4;
+  autonomyReason?: string | null;
+  decidedAt?: Date;
+  decidedBy?: string;
+  // 발주 시점에 배정된 목적 창고 스냅샷 — 도착 시점에 재고 최다 창고가 바뀌어도 원래 배정
+  // 기준으로 게이팅하기 위해 저장한다(박물류 CAPACITY_OVER 게이팅, INBOUND_HOLD).
+  destinationWarehouseId?: string;
+  holdReason?: string | null;
+  releasedAt?: Date;
+  releasedBy?: string;
 }
 export interface TwinBurnEventDoc {
   _id: string;
@@ -220,6 +243,7 @@ export interface InventoryMovementDoc {
   reason?: string; userId: string; createdAt: Date;
   lotId?: string; processCode?: string;
   inboundPlanId?: string; requestId?: string;
+  requestHash?: string;
   simulated?: true;
 }
 export interface FacilityTelemetryDoc {
@@ -583,6 +607,12 @@ export interface WaferLotDoc {
   modeledReleaseAt?: Date;
   nextTransitionAt?: Date;
   dwellModel?: "SIMPLIFIED_UNIFORM_DWELL";
+  // 이자재(MATERIALS)가 COVERAGE_CRITICAL로 판단한 자재를 다음 스텝에 쓸 때 진행을 막은
+  // 시각. 최초 차단 시각을 보존해 대기시간을 계산한다(다시 진행되면 지운다).
+  materialBlockedAt?: Date;
+  // 박물류(LOGISTICS)가 완제품 창고를 CAPACITY_OVER로 판정해 마지막 스텝 완료(=완제품 적립)를
+  // 막은 시각. materialBlockedAt과 같은 패턴이지만 원인이 자재가 아니라 완제품 창고 포화다.
+  finishedGoodsHoldAt?: Date;
 }
 
 export type ProductionCarrierType = "FOUP" | "DICING_FRAME" | "DIE_TRAY" | "STACK_TRAY";
@@ -616,6 +646,70 @@ export interface LotCarrierAssignmentDoc {
   source: "MODELED_BASELINE" | "MES_ACTUAL";
   bootstrapVersion?: string;
   updatedAt: Date;
+}
+
+// 완제품(웨이퍼 로트가 140스텝을 다 통과해 DONE된 뒤) 재고 — 원자재 inventory 컬렉션과
+// 같은 aggregate 수량 모델. WaferLot 1개=완제품 1개가 아니므로(다이싱→KGD→스택 팬아웃)
+// 개별 로트 단위가 아니라 fab+product+warehouse 단위로 수량만 누적한다.
+export interface FinishedGoodsDoc {
+  _id: string; // `${fabId}__${product}__${warehouseId}`
+  fabId: FabId;
+  product: Product;
+  warehouseId: string;
+  quantity: number; // 최종테스트 통과 · 판매 가능 재고(창고 점유·출하는 이 값만 본다)
+  unit: "STACK" | "CHIP" | "DIE"; // 제품별 native 단위(HBM=STACK, DRAM=CHIP, NAND=DIE)
+  updatedAt: Date;
+  // 패키징은 끝났지만 최종테스트 대기 중인 배치 — 업계 관행(Final Test 통과 전엔 판매재고
+  // 아님)을 반영한다. 새 수율은 안 만들고(assemblyYield가 이미 반영됨) 시간 지연만 둔다.
+  pendingTestQuantity?: number;
+  pendingTestReadyAt?: Date | null;
+}
+
+// twinBurnEvents와 같은 패턴 — tick당 완제품 적립량을 이벤트로 남겨 "방금 몇 개 늘었는지"를
+// 다시 계산하지 않고 그대로 보여줄 수 있게 한다. addedQty=최종테스트 통과해 실제 재고로
+// 반영된 양, queuedQty=이번 tick에 새로 패키징 완료돼 테스트 대기열에 들어간 양.
+export interface FinishedGoodsEventDoc {
+  _id: string;
+  fabId: FabId;
+  product: Product;
+  tickAt: Date;
+  addedQty: number;
+  queuedQty: number;
+}
+
+// DRAM(M21)·NAND(M22) WIP는 개별 FOUP 4만개를 만들지 않고 docs/foup-wip-master.md §22의 설계대로
+// step별 FOUP-equivalent count로 집계 표현한다(step bucket). counts[i] = 공정 스텝 i에 있는
+// FOUP-equivalent 수량. 틱당 counts를 한 스텝씩 시프트해 진행·완료를 계산하므로 per-lot 대비
+// write가 O(스텝수)로 줄어 대규모 WIP도 빠르게 돌릴 수 있다. HBM은 여전히 per-lot(waferLots).
+export interface WipStepBucketDoc {
+  _id: string; // `${fabId}__${product}`
+  fabId: FabId;
+  product: Product;
+  totalSteps: number;
+  counts: number[]; // length=totalSteps
+  updatedAt: Date;
+}
+
+// 가상 고객사 — 실제 영업/계약 데이터가 없어 데모용으로 명시적으로 라벨링된 참고 데이터.
+// contractedMonthlyQty도 실제 계약이 아니라 등급별로 임의 배정한 가상 목표치다.
+export interface CustomerDoc {
+  _id: string;
+  name: string;
+  priorityTier: 1 | 2 | 3;
+  contractedMonthlyQty: number;
+  virtual: true;
+}
+
+export interface ShipmentDoc {
+  _id: string;
+  fabId: FabId;
+  product: Product;
+  warehouseId: string;
+  customerId: string;
+  quantity: number;
+  unit: "STACK";
+  shippedAt: Date;
+  shippedBy: string;
 }
 
 export interface FoupWipBootstrapManifestDoc {
@@ -1029,10 +1123,16 @@ export async function collections(): Promise<{
   whatIfCopilotBriefings: Collection<WhatIfCopilotBriefingDoc>;
   aiInvocations: Collection<AIInvocationDoc>;
   controlTowerAIEpisodes: Collection<ControlTowerAIEpisodeDoc>;
+  controlTowerAIState: Collection<ControlTowerAIStateDoc>;
   marketSources: Collection<MarketSourceDoc>;
   marketIngestionRuns: Collection<MarketIngestionRunDoc>;
   marketRawArtifacts: Collection<MarketRawArtifactDoc>;
   marketObservations: Collection<MarketObservationDoc>;
+  finishedGoods: Collection<FinishedGoodsDoc>;
+  finishedGoodsEvents: Collection<FinishedGoodsEventDoc>;
+  wipStepBuckets: Collection<WipStepBucketDoc>;
+  customers: Collection<CustomerDoc>;
+  shipments: Collection<ShipmentDoc>;
 }> {
   const db = await getDb();
   return {
@@ -1104,9 +1204,15 @@ export async function collections(): Promise<{
     whatIfCopilotBriefings: db.collection<WhatIfCopilotBriefingDoc>("whatIfCopilotBriefings"),
     aiInvocations: db.collection<AIInvocationDoc>("aiInvocations"),
     controlTowerAIEpisodes: db.collection<ControlTowerAIEpisodeDoc>("controlTowerAIEpisodes"),
+    controlTowerAIState: db.collection<ControlTowerAIStateDoc>("controlTowerAIState"),
     marketSources: db.collection<MarketSourceDoc>("marketSources"),
     marketIngestionRuns: db.collection<MarketIngestionRunDoc>("marketIngestionRuns"),
     marketRawArtifacts: db.collection<MarketRawArtifactDoc>("marketRawArtifacts"),
     marketObservations: db.collection<MarketObservationDoc>("marketObservations"),
+    finishedGoods: db.collection<FinishedGoodsDoc>("finishedGoods"),
+    finishedGoodsEvents: db.collection<FinishedGoodsEventDoc>("finishedGoodsEvents"),
+    wipStepBuckets: db.collection<WipStepBucketDoc>("wipStepBuckets"),
+    customers: db.collection<CustomerDoc>("customers"),
+    shipments: db.collection<ShipmentDoc>("shipments"),
   };
 }

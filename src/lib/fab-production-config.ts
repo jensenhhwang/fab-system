@@ -21,6 +21,9 @@ export type FabProductionConfig = {
   dailyLotRelease: number;
   targetOccupiedFoup: number;
   advanceBatchMax: number;
+  // HBM은 개별 FOUP 원장(waferLots)을 3D 추적까지 하므로 per-lot. DRAM/NAND는 docs/foup-wip-master.md
+  // §22 설계대로 step bucket 집계(대규모 WIP를 O(스텝수) write로 진행 — per-lot이면 틱당 4만건 write).
+  wipMode: "PER_LOT" | "STEP_BUCKET";
   outputModel: {
     knownGoodDiesPerWafer: number;
     assemblyYield: number;
@@ -45,6 +48,7 @@ export const FAB_PRODUCTION_REGISTRY: Record<Product, FabProductionConfig> = {
     dailyLotRelease: M20_DAILY_LOT_RELEASE,
     targetOccupiedFoup: M20_TARGET_OCCUPIED_FOUP,
     advanceBatchMax: M20_TARGET_OCCUPIED_FOUP + 2_000,
+    wipMode: "PER_LOT",
     outputModel: {
       knownGoodDiesPerWafer: M20_HBM_OUTPUT_MODEL.knownGoodDiesPerWafer,
       assemblyYield: M20_HBM_OUTPUT_MODEL.assemblyYield,
@@ -57,6 +61,7 @@ export const FAB_PRODUCTION_REGISTRY: Record<Product, FabProductionConfig> = {
     fabId: "M21", product: "DRAM", cycleTimeDays: M21_CYCLE_DAYS, waferStartsPerMonth: wspmFor("DRAM"),
     wafersPerFoup: WAFERS_PER_FOUP, dailyLotRelease: M21_DAILY_LOT_RELEASE,
     targetOccupiedFoup: M21_TARGET_OCCUPIED_FOUP, advanceBatchMax: M21_TARGET_OCCUPIED_FOUP + 2_000,
+    wipMode: "STEP_BUCKET",
     outputModel: {
       knownGoodDiesPerWafer: M21_DRAM_OUTPUT_MODEL.knownGoodDiesPerWafer,
       assemblyYield: M21_DRAM_OUTPUT_MODEL.assemblyYield,
@@ -67,6 +72,7 @@ export const FAB_PRODUCTION_REGISTRY: Record<Product, FabProductionConfig> = {
     fabId: "M22", product: "NAND", cycleTimeDays: M22_CYCLE_DAYS, waferStartsPerMonth: wspmFor("NAND"),
     wafersPerFoup: WAFERS_PER_FOUP, dailyLotRelease: M22_DAILY_LOT_RELEASE,
     targetOccupiedFoup: M22_TARGET_OCCUPIED_FOUP, advanceBatchMax: M22_TARGET_OCCUPIED_FOUP + 2_000,
+    wipMode: "STEP_BUCKET",
     outputModel: {
       knownGoodDiesPerWafer: M22_NAND_OUTPUT_MODEL.knownGoodDiesPerWafer,
       assemblyYield: M22_NAND_OUTPUT_MODEL.assemblyYield,

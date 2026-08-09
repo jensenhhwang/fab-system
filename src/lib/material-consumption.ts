@@ -1,6 +1,7 @@
 import { M20_PRODUCTION_SCENARIOS, type M20ProductionScenarioId } from "@/lib/fab-scenario";
 import { m21NormalWspm } from "@/lib/m21-equipment-capacity-plan";
 import { m22NormalWspm } from "@/lib/m22-equipment-capacity-plan";
+import type { Product } from "@/lib/db";
 import {
   M20_BASE_DIE_ASSUMPTION,
   M20_HBM_MODEL_PRODUCT,
@@ -280,4 +281,11 @@ export function m22ProcessUsageForScenario(waferStartsPerMonth: number = m22Norm
     sourceVersion: row.version,
     modelProduct: row.modelProduct,
   }));
+}
+
+// 제품별 소모 원단위 rows. engine.ts의 틱 제품 루프가 제품에 맞는 원단위를 태우게 한다.
+export function materialConsumptionFor(product: Product): readonly M20MaterialConsumptionRow[] {
+  if (product === "HBM") return M20_MATERIAL_CONSUMPTION;
+  if (product === "DRAM") return M21_MATERIAL_CONSUMPTION;
+  return M22_MATERIAL_CONSUMPTION;
 }
