@@ -1,20 +1,20 @@
-# Project Rules
+# 프로젝트 규칙
 
 ## Next.js
 
-This is not the Next.js version assumed by model training data. Before writing Next.js code, read the relevant guide in `node_modules/next/dist/docs/` and follow its deprecation notices.
+이 저장소의 Next.js는 모델 학습 데이터에서 알고 있는 버전과 다를 수 있다. Next.js 코드를 작성하기 전에 `node_modules/next/dist/docs/`의 관련 가이드를 읽고 폐기 예정 안내를 준수한다.
 
-## Twin operating time
+## Twin 운영시간
 
-- All production and simulation features must use the shared Twin operating clock.
-- The default and mandatory operating-time multiplier is `24×`: one real hour advances one operating day.
-- Apply `real elapsed time × 24` only to modeled operations such as WIP progression, material consumption, replenishment and purchase-order ETA, final test, automatic shipment, and contract-period aggregation.
-- Never accelerate wall-clock facts such as `createdAt`, approval time, user actions, audit logs, authentication/session expiry, or external-system receipt time. Record those as real `recordedAt`-class timestamps.
-- Do not introduce feature-local clocks, product-specific multipliers, or tick-count-based time progression. New time-dependent behavior must consume the shared Twin operating clock.
-- Keep wall-clock time and operating time explicitly separated in field names, APIs, and UI labels.
+- 모든 생산·시뮬레이션 기능은 공통 Twin 운영시계를 사용한다.
+- 기본이자 필수 운영시간 배속은 `24×`다. 실제 1시간이 지나면 운영시간 1일이 흐른다.
+- `실제 경과시간 × 24`는 WIP 진행, 자재 소모, 재보충과 발주 ETA, 최종테스트, 자동출하, 계약기간 집계처럼 모델 운영에 속하는 시간에만 적용한다.
+- `createdAt`, 승인 시각, 사용자 조치, 감사 로그, 인증·세션 만료, 외부 시스템 수신 시각처럼 실제 발생 사실을 나타내는 벽시계 시간은 절대 가속하지 않는다. 이런 시각은 실제 `recordedAt` 계열 타임스탬프로 기록한다.
+- 기능별 독자 시계, 제품별 임의 배속, tick 횟수 기반 시간 진행을 만들지 않는다. 새로 추가하는 시간 의존 기능은 반드시 공통 Twin 운영시계를 사용한다.
+- 필드명, API, 화면 표기에서 벽시계 시간과 운영시간을 명확히 구분한다.
 
-## Subagents
+## 서브에이전트
 
-- Do not invoke Cree, Fab, X, or any other subagent automatically for feature requests.
-- Invoke subagents only when the user explicitly names an agent or asks for multi-agent or three-person planning-team review.
-- Keep the existing definitions in `.claude/agents/` available for those explicit requests.
+- 일반 기능 요청만으로 크리·패브·엑스 또는 다른 서브에이전트를 자동 호출하지 않는다.
+- 사용자가 에이전트 이름을 직접 지정하거나 다중 에이전트 또는 3인 기획팀 검토를 명시적으로 요청한 경우에만 서브에이전트를 호출한다.
+- 명시적 요청에 사용할 수 있도록 `.claude/agents/`의 기존 정의는 유지한다.

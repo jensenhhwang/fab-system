@@ -1,2 +1,2 @@
-Before working in this repository, read and follow `RULES.md`.
-Do not invoke subagents unless the user explicitly requests them.
+이 저장소에서 작업하기 전에 `RULES.md`를 읽고 준수한다.
+사용자가 명시적으로 요청하지 않으면 서브에이전트를 호출하지 않는다.
