@@ -28,6 +28,7 @@
     "test:twin-state": "tsx scripts/test-twin-state.ts",
     "test:operating-clock": "tsx scripts/test-operating-clock.ts",
     "test:daily-snapshot": "tsx scripts/test-daily-snapshot.ts",
+    "test:chart-scale": "tsx scripts/test-chart-scale.ts",
     "test:twin-engine": "tsx scripts/test-twin-engine.ts",
     "test:twin-calibration": "tsx scripts/test-twin-calibration.ts",
     "test:twin-equilibrium": "tsx scripts/test-twin-equilibrium.ts",
