@@ -132,6 +132,34 @@ export interface TwinBurnEventDoc {
   burnedQty: number;
   shortfallQty: number;
 }
+/**
+ * 운영일 1일치 운영 상태 스냅샷 — 트렌드 화면의 유일한 데이터원.
+ *
+ * 재고 커버리지·창고 점유율은 *상태*라 이벤트로 과거를 복원할 수 없다. 어제의 점유율은 어제
+ * 찍어둬야만 안다. 그래서 이벤트 재집계가 아니라 스냅샷으로 쌓는다.
+ *
+ * `_id`가 운영일이라 같은 날이 두 번 적재될 수 없다. 엔진이 멈추면 운영일이 넘어가지 않으므로
+ * 스냅샷도 안 생기고, 그 공백 자체가 정지의 증거가 된다.
+ */
+export interface TwinDailySnapshotDoc {
+  _id: string;               // `OP-${operatingDay}`
+  operatingDay: number;
+  wallDayKey: string;        // "2026-08-18" — 벽시계 축 토글용 버킷
+  /** 벽시계 사실 기록 — 가속하지 않는다 */
+  recordedAt: Date;
+  production: { product: Product; producedQty: number; designDailyQty: number; ratePct: number }[];
+  materials: {
+    stockoutCount: number;
+    criticalCount: number;
+    medianDoh: number;
+    worst: { materialCode: string; doh: number }[];
+  };
+  warehouses: { code: string; utilization: number; baselineUtilization: number }[];
+  shipments: { product: Product; shippedQty: number; contractDailyQty: number; fulfillmentPct: number }[];
+  policy: { r1: number; r2: number; r3: number; r4: number };
+  engine: { ticks: number; elapsedOperatingMs: number; clampedCatchUps: number };
+}
+
 export interface WarehouseZoneDoc {
   _id: string; warehouseId: string; code: string; name: string; zoneType: string;
   temperatureMin?: number; temperatureMax?: number; humidityMin?: number; humidityMax?: number;
@@ -1083,6 +1111,7 @@ export async function collections(): Promise<{
   twinEngineState: Collection<TwinEngineStateDoc>;
   twinPurchaseOrders: Collection<TwinPurchaseOrderDoc>;
   twinBurnEvents: Collection<TwinBurnEventDoc>;
+  twinDailySnapshots: Collection<TwinDailySnapshotDoc>;
   processUsage: Collection<ProcessUsageDoc>;
   transactions: Collection<TransactionDoc>;
   suppliers: Collection<SupplierDoc>;
@@ -1164,6 +1193,7 @@ export async function collections(): Promise<{
     twinEngineState: db.collection<TwinEngineStateDoc>("twinEngineState"),
     twinPurchaseOrders: db.collection<TwinPurchaseOrderDoc>("twinPurchaseOrders"),
     twinBurnEvents: db.collection<TwinBurnEventDoc>("twinBurnEvents"),
+    twinDailySnapshots: db.collection<TwinDailySnapshotDoc>("twinDailySnapshots"),
     processUsage: db.collection<ProcessUsageDoc>("processUsage"),
     transactions: db.collection<TransactionDoc>("transactions"),
     suppliers: db.collection<SupplierDoc>("suppliers"),
