@@ -6,7 +6,12 @@ async function main() {
   const state = await getOrInitTwinState();
   assert.equal(state._id, "singleton", "싱글턴 상태");
   assert.ok(state.tickIntervalMs > 0, "tick 간격 기본값");
-  assert.equal(state.speedMultiplier, 1, "배속 기본 1");
+  // 사문화 필드 회귀 방지 — speedMultiplier는 운영시계가 읽지 않는데 화면이 "1×"로 표시하고
+  // 있었다(M20NodeDensityCard). 배속의 진실원은 OPERATING_SPEED_MULTIPLIER 하나다.
+  assert.equal(
+    (state as unknown as Record<string, unknown>).speedMultiplier, undefined,
+    "speedMultiplier는 twin state에 남아 있으면 안 된다",
+  );
 
   const a = await acquireTwinLock("owner-A", 10_000);
   assert.equal(a, true, "첫 락 획득 성공");

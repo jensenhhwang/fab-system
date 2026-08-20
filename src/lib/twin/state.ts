@@ -12,9 +12,11 @@ export async function getOrInitTwinState(): Promise<TwinEngineStateDoc> {
     status: "PAUSED",
     lastTickAt: new Date(),
     tickIntervalMs: DEFAULT_TICK_INTERVAL_MS,
-    speedMultiplier: 1,
     lockedBy: null,
     lockExpiresAt: null,
+    // 공통 운영시계 시작점. 0에서 출발하고 실제 경과 × 24로만 흐른다(§operating-clock.ts).
+    operatingEpochMs: 0,
+    operatingClockWallAt: new Date(),
   };
   await twinEngineState.insertOne(initial);
   return initial;

@@ -74,9 +74,16 @@ export interface InventoryDoc {
 export interface TwinEngineStateDoc {
   _id: "singleton";
   status: "RUNNING" | "PAUSED";
+  /** 벽시계 — 마지막 tick이 실제로 실행된 시각(사실 기록이므로 가속하지 않는다) */
   lastTickAt: Date;
   tickIntervalMs: number;
-  speedMultiplier: number;
+  // ── 공통 Twin 운영시계 (RULES.md § Twin 운영시간, §lib/twin/operating-clock.ts) ──
+  // 모든 모델 운영시간(WIP 진행·자재 소모·발주 ETA·최종테스트·자동출하)이 이 하나를 쓴다.
+  // 실제 경과 벽시계 × 24로만 흐르며 tick 횟수와 무관하다.
+  /** 운영 절대시각(ms). 기능들이 "지금 운영시각"으로 참조한다. */
+  operatingEpochMs?: number;
+  /** 운영시계를 마지막으로 갱신한 벽시계 시각 — 다음 경과분 계산의 기준점 */
+  operatingClockWallAt?: Date;
   lockedBy?: string | null;
   lockExpiresAt?: Date | null;
   // MODELED_FOUP 재투입 목표(dailyRate*simDays)의 tick간 소수부 이월분 — 드리프트 방지용.
@@ -96,8 +103,12 @@ export interface TwinPurchaseOrderDoc {
   _id: string;
   materialId: string;
   qty: number;
+  /** 벽시계 — 발주가 실제로 나간 시각(사실 기록) */
   orderedAt: Date;
+  /** 벽시계 환산 ETA. 화면 표시용이며 도착 판정의 근거가 아니다. */
   etaAt: Date;
+  /** 운영시각 ETA — 도착 판정의 근거(§twin/operating-clock.ts). 리드타임은 운영시간이다. */
+  etaOperatingMs?: number;
   leadTimeDays: number;
   status: "PENDING_APPROVAL" | "ORDERED" | "IN_TRANSIT" | "RECEIVED" | "REJECTED" | "INBOUND_HOLD";
   // PENDING_APPROVAL(자율등급 L2 — 위험물·단일소싱) 판정 근거. 승인/반려 UI에 그대로 노출한다.
@@ -662,7 +673,8 @@ export interface FinishedGoodsDoc {
   // 패키징은 끝났지만 최종테스트 대기 중인 배치 — 업계 관행(Final Test 통과 전엔 판매재고
   // 아님)을 반영한다. 새 수율은 안 만들고(assemblyYield가 이미 반영됨) 시간 지연만 둔다.
   pendingTestQuantity?: number;
-  pendingTestReadyAt?: Date | null;
+  /** 운영시각 기준 최종테스트 방출 예정 시각(ms). 벽시계가 아니다(RULES.md). */
+  pendingTestReadyOperatingMs?: number | null;
 }
 
 // twinBurnEvents와 같은 패턴 — tick당 완제품 적립량을 이벤트로 남겨 "방금 몇 개 늘었는지"를
@@ -707,7 +719,10 @@ export interface ShipmentDoc {
   warehouseId: string;
   customerId: string;
   quantity: number;
-  unit: "STACK";
+  // 제품별 완제품 단위(finishedGoodsUnit) — 예전엔 "STACK" 리터럴로 고정돼 있어서 DRAM/NAND
+  // 출하가 타입 레벨에서 불가능했다. 그래서 완제품이 나갈 문이 HBM에만 있었고, DRAM/NAND는
+  // 만들수록 자기 창고를 CAPACITY_OVER로 막아 생산을 스스로 세웠다.
+  unit: "STACK" | "CHIP" | "DIE";
   shippedAt: Date;
   shippedBy: string;
 }
