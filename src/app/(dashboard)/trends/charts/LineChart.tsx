@@ -35,7 +35,10 @@ export default function LineChart({
   const all = series.flatMap((s) => s.points.filter((p): p is number => p != null));
   const domain = niceDomain(referencePct != null ? [...all, referencePct] : all, { includeZero: true });
   const y = linearScale(domain, [PAD.top + plotH, PAD.top]);
-  const x = linearScale([0, Math.max(xLabels.length - 1, 1)], [PAD.left, PAD.left + plotW]);
+  // 표본이 하나면 왼쪽 끝에 붙어 잘린 것처럼 보인다 — 가운데에 놓는다.
+  const x = xLabels.length <= 1
+    ? () => PAD.left + plotW / 2
+    : linearScale([0, xLabels.length - 1], [PAD.left, PAD.left + plotW]);
   const ticks = [domain[0], (domain[0] + domain[1]) / 2, domain[1]];
   const labelEvery = Math.ceil(xLabels.length / 6) || 1;
   const slotW = plotW / Math.max(xLabels.length, 1);
@@ -84,9 +87,15 @@ export default function LineChart({
             if (run.length) runs.push(run);
             return (
               <g key={s.key}>
-                {runs.map((r, i) => (
-                  <path key={i} d={linePath(r)} fill="none" stroke={s.color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                ))}
+                {runs.map((r, i) =>
+                  // 이웃이 없는 점은 path로 그리면 아무것도 안 보인다 — 백필을 하지 않으므로
+                  // 적재 초기 며칠이 정확히 이 상태다. 고립점은 점으로 찍는다.
+                  r.length === 1 ? (
+                    <circle key={i} cx={r[0].x} cy={r[0].y} r={3} fill={s.color} />
+                  ) : (
+                    <path key={i} d={linePath(r)} fill="none" stroke={s.color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                  ),
+                )}
                 {hover != null && s.points[hover] != null && (
                   <circle cx={x(hover)} cy={y(s.points[hover]!)} r={4} fill={s.color} stroke="#FFFFFF" strokeWidth={2} />
                 )}

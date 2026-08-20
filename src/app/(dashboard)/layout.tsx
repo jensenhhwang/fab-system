@@ -6,24 +6,22 @@ import { usePathname } from "next/navigation";
 import Image from "next/image";
 import { ControlContextProvider, FabScopeControl } from "@/components/ControlContext";
 import RoleSwitcher from "@/components/RoleSwitcher";
+import LifeSignBadge from "@/components/LifeSignBadge";
 import { ROLE_COLOR, ROLE_LABEL, type DemoRole } from "@/lib/demo-accounts";
 
 const NAV = [
   { group: "오늘의 운영", items: [
-    { href: "/", label: "Control Tower" },
-    { href: "/control-tower-live", label: "관제탑 라이브" },
-    { href: "/campus", label: "WMS·3FAB 3D Twin" },
+    { href: "/", label: "관제탑 라이브" },
+    { href: "/trends", label: "운영 트렌드" },
     { href: "/daily-control", label: "생산·자재 연동" },
   ] },
   { group: "자재·창고", items: [
     { href: "/inventory", label: "재고·보관일수" },
-    { href: "/inventory/verification", label: "현장 실물검증" },
     { href: "/warehouse", label: "창고 Capacity" },
-    { href: "/wms", label: "창고관리 (WMS)" },
   ] },
   { group: "생산 실행", items: [
-    { href: "/mes", label: "공정 실행 (MES)" },
     { href: "/usage", label: "공정별 사용량" },
+    { href: "/finished-goods", label: "완제품 재고" },
   ] },
   { group: "계획·시뮬레이션", items: [
     { href: "/erp-bridge", label: "계획·실행 브리지" },
@@ -52,62 +50,79 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <ControlContextProvider>
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: "var(--bg-page)" }}>
       {/* ── Sidebar ── */}
       <aside className="w-[228px] shrink-0 flex flex-col overflow-y-auto" style={{ backgroundColor: "var(--bg-sidebar)", borderRight: "1px solid var(--border)" }}>
         {/* 프로필 */}
-        <div className="px-4 py-5" style={{ borderBottom: "1px solid var(--border)" }}>
-          <div
-            className="uppercase font-bold tracking-[0.08em] mb-1"
-            style={{ fontSize: "11px", color: "var(--text-3)" }}
-          >
-            {user?.department ?? "자재관리팀"}
+        <div className="px-4 pt-5 pb-4">
+          <div className="rounded-[var(--radius-md)] px-3.5 py-3" style={{ backgroundColor: "var(--bg-card)", boxShadow: "var(--shadow-1)" }}>
+            <div
+              className="uppercase font-bold tracking-[0.09em] mb-1.5"
+              style={{ fontSize: "10px", color: "var(--text-3)" }}
+            >
+              {user?.department ?? "자재관리팀"}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[13.5px] font-bold truncate" style={{ color: "var(--text-1)", letterSpacing: "-0.01em" }}>
+                {user?.name ?? "—"}
+              </div>
+              <span
+                className="shrink-0 text-[9.5px] font-bold px-2 py-0.5 rounded-full text-white tracking-[0.02em]"
+                style={{ backgroundColor: roleColor }}
+              >
+                {ROLE_LABEL[role] ?? role}
+              </span>
+            </div>
           </div>
-          <div className="text-sm font-bold" style={{ color: "var(--text-1)", letterSpacing: "-0.01em" }}>
-            {user?.name ?? "—"}
-          </div>
-          <span
-            className="inline-block mt-1.5 text-[10px] font-semibold px-2 py-0.5 rounded-full text-white"
-            style={{ backgroundColor: roleColor }}
-          >
-            {ROLE_LABEL[role] ?? role}
-          </span>
         </div>
 
         {/* 네비게이션 */}
-        <nav className="flex-1 py-2">
-          {NAV.map(({ group, items }) => (
-            <div key={group}>
+        <nav className="flex-1 px-2 pb-2">
+          {NAV.map(({ group, items }, groupIndex) => (
+            <div key={group} className={groupIndex > 0 ? "mt-1" : ""}>
               <div
-                className="px-4 pt-4 pb-1 uppercase font-bold tracking-[0.08em]"
-                style={{ fontSize: "11px", color: "var(--text-3)" }}
+                className="px-2.5 pt-4 pb-1.5 uppercase font-bold tracking-[0.09em]"
+                style={{ fontSize: "10px", color: "var(--text-4)" }}
               >
                 {group}
               </div>
-              {items.map(({ href, label }) => (
-                <Link
-                  key={href}
-                  href={href}
-                  className={`flex items-center mx-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                    isActive(href)
-                      ? "bg-[#FFF0F2] text-[#EA002C] font-bold"
-                      : "hover:bg-[#F3F0EE]"
-                  }`}
-                  style={isActive(href) ? {} : { color: "var(--text-2)" }}
-                >
-                  {label}
-                </Link>
-              ))}
+              <div className="space-y-0.5">
+                {items.map(({ href, label }) => {
+                  const active = isActive(href);
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      className="relative flex items-center pl-3.5 pr-3 py-[9px] rounded-[var(--radius-sm)] text-[13px] transition-colors"
+                      style={{
+                        color: active ? "var(--sk-red)" : "var(--text-2)",
+                        fontWeight: active ? 700 : 500,
+                        backgroundColor: active ? "var(--red-tint)" : "transparent",
+                      }}
+                      onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = "var(--bg-hover)"; }}
+                      onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = "transparent"; }}
+                    >
+                      {active && (
+                        <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-full" style={{ backgroundColor: "var(--sk-red)" }} />
+                      )}
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
           ))}
         </nav>
 
         {/* 푸터 */}
-        <div className="px-4 py-3" style={{ borderTop: "1px solid var(--border)" }}>
-          <div className="mb-2" style={{ fontSize: "11px", color: "var(--text-3)" }}>이천 3FAB Campus · M20/21/22</div>
+        <div className="px-4 py-3.5" style={{ borderTop: "1px solid var(--border)" }}>
+          <div className="mb-2.5 text-[10.5px]" style={{ color: "var(--text-3)" }}>이천 3FAB Campus · M20/21/22</div>
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-[#EA002C] bg-[#FFF0F2] hover:bg-[#FFD6DA] transition-colors"
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-[var(--radius-sm)] text-[12px] font-bold transition-colors"
+            style={{ color: "var(--sk-red)", backgroundColor: "var(--red-tint)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "#FFD9DE"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--red-tint)"; }}
           >
             로그아웃
           </button>
@@ -118,26 +133,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* 헤더 */}
         <header
-          className="h-[60px] flex items-center px-7 shrink-0"
-          style={{ backgroundColor: "var(--bg-sidebar)", borderBottom: "1px solid var(--border)" }}
+          className="h-[60px] flex items-center px-7 shrink-0 relative z-10"
+          style={{ backgroundColor: "var(--bg-card)", boxShadow: "var(--shadow-1)" }}
         >
           <div className="flex items-center gap-3">
             <Image src="/skhynix_logo.png" alt="SK hynix" width={100} height={28} className="h-7 w-auto" />
             <div className="w-px h-5" style={{ backgroundColor: "var(--border)" }} />
             <span
-              className="uppercase font-bold tracking-[0.08em]"
-              style={{ fontSize: "11px", color: "var(--text-3)" }}
+              className="uppercase font-bold tracking-[0.09em]"
+              style={{ fontSize: "10.5px", color: "var(--text-3)" }}
             >
               FAB 자재관리
             </span>
           </div>
           <div className="ml-auto flex items-center gap-3">
             <FabScopeControl />
-            <div className="flex items-center gap-1.5 bg-[#E6FAF1] text-[#00875A] text-xs font-semibold px-2.5 py-1 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#00B96B] animate-pulse" />
-              DATA CONNECTED
-            </div>
-            <span className="hidden text-xs xl:inline" style={{ color: "var(--text-3)" }}>이천 M20 / M21 / M22</span>
+            <LifeSignBadge />
+            <span className="hidden text-[12px] xl:inline" style={{ color: "var(--text-3)" }}>이천 M20 / M21 / M22</span>
             <RoleSwitcher />
           </div>
         </header>
@@ -149,18 +161,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* 바텀 바 */}
         <div
-          className="h-8 flex items-center px-6 gap-6 shrink-0"
+          className="h-8 flex items-center px-6 gap-4 shrink-0"
           style={{
             backgroundColor: "var(--bg-page)",
             borderTop: "1px solid var(--border)",
-            fontSize: "11px",
+            fontSize: "10.5px",
             color: "var(--text-3)",
           }}
         >
-          <span className="text-[#00B96B] font-semibold">● 시스템 정상</span>
-          <span style={{ color: "var(--border)" }}>|</span>
+          <LifeSignBadge variant="bar" />
+          <span style={{ color: "var(--border)" }}>·</span>
           <span>DB: MongoDB</span>
-          <span style={{ color: "var(--border)" }}>|</span>
+          <span style={{ color: "var(--border)" }}>·</span>
           <span>{new Date().toLocaleDateString("ko-KR")} 기준</span>
         </div>
       </div>

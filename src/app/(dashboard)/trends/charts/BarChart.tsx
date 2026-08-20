@@ -29,7 +29,10 @@ export default function BarChart({
   const domain = niceDomain(values, { includeZero: true });
   const y = linearScale(domain, [PAD.top + plotH, PAD.top]);
   const slot = plotW / Math.max(values.length, 1);
-  const barW = Math.max(slot - 2, 1); // 2px 표면 간격
+  // 2px 표면 간격. 표본이 적을 때 막대 하나가 차트 전폭을 채우면 추이가 아니라 덩어리로
+  // 읽히므로 폭에 상한을 둔다.
+  const barW = Math.min(Math.max(slot - 2, 1), 48);
+  const barOffset = (slot - barW) / 2;
   const labelEvery = Math.ceil(xLabels.length / 6) || 1;
   const base = y(domain[0]);
 
@@ -47,7 +50,7 @@ export default function BarChart({
           return (
             <rect
               key={i}
-              x={PAD.left + i * slot + 1}
+              x={PAD.left + i * slot + barOffset}
               y={Math.min(top, base)}
               width={barW}
               height={Math.max(Math.abs(base - top), 1)}
@@ -61,7 +64,7 @@ export default function BarChart({
         })}
         {xLabels.map((l, i) =>
           i % labelEvery === 0 ? (
-            <text key={i} x={PAD.left + i * slot + barW / 2} y={H - 8} textAnchor="middle" fontSize={9} fill={AXIS_INK}>{l}</text>
+            <text key={i} x={PAD.left + i * slot + barOffset + barW / 2} y={H - 8} textAnchor="middle" fontSize={9} fill={AXIS_INK}>{l}</text>
           ) : null,
         )}
       </svg>

@@ -43,14 +43,18 @@ export default function Sparkline({
             strokeDasharray="3 2"
           />
         ))}
-        <path
-          d={linePath(values.map((v, i) => ({ x: x(i), y: y(v) })))}
-          fill="none"
-          stroke={AXIS_INK}
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        {values.length === 1 ? (
+          <circle cx={x(0)} cy={y(values[0])} r={3} fill={AXIS_INK} />
+        ) : (
+          <path
+            d={linePath(values.map((v, i) => ({ x: x(i), y: y(v) })))}
+            fill="none"
+            stroke={AXIS_INK}
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
       </svg>
     </div>
   );
