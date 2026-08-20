@@ -26,6 +26,7 @@
     "test:twin-inbound": "tsx scripts/test-twin-inbound.ts",
     "test:twin-advance-steps": "tsx scripts/test-twin-advance-steps.ts",
     "test:twin-state": "tsx scripts/test-twin-state.ts",
+    "test:operating-clock": "tsx scripts/test-operating-clock.ts",
     "test:twin-engine": "tsx scripts/test-twin-engine.ts",
     "test:twin-calibration": "tsx scripts/test-twin-calibration.ts",
     "test:twin-equilibrium": "tsx scripts/test-twin-equilibrium.ts",
