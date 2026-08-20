@@ -22,5 +22,11 @@ export const SINGLE_SERIES_COLOR = "#0078D4";
 /** 정책 변경 마커 — 데이터가 아니라 사건이므로 계열 팔레트 밖의 색을 쓴다. */
 export const MARKER_COLOR = "#7C3AED";
 
-export const AXIS_INK = "#999999";
-export const GRID_INK = "#E8E8E8";
+// 차트 가구(furniture) — 표면에서 한 단계씩 떨어진 회색. 전부 실선 hairline이다.
+export const SURFACE = "#FFFFFF";
+export const GRID_INK = "#EDEAE7";      // 격자
+export const AXIS_INK = "#B5B0AA";      // 축 눈금 텍스트
+export const MUTED_INK = "#8A8580";     // 보조 텍스트
+export const PRIMARY_INK = "#141413";   // 본문 텍스트
+export const DEEMPHASIS_INK = "#C9C4BE"; // 스파크라인 등 비강조 선
+export const REFERENCE_INK = "#6E6862";  // 기준선 — 데이터가 아니라 목표선
