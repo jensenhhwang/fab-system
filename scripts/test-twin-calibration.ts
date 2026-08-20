@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
 import { collections } from "../src/lib/db";
-import { executeTwinTick, simDaysPerTick } from "../src/lib/twin/engine";
+import { executeTwinTick, operatingDaysPerStep } from "../src/lib/twin/engine";
 import { getOrInitTwinState } from "../src/lib/twin/state";
 import { getRouteMaster, expandRouteMaster } from "../src/lib/route-master";
 import { buildStepConsumption } from "../src/lib/twin/burn";
@@ -10,8 +10,8 @@ import { M20_MATERIAL_CONSUMPTION } from "../src/lib/material-consumption";
 
 async function main() {
   // ── 순수 함수: 한 tick = 공정 스텝 1개 진행분 = cycleDays/totalSteps sim-days ──
-  const s = simDaysPerTick(105, 130);
-  assert.ok(Math.abs(s - 105 / 130) < 1e-9, "simDaysPerTick = cycleDays/totalSteps");
+  const s = operatingDaysPerStep(105, 130);
+  assert.ok(Math.abs(s - 105 / 130) < 1e-9, "operatingDaysPerStep = cycleDays/totalSteps");
   assert.ok(s > 0.5 && s < 1.0, "한 스텝 sim-time은 0.5~1일 범위 (105/130≈0.808)");
   // 예전 실벽시계(5초=5.79e-5일) 대비 수천 배 커야 왜곡 제거됨
   assert.ok(s / (5000 / 86_400_000) > 10_000, "실벽시계 5초 대비 1만배 이상 → 왜곡 제거");
@@ -46,7 +46,7 @@ async function main() {
   assert.ok(burned > 0, "targetMaterial 소모 발생");
 
   const inv = await inventory.findOne({ _id: invId });
-  const expected = burned / simDaysPerTick(105, totalSteps); // EMA bootstrap(prev=0)이라 첫 tick은 정확히 이 값
+  const expected = burned / operatingDaysPerStep(105, totalSteps); // EMA bootstrap(prev=0)이라 첫 tick은 정확히 이 값
   assert.ok(Math.abs((inv?.avgDailyBurn ?? 0) - expected) < 1e-6,
     `avgDailyBurn은 SIM_DAYS_PER_TICK 정규화값이어야 함 (기대 ${expected}, 실제 ${inv?.avgDailyBurn})`);
   // 왜곡 회귀 가드: wall-clock(5초)였다면 avgDailyBurn ≈ burned*17280. 절대 그 근처면 안 됨.
