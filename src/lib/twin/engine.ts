@@ -159,11 +159,11 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
     }
     // materialId → 대표 재고 스냅샷(재고 최다 창고, resolveWarehouse와 동일 규칙). quantity·
     // avgDailyBurn은 ② 소모 구간에서 실제 DB 쓰기와 함께 이 객체를 직접 mutate해 최신 상태로 유지한다.
-    const invSnapshotByMaterial = new Map<string, { warehouseId: string; quantity: number; avgDailyBurn: number }>();
+    const invSnapshotByMaterial = new Map<string, { warehouseId: string; quantity: number; avgDailyBurn: number; capacityLimit: number | null }>();
     for (const doc of allInventoryDocs) {
       const prev = invSnapshotByMaterial.get(doc.materialId);
       if (!prev || doc.quantity > prev.quantity) {
-        invSnapshotByMaterial.set(doc.materialId, { warehouseId: doc.warehouseId, quantity: doc.quantity, avgDailyBurn: doc.avgDailyBurn ?? 0 });
+        invSnapshotByMaterial.set(doc.materialId, { warehouseId: doc.warehouseId, quantity: doc.quantity, avgDailyBurn: doc.avgDailyBurn ?? 0, capacityLimit: doc.capacityLimit ?? null });
       }
     }
 
@@ -469,6 +469,9 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
         leadTimeDays,
         recentOrderQty: lastPO?.qty,
         capacityHeadroomQty,
+        // 벌크 탱크의 물리 한도. 창고 헤드룸은 SPACE 창고에만 계산되므로 탱크 자재는
+        // 이 값이 없으면 용량을 전혀 안 보게 된다(§twin/inbound.ts planInbound).
+        capacityLimitQty: inv.capacityLimit ?? undefined,
       });
       if (plan) {
         // 이 발주가 쓸 점유량만큼 창고 예산을 깎는다 — 같은 창고를 쓰는 뒤 자재들이 남은
