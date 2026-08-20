@@ -1,5 +1,7 @@
 import { getInventoryRows, getProcessUsagesWithMaterial, getWarehouseCapacity, getWarehouses } from "@/lib/queries";
 import { collections } from "@/lib/db";
+import { getOrInitTwinState } from "@/lib/twin/state";
+import { operatingDaysToMs, OPERATING_DAYS_PER_MONTH } from "@/lib/twin/operating-clock";
 
 export type UsageTwinMaterial = {
   id: string;
@@ -27,22 +29,27 @@ export type UsageTwinData = {
 };
 
 export async function getUsageTwinData(): Promise<UsageTwinData> {
-  const { materialFlowEvents } = await collections();
-  const actualSince = new Date(Date.now() - 30 * 86_400_000);
+  const { twinBurnEvents } = await collections();
+  // 창은 **운영 30일**이다 — 비교 대상인 monthlyQty가 운영 1개월치이기 때문이다. 예전에는
+  // 30 벽시계일(= 운영 720일 = 24개월)을 모아 1개월 설계치와 나란히 놓고 usageGap을 계산했다.
+  // 소스도 materialFlowEvents에서 twinBurnEvents로 옮긴다 — 전자는 2026-07-27 이후 적재가
+  // 끊겨 실적이 사실상 0이었다.
+  const twinState = await getOrInitTwinState();
+  const sinceOperatingMs = Math.max(0, (twinState.operatingEpochMs ?? 0) - operatingDaysToMs(OPERATING_DAYS_PER_MONTH));
   const [usages, inventories, warehouses, capacities, consumptionEvents] = await Promise.all([
     getProcessUsagesWithMaterial(),
     getInventoryRows(),
     getWarehouses(),
     getWarehouseCapacity(),
-    materialFlowEvents.find({ type: "CONSUMED", occurredAt: { $gte: actualSince } }).toArray(),
+    twinBurnEvents.find({ operatingEpochMs: { $gte: sinceOperatingMs } }).toArray(),
   ]);
-  const productByFab = { M20: "HBM", M21: "DRAM", M22: "NAND" } as const;
+  // twinBurnEvents는 자재 단위로만 기록된다(공정·제품 분해 없음). 실적을 자재 합계로 잡고,
+  // 같은 자재의 여러 공정 행에는 첫 행에만 실적을 실어 중복 합산을 막는다.
   const actualMap = new Map<string, number>();
   for (const event of consumptionEvents) {
-    const product = productByFab[event.fabId];
-    const key = `${event.materialId}|${event.processCode ?? "UNKNOWN"}|${product}`;
-    actualMap.set(key, (actualMap.get(key) ?? 0) + event.quantity);
+    actualMap.set(event.materialId, (actualMap.get(event.materialId) ?? 0) + event.burnedQty);
   }
+  const actualClaimed = new Set<string>();
   const inventoryMap = new Map<string, UsageTwinMaterial["inventory"]>();
   for (const inventory of inventories) {
     if (!inventoryMap.has(inventory.materialId)) {
@@ -77,7 +84,7 @@ export async function getUsageTwinData(): Promise<UsageTwinData> {
       proc: usage.processCode,
       product: usage.product,
       qty: usage.monthlyQty,
-      actualQty: actualMap.get(`${usage.materialId}|${usage.processCode}|${usage.product}`) ?? 0,
+      actualQty: actualClaimed.has(usage.materialId) ? 0 : (actualClaimed.add(usage.materialId), actualMap.get(usage.materialId) ?? 0),
     });
   }
   for (const inventory of inventories) {
