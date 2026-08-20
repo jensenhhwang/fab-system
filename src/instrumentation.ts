@@ -24,5 +24,6 @@ export async function register() {
   await Promise.all([
     startScheduler("twin", async () => (await import("@/lib/twin/scheduler")).startTwinScheduler),
     startScheduler("inbound-receipt-task", async () => (await import("@/lib/inbound-receipt-task-scheduler")).startInboundReceiptTaskScheduler),
+    startScheduler("operations-monitor", async () => (await import("@/lib/operations-monitor-scheduler")).startOperationMonitorScheduler),
   ]);
 }

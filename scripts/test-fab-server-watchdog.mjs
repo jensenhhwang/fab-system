@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
   FAILURE_LIMIT,
+  cwdFromLsof,
+  firstPid,
   nextServerCommand,
   nextWatchdogDecision,
   restartDelayMs,
@@ -28,6 +30,10 @@ assert.equal(state.restartAttempt, 1);
 assert.equal(restartDelayMs(0), 1_000);
 assert.equal(restartDelayMs(3), 8_000);
 assert.equal(restartDelayMs(99), 60_000);
+assert.equal(firstPid("86804\n"), 86804);
+assert.equal(firstPid(""), null);
+assert.equal(cwdFromLsof("p86804\nfcwd\nn/Fab/fab-system\n"), "/Fab/fab-system");
+assert.equal(cwdFromLsof("p86804\n"), null);
 
 assert.deepEqual(
   nextServerCommand("/Fab/fab-system", "/opt/node", 3000),

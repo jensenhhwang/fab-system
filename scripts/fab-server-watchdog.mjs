@@ -1,12 +1,14 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 
 export const FAILURE_LIMIT = 3;
 export const HEALTH_INTERVAL_MS = 60_000;
 export const HEALTH_TIMEOUT_MS = 10_000;
 export const START_GRACE_MS = 30_000;
 export const STOP_GRACE_MS = 10_000;
+const execFileAsync = promisify(execFile);
 
 export function nextWatchdogDecision(state, event) {
   if (event === "HEALTH_OK") {
@@ -73,6 +75,53 @@ async function checkReady(url) {
   }
 }
 
+export function firstPid(output) {
+  const value = output.split(/\s+/).find(Boolean);
+  return value && /^\d+$/.test(value) ? Number(value) : null;
+}
+
+export function cwdFromLsof(output) {
+  const value = output.split("\n").find((line) => line.startsWith("n"));
+  return value ? value.slice(1) : null;
+}
+
+async function findListeningProcess(port, expectedWorkdir) {
+  try {
+    const listener = await execFileAsync("/usr/sbin/lsof", [
+      "-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t",
+    ]);
+    const pid = firstPid(listener.stdout);
+    if (!pid) return null;
+    const cwdResult = await execFileAsync("/usr/sbin/lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"]);
+    const cwd = cwdFromLsof(cwdResult.stdout);
+    return { pid, cwd, owned: cwd === expectedWorkdir };
+  } catch {
+    return null;
+  }
+}
+
+async function stopOwnedListener(listener) {
+  if (!listener?.owned || !listener.pid || listener.pid === process.pid) return false;
+  try {
+    process.kill(listener.pid, "SIGTERM");
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ESRCH") return true;
+    throw error;
+  }
+  for (let elapsed = 0; elapsed < STOP_GRACE_MS; elapsed += 250) {
+    await sleep(250);
+    try {
+      process.kill(listener.pid, 0);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ESRCH") return true;
+      throw error;
+    }
+  }
+  log("listener-force-kill", `pid=${listener.pid}`);
+  process.kill(listener.pid, "SIGKILL");
+  return true;
+}
+
 function signalProcessGroup(pid, signal) {
   if (!pid) return false;
   try {
@@ -136,6 +185,7 @@ export async function runWatchdog(options = {}) {
   let stopping = false;
   let restartAttempt = 0;
   let currentChild = null;
+  let adoptedFailures = 0;
 
   const requestStop = () => {
     if (stopping) return;
@@ -148,6 +198,30 @@ export async function runWatchdog(options = {}) {
 
   log("watchdog-start", `workdir=${workdir} port=${port}`);
   while (!stopping) {
+    const listener = await findListeningProcess(port, workdir);
+    if (listener) {
+      const health = await checkReady(readyUrl);
+      if (health.ok) {
+        adoptedFailures = 0;
+        restartAttempt = 0;
+        log("adopted-health-ok", `pid=${listener.pid} status=${health.status} reason=${health.reason}`);
+      } else {
+        adoptedFailures += 1;
+        log(
+          "adopted-health-failed",
+          `pid=${listener.pid} owned=${listener.owned} status=${health.status} reason=${health.reason} failures=${adoptedFailures}`,
+        );
+        if (adoptedFailures >= FAILURE_LIMIT && listener.owned) {
+          log("adopted-restart", `pid=${listener.pid} cwd=${listener.cwd}`);
+          await stopOwnedListener(listener);
+          adoptedFailures = 0;
+          continue;
+        }
+      }
+      await sleep(HEALTH_INTERVAL_MS);
+      continue;
+    }
+    adoptedFailures = 0;
     const server = nextServerCommand(workdir, nodePath, port);
     currentChild = spawn(server.command, server.args, {
       cwd: workdir,
