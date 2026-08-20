@@ -58,6 +58,8 @@
     "test:server-health": "tsx scripts/test-server-health.ts",
     "test:fab-watchdog": "node scripts/test-fab-server-watchdog.mjs",
     "test:fab-launchd": "node scripts/test-fab-server-launchd.mjs",
+    "test:operations-monitor": "tsx scripts/test-operations-monitor.ts",
+    "test:operations-monitor-persistence": "tsx scripts/test-operations-monitor-persistence.ts",
     "ops:watchdog": "node scripts/fab-server-watchdog.mjs",
     "ops:server:install": "node scripts/fab-server-launchd.mjs install",
     "ops:server:start": "node scripts/fab-server-launchd.mjs start",
@@ -100,6 +102,7 @@
     "db:realize-operational-inventory": "tsx scripts/realize-operational-inventory.ts",
     "db:bootstrap-inventory-verification": "tsx scripts/bootstrap-inventory-verification.ts",
     "db:calibrate-inventory": "tsx scripts/calibrate-inventory-policy.ts",
+    "db:refill-inventory": "tsx scripts/refill-inventory-to-design-target.ts",
     "db:scale-opening-inventory": "tsx scripts/apply-opening-inventory-scaleup.ts"
   },
   "dependencies": {
