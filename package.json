@@ -55,6 +55,7 @@
     "test:tick-diagnosis": "tsx scripts/test-tick-diagnosis.ts",
     "test:shipment-request": "tsx scripts/test-shipment-request.ts",
     "test:customer-contracts": "tsx scripts/test-customer-contracts.ts",
+    "test:contract-window": "tsx scripts/test-contract-fulfillment-window.ts",
     "test:auto-shipment": "tsx scripts/test-auto-shipment.ts",
     "test:scene-clock": "tsx scripts/test-scene-clock.ts",
     "test:wafer-lot-12foup": "tsx scripts/test-wafer-lot-12foup.ts",
