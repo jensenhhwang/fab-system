@@ -9,20 +9,21 @@ import { buildStepConsumption, computeBurn, type StepConsumption } from "@/lib/t
 import { planInbound, settleArrivals, updateBurnEma, observedDailyDemand } from "@/lib/twin/inbound";
 import { resolveLeadTimeDays } from "@/lib/twin/lead-time";
 import { getOrInitTwinState, acquireTwinLock, releaseTwinLock } from "@/lib/twin/state";
-import { advanceOperatingClock, operatingDaysToMs, operatingMsToDays, OPERATING_SPEED_MULTIPLIER } from "@/lib/twin/operating-clock";
+import { advanceOperatingClock, operatingDaysToMs, operatingMsToDays, operatingDaysCompletedBetween, OPERATING_DAYS_PER_MONTH, OPERATING_SPEED_MULTIPLIER } from "@/lib/twin/operating-clock";
 import { burnInventoryProjection, increaseInventoryProjection } from "@/lib/inventory-projection";
 import { isRoleAutomationReady } from "@/lib/operations-automation-gate-server";
 import { autonomyCeiling, initialPurchaseOrderStatus, shouldAutoApprovePendingOrder } from "@/lib/procurement-agent";
 import { loadLiveScenarioMaterials } from "@/lib/material-scenario-server";
 import { warehouseVerdict } from "@/lib/logistics-agent";
-import { getWarehouseCapacity } from "@/lib/queries";
+import { getWarehouseCapacity, getInventoryRows } from "@/lib/queries";
 import { BURN_EMA_CEILING_MULTIPLIER, warehouseOccupancyFactor } from "@/lib/capacity";
 import { blockingMaterialIds, coverageState, criticalMaterialIds, type MaterialSignal } from "@/lib/materials-agent";
 import { finishedGoodsPerWafer, finishedGoodsUnit, finishedGoodsWarehouseFor, applyFinalTestQueue } from "@/lib/finished-goods";
 import { ACTIVE_PRODUCTION_PRODUCTS, getProductionConfig } from "@/lib/fab-production-config";
 import { advanceStepBucketWip, releaseStepBucketWip } from "@/lib/twin/step-bucket";
 import { planAutoShipments } from "@/lib/twin/auto-shipment";
-import { buildContractLines } from "@/lib/customer-contracts";
+import { buildContractLines, designMonthlyOutput } from "@/lib/customer-contracts";
+import { buildDailySnapshot } from "@/lib/twin/daily-snapshot";
 
 // 자동 출하의 실행 주체 — shipments.shippedBy에 남아 사람 출하와 구분된다.
 const AUTO_SHIPMENT_ACTOR = "AGENT:정영업";
@@ -226,6 +227,12 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
     if (clock.clampedCatchUp) {
       console.warn(`[twin] 운영시계 catch-up 상한 적용 — 정지 공백이 한꺼번에 반영되지 않도록 잘랐다`);
     }
+    // 이번 tick에 넘어간 운영일. 하루가 끝나야 그 날의 집계가 확정되므로 진행 중인 날은 빼고,
+    // catch-up으로 여러 날을 건너뛰면 그 사이 날을 모두 받는다.
+    const completedOperatingDays = operatingDaysCompletedBetween(
+      state.operatingEpochMs ?? 0,
+      clock.operatingEpochMs,
+    );
 
     // ── 제품 루프: HBM/DRAM/NAND 각각 WIP 진행 → 소모 계산 → 완제품 적립 ──
     // 자재 소모는 fab 공유 재고이므로 제품별 burn을 materialId로 합산한 뒤, 루프 밖에서 1회만 재고에 반영한다.
@@ -238,6 +245,7 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
     mark("고객조회");
     const autoShipmentLines = buildContractLines(customerDocs);
     let autoShipped = 0;
+    const autoShippedByProduct: Partial<Record<Product, number>> = {};
 
     const burnedByMaterialAgg = new Map<string, number>();
     let totalAdvanced = 0;
@@ -351,6 +359,7 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
             shippedBy: AUTO_SHIPMENT_ACTOR,
           });
           autoShipped += alloc.qty;
+          autoShippedByProduct[product] = (autoShippedByProduct[product] ?? 0) + alloc.qty;
         }
       }
       phase[`  └${fabId} 자동출하`] = Date.now() - shipMark;
@@ -513,6 +522,63 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
     }
 
     mark("발주·입고정산");
+
+    // ── 일별 스냅샷 (운영일 경계에서만) ──
+    // 재고 커버리지·창고 점유는 상태라 나중에 복원할 수 없다. 하루가 끝나는 이 순간에만 남는다.
+    if (completedOperatingDays.length > 0) {
+      const snapMark = Date.now();
+      const { twinDailySnapshots } = await collections();
+      const invRows = await getInventoryRows();
+      const seenMaterial = new Set<string>();
+      const materialDohs = invRows
+        .filter((r) => {
+          if (seenMaterial.has(r.materialId)) return false;
+          seenMaterial.add(r.materialId);
+          return r.material.ropDays > 0 && r.doh != null;
+        })
+        .map((r) => ({ materialCode: r.material.code, doh: r.doh as number }));
+      const criticalCount = materialDohs.filter((m) => m.doh > 0 && m.doh < 5).length;
+
+      // 설계 일산출 = 설계 월산출 ÷ 운영 30일. designMonthlyOutput은 계약 월량을 만드는
+      // 함수와 같은 것을 쓴다(customer-contracts.ts) — 두 값이 갈라지면 비율이 거짓말을 한다.
+      const designDailyByProduct: Partial<Record<Product, number>> = {};
+      const contractDailyByProduct: Partial<Record<Product, number>> = {};
+      for (const { product } of ACTIVE_PRODUCTION_PRODUCTS) {
+        designDailyByProduct[product] = designMonthlyOutput(product) / OPERATING_DAYS_PER_MONTH;
+        // SPOT은 약정 물량이 0이라 자동으로 빠진다(buildContractLines).
+        const contractedMonthly = autoShipmentLines
+          .filter((l) => l.product === product)
+          .reduce((sum, l) => sum + l.contractedMonthlyQty, 0);
+        contractDailyByProduct[product] = contractedMonthly / OPERATING_DAYS_PER_MONTH;
+      }
+
+      // 여러 날이 한꺼번에 완료되면(정지 후 catch-up) 같은 상태로 채운다 — 그 날들의 실제
+      // 상태는 관측되지 않았기 때문이고, engine.clampedCatchUps가 그 사실을 표시한다.
+      for (const operatingDay of completedOperatingDays) {
+        const snapshot = buildDailySnapshot({
+          operatingDay,
+          recordedAt: now,
+          producedByProduct: finishedGoodsAddedByProduct,
+          designDailyByProduct,
+          shippedByProduct: autoShippedByProduct,
+          contractDailyByProduct,
+          materialDohs,
+          criticalCount,
+          warehouses: warehouseCapacity
+            .filter((wh) => wh.capacityMode === "SPACE")
+            .map((wh) => ({ code: wh.code, utilization: wh.utilization, baselineUtilization: 0 })),
+          policy: { r1: 0, r2: 0, r3: 0, r4: 0 },
+          engine: {
+            ticks: 1,
+            elapsedOperatingMs: clock.elapsedOperatingMs,
+            clampedCatchUps: clock.clampedCatchUp ? 1 : 0,
+          },
+        });
+        await twinDailySnapshots.updateOne({ _id: snapshot._id }, { $setOnInsert: snapshot }, { upsert: true });
+      }
+      phase["일별 스냅샷"] = Date.now() - snapMark;
+    }
+
     const { twinEngineState } = await collections();
     await twinEngineState.updateOne(
       { _id: "singleton" },
