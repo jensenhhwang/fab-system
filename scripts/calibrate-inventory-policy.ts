@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { collections, getMongoClient, type InventoryPolicyDoc } from "../src/lib/db";
 import { getInventoryRows, getMaterialDailyUsage, getWarehouseCapacity } from "../src/lib/queries";
 import { buildProcurementSummary } from "../src/lib/procurement";
-import { materialFactor } from "../src/lib/capacity";
+import { warehouseOccupancyFactor } from "../src/lib/capacity";
 import { calculateBaselineTarget, capacityDecision, INVENTORY_POLICY_VERSION } from "../src/lib/inventory-policy";
 
 const apply = process.argv.includes("--apply");
@@ -73,7 +73,11 @@ async function main() {
       const decision = capacityDecision({
         capacityMode: capacity.capacityMode, currentOccupancy: capacity.occupancy, totalCapacity: capacity.totalCapacity,
         legalLimit: capacity.legalLimit, currentQuantity: row.totalQuantity, targetQuantity: target.targetQuantity,
-        occupancyFactor: ["HAZMAT", "MRO", "PRECURSOR"].includes(capacity.type) ? 1 : materialFactor(material),
+        // 점유 환산은 warehouseOccupancyFactor 하나만 쓴다 — capacity.occupancy는 이 함수로
+        // 계산돼 오는데(getWarehouseCapacity) 증분만 다른 규칙으로 재면, 위험물·전구체처럼
+        // 재고단위≠보관단위인 창고에서 증분이 실린더 슬롯 환산 없이 원단위로 더해져 점유가
+        // 과대평가되고 멀쩡한 자재가 BLOCKED_CAPACITY로 막힌다(§devlog day 23 환산 통합).
+        occupancyFactor: warehouseOccupancyFactor(capacity.type, material),
         materialCapacityLimit: row.capacityLimit ?? null,
       });
       if (!decision.allowed) { status = "BLOCKED_CAPACITY"; blockReason = decision.reason; }
