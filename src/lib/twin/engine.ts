@@ -316,6 +316,7 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
         );
         await finishedGoodsEvents.insertOne({
           _id: randomUUID(), fabId, product, tickAt: now,
+          operatingEpochMs: clock.operatingEpochMs,
           addedQty: queue.releasedQuantity, queuedQty: newlyCompletedQuantity,
         });
       }
@@ -345,6 +346,7 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
             warehouseId: fgWarehouseId, customerId: alloc.customerId,
             quantity: alloc.qty, unit: finishedGoodsUnit(product),
             shippedAt: now,
+            shippedOperatingMs: clock.operatingEpochMs,
             // 사람이 화면에서 낸 출하와 구분되도록 실행 주체를 남긴다.
             shippedBy: AUTO_SHIPMENT_ACTOR,
           });
@@ -384,7 +386,7 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
       snapshot.quantity -= burned;
       snapshot.avgDailyBurn = nextEma;
 
-      await twinBurnEvents.insertOne({ _id: randomUUID(), tickAt: now, materialId, burnedQty: burned, shortfallQty: shortfall });
+      await twinBurnEvents.insertOne({ _id: randomUUID(), tickAt: now, operatingEpochMs: clock.operatingEpochMs, materialId, burnedQty: burned, shortfallQty: shortfall });
     }
 
     mark("소모반영");

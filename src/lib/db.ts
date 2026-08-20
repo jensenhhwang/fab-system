@@ -126,6 +126,8 @@ export interface TwinPurchaseOrderDoc {
 export interface TwinBurnEventDoc {
   _id: string;
   tickAt: Date;
+  /** 운영시각(ms) — 트렌드 집계의 시간축. 없는 문서는 운영시계 도입 이전분이다. */
+  operatingEpochMs?: number;
   materialId: string;
   burnedQty: number;
   shortfallQty: number;
@@ -685,6 +687,8 @@ export interface FinishedGoodsEventDoc {
   fabId: FabId;
   product: Product;
   tickAt: Date;
+  /** 운영시각(ms) — 트렌드 집계의 시간축. */
+  operatingEpochMs?: number;
   addedQty: number;
   queuedQty: number;
 }
@@ -724,6 +728,8 @@ export interface ShipmentDoc {
   // 만들수록 자기 창고를 CAPACITY_OVER로 막아 생산을 스스로 세웠다.
   unit: "STACK" | "CHIP" | "DIE";
   shippedAt: Date;
+  /** 운영시각(ms) — 계약 이행률의 집계 창 근거. 계약 월량이 운영 1개월치이기 때문이다. */
+  shippedOperatingMs?: number;
   shippedBy: string;
 }
 
