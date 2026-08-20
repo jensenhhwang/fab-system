@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import LineChart from "./charts/LineChart";
 import BarChart from "./charts/BarChart";
 import Sparkline from "./charts/Sparkline";
@@ -35,15 +35,25 @@ export default function TrendsClient() {
   const [showTable, setShowTable] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch(`/api/twin/trends?axis=${axis}&days=${days}`, { cache: "no-store" });
-    const json = await res.json();
-    setPoints(Array.isArray(json.points) ? json.points : []);
-    setLoading(false);
+  // setState를 effect 본문에서 동기로 부르면 연쇄 렌더가 된다(react-hooks/set-state-in-effect).
+  // 상태 갱신은 전부 await 뒤에서만 하고, 필터를 빠르게 바꿨을 때 늦게 온 응답이 최신 결과를
+  // 덮지 않도록 취소 플래그를 둔다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/twin/trends?axis=${axis}&days=${days}`, { cache: "no-store" });
+        const json = await res.json();
+        if (cancelled) return;
+        setPoints(Array.isArray(json.points) ? json.points : []);
+      } catch {
+        if (!cancelled) setPoints([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [axis, days]);
-
-  useEffect(() => { void load(); }, [load]);
 
   const xLabels = points.map((p) => (axis === "operating" ? `${p.operatingDay}일차` : p.wallDayKey.slice(5)));
 
@@ -79,7 +89,7 @@ export default function TrendsClient() {
           {(["operating", "wall"] as const).map((a) => (
             <button
               key={a}
-              onClick={() => setAxis(a)}
+              onClick={() => { setLoading(true); setAxis(a); }}
               className={`px-3 py-1.5 text-xs font-bold ${axis === a ? "bg-[#141413] text-white" : "bg-white text-[#666]"}`}
             >
               {a === "operating" ? "운영일" : "벽시계일"}
@@ -90,7 +100,7 @@ export default function TrendsClient() {
           {RANGES.map((d) => (
             <button
               key={d}
-              onClick={() => setDays(d)}
+              onClick={() => { setLoading(true); setDays(d); }}
               className={`px-3 py-1.5 text-xs font-bold ${days === d ? "bg-[#141413] text-white" : "bg-white text-[#666]"}`}
             >
               {d}일
