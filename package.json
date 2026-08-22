@@ -28,6 +28,8 @@
     "test:twin-state": "tsx scripts/test-twin-state.ts",
     "test:operating-clock": "tsx scripts/test-operating-clock.ts",
     "test:autonomy-alternatives": "tsx scripts/test-twin-autonomy-alternatives.ts",
+    "test:ask-intent": "tsx scripts/test-ask-intent.ts",
+    "test:ask-answer": "tsx scripts/test-ask-answer.ts",
     "test:daily-snapshot": "tsx scripts/test-daily-snapshot.ts",
     "test:chart-scale": "tsx scripts/test-chart-scale.ts",
     "test:twin-engine": "tsx scripts/test-twin-engine.ts",
