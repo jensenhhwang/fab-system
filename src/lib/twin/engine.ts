@@ -13,7 +13,6 @@ import { advanceOperatingClock, operatingDaysToMs, operatingMsToDays, operatingD
 import { burnInventoryProjection, increaseInventoryProjection } from "@/lib/inventory-projection";
 import { isRoleAutomationReady } from "@/lib/operations-automation-gate-server";
 import { autonomyCeiling, initialPurchaseOrderStatus, shouldAutoApprovePendingOrder } from "@/lib/procurement-agent";
-import { loadLiveScenarioMaterials } from "@/lib/material-scenario-server";
 import { warehouseVerdict } from "@/lib/logistics-agent";
 import { getWarehouseCapacity, getInventoryRows } from "@/lib/queries";
 import { BURN_EMA_CEILING_MULTIPLIER, warehouseOccupancyFactor } from "@/lib/capacity";
@@ -23,6 +22,7 @@ import { ACTIVE_PRODUCTION_PRODUCTS, getProductionConfig } from "@/lib/fab-produ
 import { advanceStepBucketWip, releaseStepBucketWip } from "@/lib/twin/step-bucket";
 import { planAutoShipments } from "@/lib/twin/auto-shipment";
 import { buildContractLines, designMonthlyOutput } from "@/lib/customer-contracts";
+import { buildProcurementSummary } from "@/lib/procurement";
 import { buildDailySnapshot } from "@/lib/twin/daily-snapshot";
 
 // 자동 출하의 실행 주체 — shipments.shippedBy에 남아 사람 출하와 구분된다.
@@ -406,8 +406,6 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
     let receipts = 0;
     let held = 0;
     let autoApproved = 0;
-    const { materials: scenarioMaterials } = await loadLiveScenarioMaterials(now);
-    const scenarioByMaterial = new Map(scenarioMaterials.map((m) => [m.id, m]));
 
     // 미완결 PO를 자재별로 1회에 읽는다(자재마다 find를 돌리던 N+1 제거). 아직 도착하지 않은
     // 물량도 결국 그 창고를 점유하므로, 창고 예산에서 미리 빼둔다 — 안 그러면 매 tick이 같은
@@ -479,10 +477,18 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
         if (headroomOcc != null && occFactor > 0) {
           capacityHeadroomByWarehouse.set(warehouseId, headroomOcc - plan.qty * occFactor);
         }
-        const scenarioMat = scenarioByMaterial.get(materialId);
-        const ceiling = autonomyCeiling(scenarioMat
-          ? { category: scenarioMat.category, procurementAlternatives: scenarioMat.procurementAlternatives, supplyMode: scenarioMat.supplyMode }
-          : { category: mat.category, procurementAlternatives: [], supplyMode: mat.supplyMode });
+        // 자율등급 판정에 필요한 건 대체 공급사 목록 하나다. 예전에는 이것 때문에 매 tick
+        // loadLiveScenarioMaterials(server-only)를 불렀고 — getInventoryRows +
+        // getProcessUsagesWithMaterial + 컬렉션 6개 스캔 — 그 전이 의존 탓에 엔진이 Next
+        // 바깥에서 실행되지 못했다. 같은 buildProcurementSummary를 쓰므로 값은 동일하다
+        // (§test-twin-autonomy-alternatives).
+        const procurementAlternatives =
+          buildProcurementSummary(supplierLinksByMaterial.get(materialId) ?? [], allSupplierDocs, now)?.alternatives ?? [];
+        const ceiling = autonomyCeiling({
+          category: mat.category,
+          procurementAlternatives,
+          supplyMode: mat.supplyMode,
+        });
         await twinPurchaseOrders.insertOne({
           _id: randomUUID(), materialId, qty: plan.qty, orderedAt: now,
           // 도착 판정의 근거는 운영시각이다. etaAt(벽시계)은 화면 표시용으로 같이 남긴다.
