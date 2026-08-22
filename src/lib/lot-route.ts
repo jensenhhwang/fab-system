@@ -220,6 +220,8 @@ export type AggregateWipTiming = {
   operatingEpochMs: number;
   elapsedOperatingMs: number;
   recordedAt: Date;
+  /** 기존 운영 로트의 예정시각 lazy backfill은 실제 Twin 엔진만 명시적으로 켠다. */
+  initializeMissingSchedules?: boolean;
 };
 
 type AggregateAdvanceResult = {
@@ -271,6 +273,73 @@ async function initializeAggregateOperatingSchedules(input: {
 
 // 엔진 관리 M20 로트를 운영 예정시각 순서로 진행한다. VISUAL/WATCHED 코호트와 달리
 // waferLotStepEvents나 M20_PILOT 작업지시를 만들지 않는다.
+/**
+ * 한 tick에 "이 조합의 로트가 어디까지 가는가"를 계산하는 순수 함수.
+ *
+ * 집계 로트(AGGREGATE/MODELED_FOUP)는 개별 정체성이 없다. 진행 결과는
+ * (currentStepIndex, dueOperatingMs, waferQty) 세 값에만 의존하므로, 같은 조합은 한 번만
+ * 계산하고 updateMany로 묶어 쓸 수 있다 — 실측 2026-08-22: M20 진행중 7,761 로트가 18조합에
+ * 몰려 있어 쓰기가 431배 줄어든다. per-lot 문서는 그대로 남으므로 HBM의 개별 FOUP 3D 추적은
+ * 유지된다. 바뀌는 건 "쓰는 방식"뿐이다.
+ */
+export function planLotAdvance(input: {
+  currentStepIndex: number;
+  dueOperatingMs: number;
+  operatingEpochMs: number;
+  stepDwellMs: number;
+  totalSteps: number;
+  /** tick당 로트가 넘을 수 있는 최대 스텝 수 */
+  maxSteps: number;
+  isBlockedAtStep?: (stepIndex: number) => boolean;
+  finishedGoodsCapacityOver?: boolean;
+}): {
+  nextStepIndex: number;
+  nextDueOperatingMs: number;
+  movedSteps: number;
+  /** 이번에 "완료하고 나간" 스텝 인덱스들 — 소모 계산의 근거 */
+  advancedFromSteps: number[];
+  done: boolean;
+  materialHeld: boolean;
+  finishedGoodsHeld: boolean;
+} {
+  const { operatingEpochMs, stepDwellMs, totalSteps, maxSteps } = input;
+  let currentStep = input.currentStepIndex;
+  let nextDue = input.dueOperatingMs;
+  let movedSteps = 0;
+  let materialHeld = false;
+  let finishedGoodsHeld = false;
+  const advancedFromSteps: number[] = [];
+
+  while (currentStep < totalSteps && nextDue <= operatingEpochMs && movedSteps < maxSteps) {
+    const fromStep = currentStep;
+    const isDone = fromStep + 1 >= totalSteps;
+    materialHeld = input.isBlockedAtStep?.(fromStep) === true;
+    finishedGoodsHeld = isDone && input.finishedGoodsCapacityOver === true;
+
+    if (materialHeld || finishedGoodsHeld) {
+      // 막히면 그 자리에서 멈추고 다음 tick에 다시 본다.
+      nextDue = operatingEpochMs + stepDwellMs;
+      break;
+    }
+
+    advancedFromSteps.push(fromStep);
+    movedSteps++;
+    currentStep = fromStep + 1;
+    nextDue += stepDwellMs;
+    if (isDone) break;
+  }
+
+  return {
+    nextStepIndex: currentStep,
+    nextDueOperatingMs: nextDue,
+    movedSteps,
+    advancedFromSteps,
+    done: currentStep >= totalSteps,
+    materialHeld,
+    finishedGoodsHeld,
+  };
+}
+
 export async function advanceAggregateWip(
   fabId: FabId,
   product: Product,
@@ -289,14 +358,16 @@ export async function advanceAggregateWip(
   if (totalSteps === 0) return empty;
   const stepDwellMs = stepDwellOperatingMs(cfg.cycleTimeDays, totalSteps);
 
-  await initializeAggregateOperatingSchedules({
-    fabId,
-    product,
-    operatingEpochMs: timing.operatingEpochMs,
-    recordedAt: timing.recordedAt,
-    stepDwellMs,
-    limit: cfg.advanceBatchMax,
-  });
+  if (timing.initializeMissingSchedules) {
+    await initializeAggregateOperatingSchedules({
+      fabId,
+      product,
+      operatingEpochMs: timing.operatingEpochMs,
+      recordedAt: timing.recordedAt,
+      stepDwellMs,
+      limit: cfg.advanceBatchMax,
+    });
+  }
   if (timing.elapsedOperatingMs <= 0) return empty;
 
   const due = await waferLots.find({
@@ -311,73 +382,82 @@ export async function advanceAggregateWip(
   let blocked = 0;
   const advancedFromStepIndex: Record<number, number> = {};
   const maxStepsPerLot = Math.ceil(timing.elapsedOperatingMs / stepDwellMs) + 1;
-  const ops: AnyBulkWriteOperation<WaferLotDoc>[] = due.map((lot) => {
-    const originalDue = lot.nextStepOperatingMs as number;
-    let nextDue = originalDue;
-    let currentStep = lot.currentStepIndex ?? 0;
-    let movedSteps = 0;
-    let materialHeld = false;
-    let finishedGoodsHeld = false;
 
-    while (
-      currentStep < totalSteps
-      && nextDue <= timing.operatingEpochMs
-      && movedSteps < maxStepsPerLot
-    ) {
-      const fromStep = currentStep;
-      const nextStep = fromStep + 1;
-      const isDone = nextStep >= totalSteps;
-      materialHeld = Boolean(
-        gating && isLotMaterialBlocked(fromStep, gating.stepConsumption, gating.blockedMaterialIds),
-      );
-      finishedGoodsHeld = isDone && gating?.finishedGoodsCapacityOver === true;
+  // 집계 로트는 개별 정체성이 없어 진행 결과가 (현재스텝, 도래시각, waferQty)에만 의존한다.
+  // 예전에는 로트마다 updateOne을 만들어 bulkWrite에 넣었는데, 서버는 여전히 로트 수만큼
+  // 개별 갱신을 수행했다 — 실측 7,761 로트에 13~20초로 tick의 절반이었다. 같은 조합을 묶으면
+  // 18회로 줄어든다(431배). per-lot 문서는 그대로라 HBM 개별 FOUP 3D 추적은 유지된다.
+  // 키는 (현재스텝, 도래시각)뿐이다. waferQty는 키에 넣지 않고 **합계**로 다룬다 —
+  // 키에 넣으면 updateMany 필터에도 넣어야 하는데, 값이 없는 문서가 섞이면 필터가 갈라져
+  // 같은 로트를 두 그룹이 덮어쓸 수 있다. 합계로 하면 로트마다 달라도 총량이 정확하다.
+  const groups = new Map<string, { step: number; due: number; waferQtySum: number; count: number }>();
+  for (const lot of due) {
+    const step = lot.currentStepIndex ?? 0;
+    const dueMs = lot.nextStepOperatingMs as number;
+    const waferQty = lot.waferQty ?? cfg.wafersPerFoup;
+    const key = `${step}|${dueMs}`;
+    const hit = groups.get(key);
+    if (hit) { hit.count++; hit.waferQtySum += waferQty; }
+    else groups.set(key, { step, due: dueMs, waferQtySum: waferQty, count: 1 });
+  }
 
-      if (materialHeld || finishedGoodsHeld) {
-        blocked++;
-        nextDue = timing.operatingEpochMs + stepDwellMs;
-        break;
-      }
+  const ops: AnyBulkWriteOperation<WaferLotDoc>[] = [];
+  for (const group of groups.values()) {
+    const plan = planLotAdvance({
+      currentStepIndex: group.step,
+      dueOperatingMs: group.due,
+      operatingEpochMs: timing.operatingEpochMs,
+      stepDwellMs,
+      totalSteps,
+      maxSteps: maxStepsPerLot,
+      isBlockedAtStep: gating
+        ? (stepIndex) => isLotMaterialBlocked(stepIndex, gating.stepConsumption, gating.blockedMaterialIds)
+        : undefined,
+      finishedGoodsCapacityOver: gating?.finishedGoodsCapacityOver === true,
+    });
 
-      const waferQty = lot.waferQty ?? cfg.wafersPerFoup;
-      advanced++;
-      movedSteps++;
-      advancedFromStepIndex[fromStep] = (advancedFromStepIndex[fromStep] ?? 0) + waferQty;
-      currentStep = nextStep;
-      nextDue += stepDwellMs;
-      if (isDone) {
-        completed++;
-        completedWaferQty += waferQty;
-        break;
-      }
+    // 집계는 그룹 크기만큼 곱한다 — 총량이 예전과 같아야 한다.
+    for (const fromStep of plan.advancedFromSteps) {
+      advancedFromStepIndex[fromStep] = (advancedFromStepIndex[fromStep] ?? 0) + group.waferQtySum;
+    }
+    advanced += plan.movedSteps * group.count;
+    if (plan.materialHeld || plan.finishedGoodsHeld) blocked += group.count;
+    if (plan.done) {
+      completed += group.count;
+      completedWaferQty += group.waferQtySum;
     }
 
-    const isDone = currentStep >= totalSteps;
-    const nextNodeId = isDone
-      ? visits[totalSteps - 1].nodeId
-      : visits[currentStep].nodeId;
+    const nextNodeId = plan.done ? visits[totalSteps - 1].nodeId : visits[plan.nextStepIndex].nodeId;
     const setFields: Partial<WaferLotDoc> = {
-      currentStepIndex: currentStep,
+      currentStepIndex: plan.nextStepIndex,
       currentNodeId: nextNodeId,
-      nextStepOperatingMs: nextDue,
+      nextStepOperatingMs: plan.nextDueOperatingMs,
       updatedAt: timing.recordedAt,
-      status: isDone ? "DONE" : "IN_PROGRESS",
+      status: plan.done ? "DONE" : "IN_PROGRESS",
     };
-    if (movedSteps > 0) setFields.lastEventAt = timing.recordedAt;
-    if (materialHeld) setFields.materialBlockedAt = lot.materialBlockedAt ?? timing.recordedAt;
-    if (finishedGoodsHeld) setFields.finishedGoodsHoldAt = lot.finishedGoodsHoldAt ?? timing.recordedAt;
+    if (plan.movedSteps > 0) setFields.lastEventAt = timing.recordedAt;
+    if (plan.materialHeld) setFields.materialBlockedAt = timing.recordedAt;
+    if (plan.finishedGoodsHeld) setFields.finishedGoodsHoldAt = timing.recordedAt;
 
     const update: Record<string, unknown> = { $set: setFields };
-    if (movedSteps > 0 && !materialHeld && !finishedGoodsHeld) {
+    if (plan.movedSteps > 0 && !plan.materialHeld && !plan.finishedGoodsHeld) {
       update.$unset = { materialBlockedAt: "", finishedGoodsHoldAt: "" };
     }
-    return {
-      updateOne: {
-        filter: { _id: lot._id, nextStepOperatingMs: originalDue },
+    ops.push({
+      updateMany: {
+        // 낙관적 동시성은 유지한다 — 그 사이 다른 tick이 옮긴 로트는 도래시각이 달라 안 걸린다.
+        filter: {
+          fabId, product,
+          cohort: { $in: ["AGGREGATE", "MODELED_FOUP"] },
+          status: "IN_PROGRESS",
+          currentStepIndex: group.step,
+          nextStepOperatingMs: group.due,
+        },
         update,
       },
-    };
-  });
-  await waferLots.bulkWrite(ops, { ordered: false });
+    });
+  }
+  if (ops.length > 0) await waferLots.bulkWrite(ops, { ordered: false });
   return { advanced, completed, completedWaferQty, blocked, advancedFromStepIndex };
 }
 
