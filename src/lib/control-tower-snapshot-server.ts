@@ -3,8 +3,11 @@ import "server-only";
 import { createHash } from "crypto";
 import { collections } from "@/lib/db";
 import { M20_MATERIAL_CONSUMPTION } from "@/lib/material-consumption";
-import { runProcurementShadow } from "@/lib/procurement-agent-server";
+import { buildLiveProcurementShadow, type ProcurementLiveOrderSignal } from "@/lib/procurement-agent";
 import { getWarehouseCapacity } from "@/lib/queries";
+import { buildMaterialsShadow, coverageState, type MaterialSignal } from "@/lib/materials-agent";
+import { buildAggregateProductionShadow } from "@/lib/production-agent";
+import { buildLogisticsShadow, type WarehouseSignal } from "@/lib/logistics-agent";
 import type {
   ControlTowerAIEpisodeDoc,
   ControlTowerEvidenceFact,
@@ -14,15 +17,6 @@ export type ControlTowerAISnapshot = ControlTowerAIEpisodeDoc["snapshot"];
 
 function hashValue(value: unknown) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
-}
-
-function coverageState(quantity: number, dailyBurn: number, ropDays: number) {
-  if (quantity <= 0) return "STOCKOUT" as const;
-  if (dailyBurn <= 0) return "NO_BURN" as const;
-  const days = quantity / dailyBurn;
-  if (days < Math.max(1, ropDays * 0.5)) return "CRITICAL" as const;
-  if (days < ropDays) return "BELOW_ROP" as const;
-  return "NORMAL" as const;
 }
 
 function warehouseBand(utilization: number) {
@@ -44,17 +38,17 @@ export async function buildControlTowerAISnapshot(): Promise<{
     materials,
     inventories,
     openPOs,
-    workOrders,
+    pendingOrHeldPOs,
     warehouseCapacity,
     wipCount,
-    shadow,
+    materialBlockedLotCount,
+    finishedGoodsHoldLotCount,
   ] = await Promise.all([
     db.materials.find({ _id: { $in: materialIds } }).toArray(),
     db.inventory.find({ materialId: { $in: materialIds } }).toArray(),
     db.twinPurchaseOrders.find({ status: { $ne: "RECEIVED" } }).sort({ etaAt: 1 }).toArray(),
-    db.workOrders.find({ status: { $in: ["QUEUED", "MATERIAL_WAIT", "RUNNING", "HOLD"] } })
-      .project({ _id: 1, fabId: 1, processCode: 1, status: 1 })
-      .toArray(),
+    // 김구매(PROCUREMENT) 카드가 실제 twin 상태를 서술하는 데 쓴다(가정법 없음, buildLiveProcurementShadow).
+    db.twinPurchaseOrders.find({ status: { $in: ["PENDING_APPROVAL", "INBOUND_HOLD"] } }).toArray(),
     getWarehouseCapacity(),
     db.waferLots.countDocuments({
       fabId: "M20",
@@ -62,10 +56,29 @@ export async function buildControlTowerAISnapshot(): Promise<{
       cohort: { $in: ["AGGREGATE", "MODELED_FOUP"] },
       status: "IN_PROGRESS",
     }),
-    runProcurementShadow({}),
+    // 최생산(PRODUCTION) 카드도 legacy workOrders(M20_PILOT, /mes 폐기 후 정지)가 아니라
+    // advanceAggregateWip이 실제로 쓰는 라이브 신호(waferLots 집계)로 계산한다 — /api/twin/control-tower와
+    // 같은 기준(K1)을 이 AI 스냅샷 경로에도 맞춘다.
+    db.waferLots.countDocuments({ fabId: "M20", product: "HBM", materialBlockedAt: { $exists: true } }),
+    db.waferLots.countDocuments({ fabId: "M20", product: "HBM", finishedGoodsHoldAt: { $exists: true } }),
   ]);
 
   const materialById = new Map(materials.map((material) => [material._id, material]));
+  // pendingOrHeldPOs는 M20 소비 자재(materialIds) 밖의 자재를 참조할 수 있다(DRAM/NAND 전용 자재 등).
+  const missingMaterialIds = [...new Set(pendingOrHeldPOs.map((po) => po.materialId))].filter((id) => !materialById.has(id));
+  if (missingMaterialIds.length > 0) {
+    for (const m of await db.materials.find({ _id: { $in: missingMaterialIds } }).toArray()) materialById.set(m._id, m);
+  }
+  const procurementSignals: ProcurementLiveOrderSignal[] = pendingOrHeldPOs.map((po) => ({
+    materialId: po.materialId,
+    materialCode: materialById.get(po.materialId)?.code ?? po.materialId,
+    materialName: materialById.get(po.materialId)?.name ?? po.materialId,
+    unit: materialById.get(po.materialId)?.unit ?? "",
+    qty: po.qty,
+    status: po.status as "PENDING_APPROVAL" | "INBOUND_HOLD",
+    waitingMinutes: (Date.now() - po.orderedAt.getTime()) / 60_000,
+    autonomyReason: po.autonomyReason ?? null,
+  }));
   const inventoryByMaterial = new Map<string, { quantity: number; dailyBurn: number }>();
   for (const inventory of inventories) {
     const current = inventoryByMaterial.get(inventory.materialId) ?? { quantity: 0, dailyBurn: 0 };
@@ -100,25 +113,27 @@ export async function buildControlTowerAISnapshot(): Promise<{
 
   const facts: ControlTowerEvidenceFact[] = [];
 
-  const topRule = shadow.chains[0] ?? null;
+  const capturedAt = new Date().toISOString();
+  const procurementShadow = buildLiveProcurementShadow(procurementSignals, capturedAt);
+  const topRule = procurementShadow.top;
   facts.push(
     {
       ref: "PROCUREMENT:SUMMARY",
       role: "PROCUREMENT",
       label: "구매 조치 대상",
-      value: `조치 ${shadow.summary.actionable}종 · 발주 제안 ${shadow.summary.wouldPropose}종 · 보류 ${shadow.summary.blocked}종`,
-      state: shadow.summary.blocked > 0
+      value: `승인 대기 ${procurementShadow.summary.pendingApproval}건 · 긴급 ${procurementShadow.summary.urgent}건 · 입고 보류 ${procurementShadow.summary.inboundHeld}건`,
+      state: procurementShadow.summary.inboundHeld > 0 || procurementShadow.summary.urgent > 0
         ? "CRITICAL"
-        : shadow.summary.actionable > 0 ? "ATTENTION" : "NORMAL",
+        : procurementShadow.summary.pendingApproval > 0 ? "ATTENTION" : "NORMAL",
     },
   );
   if (topRule) {
     facts.push({
-      ref: `PROCUREMENT:RULE:${topRule.materialCode}`,
+      ref: `PROCUREMENT:RULE:${topRule.code}`,
       role: "PROCUREMENT",
-      label: `${topRule.materialName} 규칙 엔진 판정`,
+      label: `${topRule.name} 규칙 엔진 판정`,
       value: topRule.verdictText,
-      state: topRule.verdict === "BLOCKED"
+      state: topRule.verdict === "INBOUND_HELD" || topRule.verdict === "APPROVAL_URGENT"
         ? "CRITICAL"
         : "ATTENTION",
     });
@@ -138,10 +153,6 @@ export async function buildControlTowerAISnapshot(): Promise<{
     });
   }
 
-  const statusCounts = new Map<string, number>();
-  for (const workOrder of workOrders) {
-    statusCounts.set(String(workOrder.status), (statusCounts.get(String(workOrder.status)) ?? 0) + 1);
-  }
   facts.push(
     {
       ref: "PRODUCTION:WIP",
@@ -151,13 +162,13 @@ export async function buildControlTowerAISnapshot(): Promise<{
       state: "NORMAL",
     },
     {
-      ref: "PRODUCTION:WORK_ORDERS",
+      ref: "PRODUCTION:AGGREGATE_WIP",
       role: "PRODUCTION",
-      label: "작업지시 상태",
-      value: `자재대기 ${statusCounts.get("MATERIAL_WAIT") ?? 0}건 · 대기 ${statusCounts.get("QUEUED") ?? 0}건 · 실행 ${statusCounts.get("RUNNING") ?? 0}건 · 보류 ${statusCounts.get("HOLD") ?? 0}건`,
-      state: (statusCounts.get("MATERIAL_WAIT") ?? 0) > 0
+      label: "WIP 라이브 게이팅",
+      value: `자재차단 ${materialBlockedLotCount.toLocaleString("ko-KR")}건 · 완제품창고차단 ${finishedGoodsHoldLotCount.toLocaleString("ko-KR")}건`,
+      state: materialBlockedLotCount > 0
         ? "CRITICAL"
-        : (statusCounts.get("HOLD") ?? 0) > 0 ? "ATTENTION" : "NORMAL",
+        : finishedGoodsHoldLotCount > 0 ? "ATTENTION" : "NORMAL",
     },
   );
 
@@ -182,25 +193,60 @@ export async function buildControlTowerAISnapshot(): Promise<{
     });
   }
 
-  const capturedAt = new Date().toISOString();
+  const materialsShadow = buildMaterialsShadow(
+    materialSignals satisfies MaterialSignal[],
+    capturedAt,
+  );
+  const productionShadow = buildAggregateProductionShadow(
+    { fabId: "M20", inProgressCount: wipCount, materialBlockedCount: materialBlockedLotCount, finishedGoodsHoldCount: finishedGoodsHoldLotCount },
+    capturedAt,
+  );
+  const warehouseSignals: WarehouseSignal[] = warehouseCapacity.map((wh) => ({
+    code: wh.code, name: wh.name, utilization: wh.utilization, legalUtilization: wh.legalUtilization,
+    capacityMode: wh.capacityMode,
+  }));
+  const logisticsShadow = buildLogisticsShadow(warehouseSignals, openPOs.length, capturedAt);
+
   const snapshot: ControlTowerAISnapshot = {
     capturedAt,
     facts,
     procurementRule: {
-      scenarioLabel: shadow.scenarioLabel,
-      actionable: shadow.summary.actionable,
-      wouldAutoReceive: shadow.summary.wouldAutoReceive,
-      wouldPropose: shadow.summary.wouldPropose,
-      blocked: shadow.summary.blocked,
+      scenarioLabel: procurementShadow.scenarioLabel,
+      pendingApproval: procurementShadow.summary.pendingApproval,
+      urgent: procurementShadow.summary.urgent,
+      inboundHeld: procurementShadow.summary.inboundHeld,
       topVerdict: topRule?.verdict ?? null,
       topVerdictText: topRule?.verdictText ?? null,
+    },
+    materialsRule: {
+      scenarioLabel: materialsShadow.scenarioLabel,
+      critical: materialsShadow.summary.critical,
+      watch: materialsShadow.summary.watch,
+      dataGap: materialsShadow.summary.dataGap,
+      topVerdict: materialsShadow.top?.verdict ?? null,
+      topVerdictText: materialsShadow.top?.verdictText ?? null,
+    },
+    productionRule: {
+      scenarioLabel: productionShadow.scenarioLabel,
+      materialBlocked: productionShadow.summary.materialBlocked,
+      hold: productionShadow.summary.hold,
+      topVerdict: productionShadow.top?.verdict ?? null,
+      topVerdictText: productionShadow.top?.verdictText ?? null,
+    },
+    logisticsRule: {
+      scenarioLabel: logisticsShadow.scenarioLabel,
+      over: logisticsShadow.summary.over,
+      watch: logisticsShadow.summary.watch,
+      openPOs: logisticsShadow.summary.openPOs,
+      topVerdict: logisticsShadow.top?.verdict ?? null,
+      topVerdictText: logisticsShadow.top?.verdictText ?? null,
     },
   };
 
   const semanticInput = {
     materials: materialSignals.map((item) => [item.code, item.state]),
-    workOrders: workOrders
-      .map((item) => [String(item._id), String(item.status)])
+    procurementOrders: pendingOrHeldPOs
+      .map((po) => [po._id, po.status])
       .sort((a, b) => a[0].localeCompare(b[0])),
     openPOs: openPOs.map((po) => [po._id, po.status]).sort((a, b) => a[0].localeCompare(b[0])),
     warehouses: warehouseCapacity
@@ -209,12 +255,17 @@ export async function buildControlTowerAISnapshot(): Promise<{
         warehouseBand(Math.max(warehouse.utilization, warehouse.legalUtilization ?? 0)),
       ])
       .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+    production: {
+      materialBlockedLotCount,
+      finishedGoodsHoldLotCount,
+      wipCount,
+    },
     procurement: {
-      actionable: shadow.summary.actionable,
-      wouldPropose: shadow.summary.wouldPropose,
-      blocked: shadow.summary.blocked,
+      pendingApproval: procurementShadow.summary.pendingApproval,
+      urgent: procurementShadow.summary.urgent,
+      inboundHeld: procurementShadow.summary.inboundHeld,
       topVerdict: topRule?.verdict ?? null,
-      topMaterial: topRule?.materialCode ?? null,
+      topMaterial: topRule?.code ?? null,
     },
   };
 

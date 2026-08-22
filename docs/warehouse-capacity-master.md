@@ -129,6 +129,18 @@ availableCapacity(material)
 | PRS-01 | `CAN_<MATERIAL>` | canister-slot | 물질별 TBD | 캐비닛 호환성 필요 |
 | UPW-01 | `UPW_PRODUCTION`, `UPW_BUFFER` | m³/day, m³ | TBD | 생산률과 저장량 분리 |
 
+### 5.2 완제품 창고 (Finished Goods)
+
+완제품 창고는 `materials`/`inventory`가 아니라 `finishedGoods` 집계 컬렉션을 쓰고(`getWarehouseCapacity()`, `src/lib/queries.ts`), 제품별로 창고를 분리한다 — §3의 "서로 다른 단위는 합산하지 않는다" 원칙을 완제품에도 그대로 적용한 것이다.
+
+| 시설 | 소속 Fab · 제품 | 단위 | 산정 방식 | 승인 / Review Gap |
+|---|---|---|---|---|
+| `WH-FG01` | M20 · HBM | STACK | NORMAL 일산출 × 5일 버퍼(최초 950,625 STACK, 이후 수요에 맞춰 운영 중 재산정됨 — 현재값은 `/warehouse` 화면 기준) | `MODELED_BASELINE` / `FIELD_SURVEY_REQUIRED` |
+| `WH-FG02` | M21 · DRAM | CHIP | NORMAL 일산출(4,562,090 CHIP/일) × 5일 버퍼 = 22,810,450 | `MODELED_BASELINE` / `FIELD_SURVEY_REQUIRED` |
+| `WH-FG03` | M22 · NAND | DIE | NORMAL 일산출(4,316,544 DIE/일) × 5일 버퍼 = 21,582,720 | `MODELED_BASELINE` / `FIELD_SURVEY_REQUIRED` |
+
+제품별 창고 ID는 `finishedGoodsWarehouseFor(product)`(`src/lib/finished-goods.ts`)가 반환한다. 2026-08-09 이전에는 3제품이 `WH-FG01` 하나(HBM 기준 STACK 용량)를 공유해서 `getWarehouseCapacity()`가 STACK·CHIP·DIE 수량을 단위 구분 없이 합산했다 — HBM 재고가 132일치(약 2,510만 STACK, 198%)까지 쌓이면서 DRAM·NAND WIP까지 마지막 스텝(CAPACITY_OVER 게이팅)에서 함께 멈추는 결과로 이어졌다. `src/lib/twin/engine.ts`의 `finishedGoodsCapacityOver` 판정도 제품 루프 안에서 자기 창고만 보도록 함께 고쳤다. 마이그레이션: `scripts/migrate-finished-goods-warehouse-split.ts`(`npm run db:migrate-fg-warehouse-split`), 검증: `scripts/test-finished-goods-warehouse-split.ts`.
+
 ## 6. 자재 보관 프로파일 필드 계약
 
 | 필드 | 설명 |
@@ -332,6 +344,7 @@ AI는 Capacity 숫자를 생성하거나 승인하지 않는다. 결정론적 �
 - 현재 DB 스키마: `src/lib/db.ts`
 - 현재 Capacity 계산: `src/lib/queries.ts#getWarehouseCapacity`
 - 현재 시드·계획값: `prisma/seed.ts`
+- 완제품 창고(§5.2) 단위·창고 배정: `src/lib/finished-goods.ts`, 시딩·이관: `scripts/migrate-finished-goods-warehouse-split.ts`
 
 ## 13. 다음 버전에서 결정할 항목
 

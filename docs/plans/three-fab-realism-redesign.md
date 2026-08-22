@@ -1,6 +1,6 @@
 # M20·M21·M22 3-Fab 현실성 재설계
 
-> **M20 기준 승계:** 이 문서의 M20 `50,000 WSPM` 가정은 2026-07-19부터 [`../fab-master.md`](../fab-master.md)의 `FAB_MASTER_M20_V1`로 대체되었다. M21·M22 값은 아직 `TBD / NOT_MODELED`이며 실제 생산능력으로 해석하지 않는다.
+> **3팹 전부 승계 완료:** 이 문서의 M20 `50,000 WSPM` 가정은 2026-07-19부터 [`../fab-master.md`](../fab-master.md)의 `FAB_MASTER_M20_V1`로 대체됐고, M21·M22 값(당시 `TBD / NOT_MODELED`)도 2026-07-21 `FAB_MASTER_M21_V1`/`FAB_MASTER_M22_V1`로 확정돼 route/equipment DB 연결과 twin tick 실행(`STEP_BUCKET` 집계)까지 완료됐다. 이 문서 §2의 표(50,000/80,000/100,000 WSPM 등)는 전부 과거 가정이며 현재 값이 아니다 — 3팹 현재 기준은 `fab-master.md`를 참조.
 
 상태: `2026 학습 시나리오 v1` 승인 · 2026-07-15
 

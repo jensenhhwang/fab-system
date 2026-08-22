@@ -31,6 +31,7 @@ const FAB_D = 45; // 정적 fallback(예: OVERVIEW_FOCUS) 전용 — 실제 화�
 // 같은 중심(0)을 써야 zone과 어긋나지 않는다 (예전 고정 M20 좌표계의 잔재였던 -2.25는 제거).
 const FAB_CENTER_Z = 0;
 
+
 // ─── 자재 카테고리 색 (usage 테이블과 통일) ───
 export const CATEGORY_COLOR: Record<string, string> = {
   GAS: "#B91C1C", // 가스 — 빨강
@@ -1499,8 +1500,12 @@ function Scene({
       ))}
       {fabId && fabId !== "M20" && <FabSignatureEquipment fabId={fabId} />}
 
-      {/* 3D에는 이동 의미가 있는 Watched FOUP만 표시한다. 전체 Fleet는 원장 수량으로 조회한다. */}
+      {/* 개별 추적 중인 Watched FOUP은 실데이터가 있을 때만 별도로 겹쳐 그린다. */}
       {showFoup && (liveFoups ?? []).map((lf) => <LiveTrackedFoup key={lf.lotId} liveFoup={lf} />)}
+      {/* 2026-08-12: bay 바닥에 WIP 수량만큼 인스턴스를 격자로 깔아봤으나 물리적으로 틀렸다 —
+          실제 팹에서 FOUP은 stocker·load port·OHT에 있지 바닥에 쌓이지 않는다. 되돌렸다.
+          여기 도는 12개는 여전히 twin과 무관한 장식이다(2.2초 상수). 진짜 해결은 RULES.md의
+          공통 Twin 운영시계(24×)를 세우고 3D를 거기에 종속시키는 것이다. */}
       {showFoup && foupFleet?.manifestStatus !== "ACTIVE" && WAFER_CONFIGS.map((cfg, i) => {
         if (liveFoupLabels.has(cfg.label)) return null;
         return <AnimatedFoup key={cfg.id} config={cfg} stateRef={waferStates[i]} dimmed={liveFoupLabels.size > 0} />;

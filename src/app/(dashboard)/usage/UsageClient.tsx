@@ -7,14 +7,14 @@ import dynamic from "next/dynamic";
 import { PROCESSES } from "@/lib/processes";
 import { FAB_IDS, type FabId } from "@/lib/fab-domain";
 import { getProcessGuide } from "@/lib/process-guide";
-import { buildTwinHref, type CameraPreset, type TwinMode } from "@/lib/twin-navigation";
+import { buildTwinHref, type TwinMode } from "@/lib/twin-navigation";
 import FabThroughputDial from "./FabThroughputDial";
-import LotRouteTrackerCard from "./LotRouteTrackerCard";
-import type { LiveFoupView } from "@/components/ProcessFlow3D";
 import type { FabEquipmentMasterView } from "@/lib/fab-equipment-master-view";
 import FabEquipmentMasterCard from "./FabEquipmentMasterCard";
-import M20NodeDensityCard from "./M20NodeDensityCard";
+import FabNodeDensityCard from "./M20NodeDensityCard";
+import BlockedLotsPanel from "./BlockedLotsPanel";
 import type { FoupFleetProjection } from "@/lib/foup-wip-model";
+import type { BayLoad } from "@/lib/process-bay-load";
 
 const ProcessFlow3D = dynamic(() => import("@/components/ProcessFlow3D"), { ssr: false });
 
@@ -85,13 +85,13 @@ export default function UsageClient({
   const twinFab = fabParam && FAB_IDS.includes(fabParam as FabId) ? fabParam as FabId : null;
   const materialParam = searchParams.get("material");
   const twinMode = (searchParams.get("mode") as TwinMode | null) ?? "LIVE";
-  const twinCamera = (searchParams.get("camera") as CameraPreset | null) ?? (twinFab ? `${twinFab}_OVERVIEW` as CameraPreset : "CAMPUS_OVERVIEW");
   const [hoveredMat, setHoveredMat] = useState<Material | null>(null);
   const [pinnedMatId, setPinnedMatId] = useState<string | null>(materialParam);
   const [selectedProc, setSelectedProc] = useState<string | null>(() => searchParams.get("process"));
   const [selectedFab, setSelectedFab] = useState<"ALL" | FabId>(() => twinFab ?? "ALL");
-  const [liveFoups, setLiveFoups] = useState<LiveFoupView[]>([]);
   const [foupFleet, setFoupFleet] = useState<FoupFleetProjection | null>(null);
+  // 공정(bay)별 실제 WIP과 적체 원인 — 3D가 실데이터를 그리는 근거다(§lib/process-bay-load).
+  const [bayLoads, setBayLoads] = useState<BayLoad[]>([]);
   const [filterCat, setFilterCat] = useState<string>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -108,6 +108,23 @@ export default function UsageClient({
     const interval = window.setInterval(() => { if (!document.hidden) void loadFoupFleet(); }, 10_000);
     return () => { window.clearTimeout(initial); window.clearInterval(interval); };
   }, [loadFoupFleet]);
+
+  const loadBayLoads = useCallback(async () => {
+    if (selectedFab === "ALL") { setBayLoads([]); return; }
+    const response = await fetch(
+      `/api/wafer-lots/node-density?fabId=${selectedFab}&product=${FAB_PRODUCT[selectedFab]}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) return;
+    const data = await response.json() as { bayLoads?: BayLoad[] };
+    setBayLoads(data.bayLoads ?? []);
+  }, [selectedFab]);
+
+  useEffect(() => {
+    const initial = window.setTimeout(() => void loadBayLoads(), 0);
+    const interval = window.setInterval(() => { if (!document.hidden) void loadBayLoads(); }, 10_000);
+    return () => { window.clearTimeout(initial); window.clearInterval(interval); };
+  }, [loadBayLoads]);
 
   function handleSort(col: SortKey) {
     if (sortKey === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -195,9 +212,9 @@ export default function UsageClient({
           <div className="text-[9px] font-black uppercase tracking-[0.1em] text-[#8A929A]">Control Tower · 조치</div>
           <div className="mt-1 text-xs font-black text-[#303840]">부족·지연·우선순위 판단</div>
         </Link>
-        <Link href="/campus" className="bg-white px-4 py-3 hover:bg-[#F8FAFC]">
-          <div className="text-[9px] font-black uppercase tracking-[0.1em] text-[#8A929A]">Digital Twin · 추적</div>
-          <div className="mt-1 text-xs font-black text-[#303840]">Lot·HU·이송의 물리 위치 확인</div>
+        <Link href="/" className="bg-white px-4 py-3 hover:bg-[#F8FAFC]">
+          <div className="text-[9px] font-black uppercase tracking-[0.1em] text-[#8A929A]">관제탑 라이브 · 추적</div>
+          <div className="mt-1 text-xs font-black text-[#303840]">4-에이전트 실시간 판단·소모·발주 확인</div>
         </Link>
         <div className="bg-[#20262D] px-4 py-3 text-white">
           <div className="text-[9px] font-black uppercase tracking-[0.1em] text-[#B9C3CC]">Process Usage · 분석</div>
@@ -207,21 +224,9 @@ export default function UsageClient({
 
       {(twinFab || materialParam) && (
         <div className="mb-5 flex flex-wrap items-center gap-2 border border-[#B9D8F3] bg-[#F2F8FF] px-4 py-3 text-[11px] text-[#335A78]">
-          <span className="font-black text-[#0069B4]">CAMPUS TWIN CONTEXT</span>
+          <span className="font-black text-[#0069B4]">TWIN CONTEXT</span>
           {twinFab && <span className="border-l border-[#B9D8F3] pl-2 font-bold">{twinFab} · {FAB_PRODUCT[twinFab]}</span>}
           {pinnedMat && <span className="font-mono font-bold">{pinnedMat.code} · {pinnedMat.name}</span>}
-          <Link
-            href={buildTwinHref("/campus", {
-              fabScope: twinFab ?? "CAMPUS", materialId: pinnedMatId,
-              facilityId: searchParams.get("facility"), lotId: searchParams.get("lot"),
-              handlingUnitId: searchParams.get("hu"), alertId: searchParams.get("alert"),
-              flowStep: searchParams.get("step"), mode: twinMode,
-              referenceTime: searchParams.get("time"), cameraPreset: twinCamera,
-            })}
-            className="ml-auto font-black text-[#0069B4] hover:underline"
-          >
-            ← Campus 전체뷰
-          </Link>
         </div>
       )}
 
@@ -365,7 +370,6 @@ export default function UsageClient({
                 warehouses={warehouses}
                 warehouseLinks={warehouseLinks}
                 equipmentCounts={equipmentByFab[selectedFab]}
-                liveFoups={selectedFab === "M20" ? liveFoups : []}
                 foupFleet={selectedFab === "M20" ? foupFleet : null}
               />
             </Suspense>
@@ -401,6 +405,7 @@ export default function UsageClient({
             <FabEquipmentMasterCard
               master={equipmentMasterByFab[selectedFab]}
               ledgerCounts={equipmentByFab[selectedFab]}
+              bayLoads={bayLoads}
               selectedProcess={selectedProc}
               onProcessSelect={(processCode) => {
                 setPinnedMatId(null);
@@ -408,15 +413,14 @@ export default function UsageClient({
                 setSelectedProc((current) => current === processCode ? null : processCode);
               }}
             />
-            {selectedFab === "M20" && (
-              <>
-                <M20NodeDensityCard fabId="M20" product="HBM" />
-                <div className="grid items-start gap-3 xl:grid-cols-2">
-                  <FabThroughputDial fabId="M20" foupFleet={foupFleet} />
-                  <LotRouteTrackerCard fabId="M20" product="HBM" occupiedFoup={foupFleet?.actual.occupied} onLiveFoupsChange={setLiveFoups} />
-                </div>
-              </>
-            )}
+            <FabNodeDensityCard key={selectedFab} fabId={selectedFab} product={FAB_PRODUCT[selectedFab]} />
+            {/* 다이얼은 3팹 공용이다 — 가동률을 바꾸면 그 팹의 WSPM·목표 WIP이 재계산된다.
+                FOUP Fleet 투영(Physical Fleet·Reserve·Watched)은 M20만 있으므로 그 팹에서만 넘긴다.
+                LOT 실행 추적 카드는 2026-08-12에 제거했다 — 추적 대상이던 WATCHED 로트 12개가
+                전부 DONE인데 재투입 로직이 없어 빈 카드였고, per-lot 원장이 M20에만 있어
+                3팹으로 확장되지도 않는다. 개별 로트 추적이 필요하면 WATCHED 재투입부터 설계해야 한다. */}
+            <FabThroughputDial fabId={selectedFab} foupFleet={selectedFab === "M20" ? foupFleet : null} />
+            {selectedFab === "M20" && <BlockedLotsPanel />}
           </div>
         </div>}
       </div>

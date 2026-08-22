@@ -20,6 +20,8 @@
 
 이 다섯 문서의 값이 충돌하면 임의로 숫자를 맞추지 않는다. 생산 규모는 이 문서, 공정 방문수는 `route-master.md`, FOUP·Carrier 수량은 `foup-wip-master.md`, 설비 대수는 `fab-equipment-master.md`, 자재 원단위는 `material-consumption-master.md`를 각각 단일 기준으로 사용한다. **M21·M22는 M20의 WSPM·수율·cycle time·자재 원단위를 복사하지 않고 각 제품·공정 구조에서 독립적으로 도출한다.**
 
+**범위 한계 — Fab당 단일 SKU.** 현재 `Product` 타입은 `HBM`/`DRAM`/`NAND` 3개뿐이고, 각 Fab의 기준 생산품(`modelProduct`)도 아래 절마다 1개씩(`M20-HBM4-12H-V1`, `M21-DDR5-16Gb-V1`, `M22-NAND321L-1Tb-TLC-V1`)만 정의한다. 실제 Fab은 한 라인에서 여러 SKU(NAND 512Gb/1Tb/TLC/QLC, DRAM 16Gb/24Gb 등)를 동시에 생산하지만, 이 시스템은 아직 Fab당 1개 대표 SKU로만 생산·자재·창고를 계산한다. `route-master.md`도 `fabId:product` 단일 키라 SKU 축이 없다. 다중 SKU 모델링은 별도 설계가 필요하며 이 문서의 범위 밖이다.
+
 ## 2. 사실과 가정의 경계 — 공개자료로 확인되는 범위
 
 - SK hynix M16은 EUV 장비를 도입한 1a nm DRAM 생산 거점으로 공개되었고, M10·M14·M16 세 Fab이 이천 본사에서 주로 DRAM을 생산한다. ([SK hynix Newsroom](https://news.skhynix.com/semiconductor-101-sk-hynix-on-where-chips-are-used/))
@@ -322,8 +324,8 @@ M21은 WSPM이 3팹 중 가장 크고, 전공정(P01~P09)은 공정이 단순해
 
 ## 5. 현재 구현 상태
 
-- M20: 생산 기준 NORMAL 117K / 명목 130K / 정상 WIP 16,380 FOUP-equivalent. 코드·DB 연결 완료.
-- M21·M22: 이 문서(V1)로 생산 규모가 승인됐으나, `fab-scenario.ts`의 `M20_PRODUCTION_SCENARIOS`처럼 UPLIFT/NAMEPLATE/EXPANSION 시나리오 상수와 route/equipment DB 연결은 아직 구현되지 않았다. 코드 연결 전까지 이 문서의 표를 단일 기준으로 사용한다.
+- M20: 생산 기준 NORMAL 117K / 명목 130K / 정상 WIP 16,380 FOUP-equivalent. 코드·DB 연결 완료. `wipMode: PER_LOT`(개별 `waferLots` 원장)로 twin tick 엔진이 실행.
+- M21·M22: NORMAL 시나리오는 route/equipment DB 연결과 twin tick 실행까지 완료됐다(`src/lib/fab-production-config.ts`의 `FAB_PRODUCTION_REGISTRY`, `equipmentMaster`/`routeMasters` 컬렉션에 M21/M22 시딩 완료, `wipMode: STEP_BUCKET` 집계 진행 — HBM처럼 개별 FOUP 원장을 만들지 않고 스텝별 수량 버킷으로 대량 WIP를 진행). `fab-scenario.ts`의 `M20_PRODUCTION_SCENARIOS`처럼 UPLIFT/NAMEPLATE/EXPANSION 시나리오 상수(`M21_PRODUCTION_SCENARIOS`/`M22_PRODUCTION_SCENARIOS` 상당)는 아직 구현되지 않았다 — 코드에는 `M21_CYCLE_DAYS`/`M22_CYCLE_DAYS` 등 NORMAL 단일값만 있다. NORMAL 이외 시나리오는 이 문서의 표를 단일 기준으로 사용한다.
 - 금지: 기존 HBM 월사용량을 일괄 배율하거나, FOUP-equivalent를 실물 FOUP 보유량으로 해석하거나, M21·M22 값을 M20에서 비율로 역산하는 것.
 
 ## 6. 변경 관리

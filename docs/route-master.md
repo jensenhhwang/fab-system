@@ -269,7 +269,7 @@ P10(Dicing/Singulation → Die Attach → Wire Bond × 16단 적층 → Molding 
 
 ## 시뮬레이션 배속 가정 (3D 실시간 추적)
 
-`ProcessFlow3D`/`LotRouteTrackerCard`의 FOUP 실시간 추적은 `AUTO_ADVANCE_INTERVAL_MS`(`src/lib/lot-route.ts`) 간격마다 스텝을 1개씩 자동 진행시킨다. 이건 실제 소요 시간을 재현한 시뮬레이션이 아니라 **흐름과 WMS/발주 트리거 로직이 눈에 보이게 계속 돌아가게 하는 데모용 타임랩스**다.
+`ProcessFlow3D`/`LotRouteTrackerCard`의 FOUP 실시간 추적은 `AUTO_ADVANCE_INTERVAL_MS`(`src/lib/lot-route.ts`) 간격마다 스텝을 1개씩 자동 진행시킨다. 이건 실제 소요 시간을 재현한 시뮬레이션이 아니라 **흐름과 WIP 진행·발주 트리거 로직이 눈에 보이게 계속 돌아가게 하는 데모용 타임랩스**다. 이 VISUAL 12개 원장은 M20 파일럿 워크오더를 만들지 않는다 — `advanceAggregateWip`(대량 WIP)는 `createM20PilotWorkOrder`를 호출하지 않도록 명시적으로 가드돼 있다(`src/lib/lot-route.ts:251`).
 
 | 구분 | 값 |
 |---|---|

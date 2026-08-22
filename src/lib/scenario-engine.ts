@@ -1,8 +1,13 @@
+import type { SupplyMode } from "@/lib/db";
+
 export type ProductDemand = { HBM: number; DRAM: number; NAND: number };
 export type ScenarioMaterial = {
   id: string; code: string; name: string; category: string; unit: string; currentQuantity: number;
   baseDailyUsage: number; ropDays: number; productDailyUsage: ProductDemand;
   warehouseCode: string; warehouseName: string; occupancyFactor: number;
+  // 김구매 자율등급(autonomyCeiling) 판단용 — 벌크(BULK_GAS/BULK_CHEMICAL)는 밴더관리
+  // 자동보충이 일반적이라 위험물 상한에서 제외하고, 개별 실린더(SPECIALTY_CYLINDER)만 건다.
+  supplyMode?: SupplyMode;
   leadTimeDays?: number | null; supplierName?: string | null;
   safeLeadTimeDays?: number | null; leadTimeSource?: "CURRENT" | "STANDARD" | "LEGACY" | "MISSING";
   procurementAlternatives?: { supplierName: string; standardDays: number | null; emergencyOrderAllowed: boolean }[];

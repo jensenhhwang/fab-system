@@ -3,8 +3,8 @@
 | Fab | 상태 | 버전 | 모델 원장 연결 |
 |---|---|---|---|
 | M20 | `APPROVED_MODELED_BASELINE` | `FOUP_WIP_MASTER_M20_V1` | `ACTIVE · FOUP_WIP_STEADY_STATE_M20_V1` |
-| M21 | `APPROVED_MODELED_BASELINE` | `FOUP_WIP_MASTER_M21_V1` | 미구현 |
-| M22 | `APPROVED_MODELED_BASELINE` | `FOUP_WIP_MASTER_M22_V1` | 미구현 |
+| M21 | `APPROVED_MODELED_BASELINE` | `FOUP_WIP_MASTER_M21_V1` | `ACTIVE · PRODUCTION_WIP_M21_V1 · STEP_AGGREGATE` |
+| M22 | `APPROVED_MODELED_BASELINE` | `FOUP_WIP_MASTER_M22_V1` | `ACTIVE · PRODUCTION_WIP_M22_V1 · STEP_AGGREGATE` |
 
 기준일: 2026-07-21 (M21·M22 신규 정의 반영)  
 실물 Fleet·MES 검증: `PENDING` (3팹 공통)
@@ -19,7 +19,7 @@
 - [`route-master.md`](./route-master.md): Fab별 Route와 FOUP 해제(Dicing) 경계
 - [`fab-equipment-master.md`](./fab-equipment-master.md): Fab별 공정별 설비 대수와 Capacity reserve
 
-M20 V1은 실행 모델의 승인 기준이며 14,040개 활성 Wafer Lot·15,600개 FOUP Carrier 원장과 Watched 12개 3D live view에 연결되어 있다. M21·M22 V1은 이 문서로 목표 수량이 승인됐으나 실행 원장·bootstrap은 아직 구현되지 않았다. 다만 `MODELED_BASELINE`이므로 실제 Fab의 실물 FOUP 보유량이나 MES 실적으로 해석하지 않는다.
+M20 V1은 실행 모델의 승인 기준이며 14,040개 활성 Wafer Lot·15,600개 FOUP Carrier 원장과 Watched 12개 3D live view에 연결되어 있다. M21·M22 V1은 Route step 집계 실행 원장에 연결되어 최생산 실행기가 15초 주기로 64배속 모델 공정을 진행한다. 후공정 Carrier 실물 원장이 아직 없으므로 4만여 개를 개별 FOUP로 만들지 않고 각각 120개·256개 step bucket에서 FOUP-equivalent 수량을 보존한다. `MODELED_BASELINE`이므로 실제 Fab의 실물 FOUP 보유량이나 MES 실적으로 해석하지 않는다.
 
 이 문서의 §2~§13은 M20을 기준으로 서술한다. M21·M22의 fab-specific 수량·carrier 차이는 §14~§15에서 별도로 정의하며, 나머지 계약(FOUP 상태 머신, 원자적 전환, GET polling 불변식 등)은 3팹 공통이다.
 
@@ -321,6 +321,8 @@ Watched Lot           12 (Occupied 안에 포함)
 
 M21은 [`fab-master.md`](./fab-master.md#m21--dram)이 확정한 NORMAL 184,000 WSPM(M16급 실측 규모 근거), 80일 cycle time(Wafer/FOUP 구간 70일 + Back-end 10일)에서 동일한 Little's Law 계약을 적용한다. FOUP 해제 경계는 M20과 동일하게 **P10.`DICING` 진입 시점**이다([`route-master.md`](./route-master.md#m21--dram) 문서 스텝 119).
 
+실행 연결: `PRODUCTION_EXECUTION_M21_M22_V1`의 120개 step bucket이 목표 19,626 FOUP-equivalent를 보존하며, 최생산 소유 실행기가 진행·완료·동량 재투입을 기록한다. 개별 물리 Carrier나 MES 실적을 뜻하지 않는다.
+
 ```text
 Daily Wafer Lot release   = 184,000 ÷ 30 ÷ 25 = 245.3 lots/day
 
@@ -371,6 +373,8 @@ FOUP 1개(25 wafers) 기준 계획 기대값
 ## M22 FOUP·Lot 수량
 
 M22는 [`fab-master.md`](./fab-master.md#m22--nand)가 확정한 NORMAL 108,000 WSPM(NAND 단일 라인 실측 규모 근거), 150일 cycle time(Wafer/FOUP 구간 130일 + Back-end 20일)에서 동일한 Little's Law 계약을 적용한다. FOUP 해제 경계는 M20·M21과 동일하게 **P10.`DICING` 진입 시점**이다([`route-master.md`](./route-master.md#m22--nand) 문서 스텝 240).
+
+실행 연결: `PRODUCTION_EXECUTION_M21_M22_V1`의 256개 step bucket이 목표 21,600 FOUP-equivalent를 보존하며, 최생산 소유 실행기가 진행·완료·동량 재투입을 기록한다. 개별 물리 Carrier나 MES 실적을 뜻하지 않는다.
 
 ```text
 Daily Wafer Lot release   = 108,000 ÷ 30 ÷ 25 = 144 lots/day

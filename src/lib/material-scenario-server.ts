@@ -91,6 +91,7 @@ export async function loadLiveScenarioMaterials(now = new Date()): Promise<{
       name: row.material.name,
       category: row.material.category,
       unit: row.material.unit,
+      supplyMode: row.material.supplyMode,
       currentQuantity: row.totalQuantity,
       baseDailyUsage: row.dailyUsage,
       ropDays: row.material.ropDays,

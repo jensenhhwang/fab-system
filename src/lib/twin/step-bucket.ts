@@ -107,6 +107,23 @@ export async function getStepBucketWipTotal(fabId: FabId, product: Product): Pro
   return doc ? doc.counts.reduce((s, c) => s + c, 0) : 0;
 }
 
+// 스텝별 WIP 원본(counts)과 최종 갱신 시각. 화면(노드 밀도·bay 부하)이 twin이 실제로 진행시키는
+// 이 원장을 그대로 읽게 하기 위한 read 경로다.
+//
+// 2026-08-12까지 node-density API는 M21/M22에서 별도 원장(productionWipBuckets, 자체 스케줄러가
+// 굴리던 것)을 읽고 있었다. 그쪽은 자재 소모·완제품 적립·출하와 연결돼 있지 않은데도 화면에는
+// 그 숫자가 떴다 — 실측 당시 M21 19,626 vs twin 17,173, M22 21,600 vs twin 18,720으로 값이
+// 달랐다. twin이 3제품 루프로 일반화(2026-08-09)되면서 역할이 중복됐는데 제거가 안 된 잔재였다.
+export async function getStepBucketCounts(
+  fabId: FabId,
+  product: Product,
+): Promise<{ counts: number[]; updatedAt: Date | null } | null> {
+  const { wipStepBuckets } = await collections();
+  const doc = await wipStepBuckets.findOne({ _id: bucketId(fabId, product) });
+  if (!doc) return null;
+  return { counts: doc.counts, updatedAt: doc.updatedAt ?? null };
+}
+
 export async function advanceStepBucketWip(
   fabId: FabId,
   product: Product,

@@ -2,6 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useState } from "react";
+import InboundReceiptRolePanel from "./InboundReceiptRolePanel";
 
 type PlanStatus = "DRAFT" | "CONFIRMED" | "COMPLETED" | "CANCELLED";
 type Plan = {
@@ -33,8 +34,12 @@ const STATUS: Record<PlanStatus, { label: string; style: string }> = {
   CANCELLED: { label: "취소", style: "bg-red-50 text-red-700" },
 };
 
-export default function ErpBridgeClient({ initialPlans, materials, suppliers, supplierLinks, scaleUpOverview }: {
+type MatDoc = { _id: string; name: string; code: string; unit: string };
+type WhDoc = { _id: string; name: string; code: string };
+
+export default function ErpBridgeClient({ initialPlans, materials, suppliers, supplierLinks, scaleUpOverview, matMap, whMap }: {
   initialPlans: Plan[]; materials: Material[]; suppliers: Supplier[]; supplierLinks: SupplierLink[]; scaleUpOverview: ScaleUpOverview;
+  matMap: Record<string, MatDoc>; whMap: Record<string, WhDoc>;
 }) {
   const { data: session } = useSession();
   const role = (session?.user as { role?: string } | undefined)?.role;
@@ -90,6 +95,9 @@ export default function ErpBridgeClient({ initialPlans, materials, suppliers, su
     <div className="mb-5 flex items-end justify-between gap-4">
       <div><h1 className="text-2xl font-extrabold">계획·실행 브리지</h1><p className="mt-1 text-sm text-[#888]">수동 입고계획을 WMS 실입고와 연결합니다.</p></div>
       <span className="rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-bold text-indigo-700">PLANNING BRIDGE</span>
+    </div>
+    <div className="mb-5">
+      <InboundReceiptRolePanel matMap={matMap} whMap={whMap} />
     </div>
     <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
       <b>시스템 한계:</b> 이 모듈은 회계·세무·결산 또는 외부 거래를 처리하는 ERP가 아닙니다. 사용자가 입력한 계획을 WMS 실행 데이터와 연결하며, 입력 정확성과 외부 ERP 자료와의 일치 여부는 사용자가 확인해야 합니다.

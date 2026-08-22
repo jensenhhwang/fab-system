@@ -213,11 +213,11 @@ export default function ControlTowerClient({
               </select>
             </label>
             <Link
-              href={buildTwinHref("/campus", { fabScope, materialId: selectedMaterial.materialId, mode: "PLAN", cameraPreset: "CAMPUS_OVERVIEW" })}
+              href={buildTwinHref("/usage", { fabScope, materialId: selectedMaterial.materialId, mode: "PLAN" })}
               onClick={() => setSelectedMaterialId(selectedMaterial.materialId)}
               className="border border-[#24221F] bg-[#24221F] px-3 py-2 text-[10px] font-black tracking-[0.04em] text-white transition-colors hover:bg-black"
             >
-              CAMPUS 3D에서 추적 →
+              공정별 사용량에서 추적 →
             </Link>
           </div>
 

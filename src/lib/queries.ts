@@ -4,7 +4,7 @@ import {
   type TransactionDoc, type RiskLevel, type UserDoc, type WikiDoc, type InfraDoc,
   type BenefitCaseDoc,
 } from "@/lib/db";
-import { materialFactor, WORKING_DAYS } from "@/lib/capacity";
+import { warehouseOccupancyFactor, WORKING_DAYS } from "@/lib/capacity";
 import type { VirtualStorageLocation } from "@/lib/warehouse-layout";
 import { getGeneralStorageRationale, getStorageRule, getSupplyProfile } from "@/lib/warehouse-storage-rules";
 
@@ -185,13 +185,22 @@ export type WarehouseCapacity = {
   capacityMode: "SPACE" | "TANK_LEVEL" | "CONTINUOUS";
 };
 export async function getWarehouseCapacity(): Promise<WarehouseCapacity[]> {
-  const [whs, rows] = await Promise.all([getWarehouses(), getInventoriesWithRefs()]);
+  const [whs, rows, { finishedGoods }] = await Promise.all([getWarehouses(), getInventoriesWithRefs(), collections()]);
+  const fgRows = await finishedGoods.find({}).toArray();
   return whs.map((wh) => {
     const items = rows.filter((r) => r.warehouseId === wh._id);
     const catMap = new Map<string, number>();
     let occ = 0;
     const mode = wh.capacityMode ?? "SPACE";
-    if (mode === "TANK_LEVEL") {
+    // 완제품 창고는 materials/inventory 조인이 아니라 finishedGoods aggregate 컬렉션을 쓴다
+    // (WaferLot 1개=완제품 1개가 아니라 다이싱→KGD→스택으로 팬아웃되므로 materials 마스터로
+    // 모델링하지 않는다). byCategory의 "카테고리"는 여기선 제품명(product)이다.
+    if (wh.type === "FINISHED_GOODS") {
+      for (const it of fgRows.filter((r) => r.warehouseId === wh._id)) {
+        occ += it.quantity;
+        catMap.set(it.product, (catMap.get(it.product) ?? 0) + it.quantity);
+      }
+    } else if (mode === "TANK_LEVEL") {
       const levels = items.map((it) => Math.min(100, (it.quantity / Math.max(it.capacityLimit ?? it.quantity, 1)) * 100));
       occ = levels.length ? levels.reduce((sum, level) => sum + level, 0) / levels.length : 0;
       for (const it of items) {
@@ -201,24 +210,12 @@ export async function getWarehouseCapacity(): Promise<WarehouseCapacity[]> {
     } else if (mode === "CONTINUOUS") {
       occ = 100;
       for (const it of items) catMap.set(it.material.category, 100);
-    } else if (["HAZMAT", "PRECURSOR"].includes(wh.type)) {
-      for (const it of items) {
-        const quantity = it.quantity * (
-          typeof it.material.inventoryToStorageFactor === "number"
-            ? it.material.inventoryToStorageFactor
-            : 1
-        );
-        occ += quantity;
-        catMap.set(it.material.category, (catMap.get(it.material.category) ?? 0) + quantity);
-      }
-    } else if (wh.type === "MRO") {
-      for (const it of items) {
-        occ += it.quantity;
-        catMap.set(it.material.category, (catMap.get(it.material.category) ?? 0) + it.quantity);
-      }
     } else {
+      // 창고 유형별 환산은 warehouseOccupancyFactor 하나로 모은다 — 창고 정원 산정
+      // (resize-warehouse-capacity-to-demand)이 같은 함수를 써야 "정원은 A 기준으로 지었는데
+      // 점유율은 B 기준으로 잰다"가 안 생긴다(§capacity.ts).
       for (const it of items) {
-        const o = it.quantity * materialFactor(it.material);
+        const o = it.quantity * warehouseOccupancyFactor(wh.type, it.material);
         occ += o;
         catMap.set(it.material.category, (catMap.get(it.material.category) ?? 0) + o);
       }
@@ -232,10 +229,10 @@ export async function getWarehouseCapacity(): Promise<WarehouseCapacity[]> {
       legalUtilization: legal ? Math.round((occ / legal) * 100) : null,
       byCategory: [...catMap.entries()].map(([category, o]) => ({ category, occupancy: Math.round(o) }))
         .sort((a, b) => b.occupancy - a.occupancy),
-      materialCount: items.length,
+      materialCount: wh.type === "FINISHED_GOODS" ? fgRows.filter((r) => r.warehouseId === wh._id).length : items.length,
     };
   }).sort((a, b) => {
-    const order = ["MWH-01", "MWH-02", "HZW-01", "MRO-01", "BGY-01", "BCY-01", "PRS-01", "UPW-01"];
+    const order = ["MWH-01", "MWH-02", "HZW-01", "MRO-01", "BGY-01", "BCY-01", "PRS-01", "UPW-01", "WH-FG01", "WH-FG02", "WH-FG03"];
     return order.indexOf(a.code) - order.indexOf(b.code);
   });
 }

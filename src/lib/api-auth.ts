@@ -6,6 +6,8 @@ import type { Role } from "@/lib/db";
 
 export const WRITE_ROLES = {
   inventoryReceipt: ["ADMIN", "LOGISTICS"],
+  physicalReceiptConfirm: ["ADMIN", "LOGISTICS"],
+  inventoryReconcile: ["ADMIN", "MATERIALS"],
   inventoryIssue: ["ADMIN", "MATERIALS"],
   workOrderCreate: ["ADMIN", "PRODUCTION"],
   workOrderStatus: ["ADMIN", "PRODUCTION"],

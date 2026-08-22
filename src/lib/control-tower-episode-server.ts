@@ -7,9 +7,11 @@ import {
   CONTROL_TOWER_ROLE_ORDER,
   type ControlTowerAIEpisodeDoc,
   type ControlTowerAIEpisodeView,
+  type ControlTowerAIConclusion,
   type ControlTowerAIJudgment,
   type ControlTowerAIReply,
   type ControlTowerAIUsage,
+  type ControlTowerRole,
 } from "@/lib/control-tower-live";
 import {
   CONTROL_TOWER_AI_MODEL,
@@ -22,9 +24,9 @@ import {
 import { buildControlTowerAISnapshot } from "@/lib/control-tower-snapshot-server";
 
 const LEASE_MS = 120_000;
-const RETRY_MS = 15 * 60_000;
-const TOKEN_BUDGET = 80_000;
-const MAX_REPLIES = 2;
+const MIN_EPISODE_INTERVAL_MS = 30 * 60_000;
+const TOKEN_BUDGET = 12_000;
+const MAX_REPLIES = 1;
 
 function hashValue(value: unknown) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -72,6 +74,24 @@ function errorInfo(error: unknown) {
   };
 }
 
+// 사람이 화면에서 켜고 끄는 수동 스위치 — 월 예산 가드와 별개로 즉시 차단/재개한다.
+// OFF면 maybeRunControlTowerAI가 아예 호출되지 않아 새 episode가 생기지 않고,
+// 화면은 각 역할의 규칙 엔진 판정(하드코딩 룰 기반)만 표시한다.
+export async function getControlTowerAIEnabled(): Promise<boolean> {
+  const { controlTowerAIState } = await collections();
+  const doc = await controlTowerAIState.findOne({ _id: "singleton" });
+  return doc?.aiEnabled ?? true;
+}
+
+export async function setControlTowerAIEnabled(enabled: boolean, actorId: string): Promise<void> {
+  const { controlTowerAIState } = await collections();
+  await controlTowerAIState.updateOne(
+    { _id: "singleton" },
+    { $set: { aiEnabled: enabled, updatedAt: new Date(), updatedBy: actorId } },
+    { upsert: true },
+  );
+}
+
 export async function ensureControlTowerAIIndexes() {
   const { controlTowerAIEpisodes } = await collections();
   await Promise.all([
@@ -97,6 +117,16 @@ async function claimEpisode(input: {
   const existing = await controlTowerAIEpisodes.findOne({ _id: input.id });
 
   if (!existing) {
+    const latest = await controlTowerAIEpisodes.findOne(
+      { model: CONTROL_TOWER_AI_MODEL },
+      { sort: { createdAt: -1 } },
+    );
+    if (
+      latest
+      && latest.createdAt > new Date(now.getTime() - MIN_EPISODE_INTERVAL_MS)
+    ) {
+      return false;
+    }
     const episode: ControlTowerAIEpisodeDoc = {
       _id: input.id,
       semanticHash: input.semanticHash,
@@ -134,25 +164,18 @@ async function claimEpisode(input: {
     }
   }
 
-  if (existing.status === "COMPLETE") return false;
+  if (existing.status !== "RUNNING") return false;
   if (existing.status === "RUNNING" && existing.leaseUntil && existing.leaseUntil > now) {
     return false;
   }
-  if (
-    (existing.status === "FAILED" || existing.status === "PARTIAL")
-    && existing.nextRetryAt
-    && existing.nextRetryAt > now
-  ) {
-    return false;
-  }
+  if (existing.attempts >= 2) return false;
 
   const result = await controlTowerAIEpisodes.updateOne(
     {
       _id: input.id,
-      $or: [
-        { status: { $in: ["FAILED", "PARTIAL"] } },
-        { status: "RUNNING", leaseUntil: { $lte: now } },
-      ],
+      status: "RUNNING",
+      leaseUntil: { $lte: now },
+      attempts: { $lt: 2 },
     },
     {
       $set: {
@@ -201,13 +224,160 @@ async function finishPartial(input: {
         errorMessage: info.message.slice(0, 500),
         updatedAt: now,
         completedAt: now,
-        nextRetryAt: new Date(now.getTime() + RETRY_MS),
+        nextRetryAt: null,
       },
     },
   );
 }
 
+function buildRuleConclusion(
+  judgments: ControlTowerAIJudgment[],
+): ControlTowerAIConclusion {
+  const verdicts = new Set(judgments.map((judgment) => judgment.verdict));
+  return {
+    alignment: verdicts.size === 1 ? "ALIGNED" : "CONDITIONAL",
+    summary: "담당자 판단이 정렬되어 추가 종합 호출을 생략했습니다.",
+    decisions: [...new Set(judgments.map((judgment) => judgment.proposedDecision))].slice(0, 3),
+    openIssues: judgments.flatMap((judgment) => judgment.question ? [judgment.question] : []).slice(0, 3),
+    evidenceRefs: [...new Set(judgments.flatMap((judgment) => judgment.evidenceRefs))].slice(0, 6),
+    advisoryOnly: true,
+    usage: emptyUsage(),
+    latencyMs: 0,
+  };
+}
+
+const HARDCODED_VERDICT_MAP: Record<string, { verdict: ControlTowerAIJudgment["verdict"]; severity: ControlTowerAIJudgment["severity"] }> = {
+  // PROCUREMENT
+  BLOCKED: { verdict: "ESCALATE", severity: "CRITICAL" },
+  WOULD_PROPOSE: { verdict: "CHECK", severity: "ATTENTION" },
+  WOULD_AUTO_RECEIVE: { verdict: "OBSERVE", severity: "NORMAL" },
+  // MATERIALS
+  COVERAGE_CRITICAL: { verdict: "ESCALATE", severity: "CRITICAL" },
+  COVERAGE_WATCH: { verdict: "CHECK", severity: "ATTENTION" },
+  DATA_GAP: { verdict: "CHECK", severity: "ATTENTION" },
+  COVERAGE_NORMAL: { verdict: "OBSERVE", severity: "NORMAL" },
+  // PRODUCTION
+  MATERIAL_BLOCKED: { verdict: "ESCALATE", severity: "CRITICAL" },
+  HOLD_RISK: { verdict: "CHECK", severity: "ATTENTION" },
+  ON_TRACK: { verdict: "OBSERVE", severity: "NORMAL" },
+  // LOGISTICS
+  CAPACITY_OVER: { verdict: "ESCALATE", severity: "CRITICAL" },
+  CAPACITY_WATCH: { verdict: "CHECK", severity: "ATTENTION" },
+  INBOUND_NORMAL: { verdict: "OBSERVE", severity: "NORMAL" },
+};
+
+// AI가 꺼져 있어도 관제탑이 멈추면 안 된다 — 각 역할의 규칙 엔진 판정을 LLM 없이 그대로
+// judgment로 승격해 기록을 계속 쌓는다(누적 로그 유지). OpenAI 호출은 전혀 없다.
+function buildHardcodedJudgments(snapshot: ControlTowerAIEpisodeDoc["snapshot"]): ControlTowerAIJudgment[] {
+  const roleRules: [ControlTowerRole, { scenarioLabel: string; topVerdict: string | null; topVerdictText: string | null }][] = [
+    ["PROCUREMENT", snapshot.procurementRule],
+    ["MATERIALS", snapshot.materialsRule],
+    ["PRODUCTION", snapshot.productionRule],
+    ["LOGISTICS", snapshot.logisticsRule],
+  ];
+  return roleRules.map(([role, rule]) => {
+    const mapped = rule.topVerdict ? HARDCODED_VERDICT_MAP[rule.topVerdict] : undefined;
+    const roleFacts = snapshot.facts.filter((fact) => fact.role === role);
+    return {
+      role,
+      mode: CONTROL_TOWER_PERSONAS[role].judgmentMode,
+      verdict: mapped?.verdict ?? "OBSERVE",
+      severity: mapped?.severity ?? "NORMAL",
+      summary: rule.topVerdictText ?? "특이사항 없음 — 규칙 기준 정상 범위입니다.",
+      proposedDecision: "규칙 엔진 판정입니다(AI 판단 꺼짐). 재판단이 필요하면 AI를 켜세요.",
+      evidenceRefs: roleFacts.slice(0, 1).map((fact) => fact.ref).length > 0
+        ? roleFacts.slice(0, 1).map((fact) => fact.ref)
+        : [`${role}:RULE`],
+      assumptions: [],
+      questionForRole: null,
+      question: null,
+      usage: emptyUsage(),
+      latencyMs: 0,
+    };
+  });
+}
+
+// LLM 없이 즉시 완료되는 하드코딩 판정 — cost가 없으므로 LLM용 30분 간격 스로틀은 적용하지
+// 않고, 같은 semantic 상태에 대해서만 idempotent하게(중복 기록 방지) 1건만 남긴다.
+async function claimHardcodedEpisode(input: {
+  id: string;
+  semanticHash: string;
+  snapshotHash: string;
+  snapshot: ControlTowerAIEpisodeDoc["snapshot"];
+}): Promise<boolean> {
+  const { controlTowerAIEpisodes } = await collections();
+  const now = new Date();
+  if (await controlTowerAIEpisodes.findOne({ _id: input.id })) return false;
+  const episode: ControlTowerAIEpisodeDoc = {
+    _id: input.id,
+    semanticHash: input.semanticHash,
+    snapshotHash: input.snapshotHash,
+    status: "RUNNING",
+    model: "HARDCODED_RULES",
+    promptVersion: CONTROL_TOWER_AI_PROMPT_VERSION,
+    snapshot: input.snapshot,
+    judgments: [],
+    replies: [],
+    conclusion: null,
+    usage: emptyUsage(),
+    attempts: 1,
+    leaseUntil: null,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+    nextRetryAt: null,
+    errorCode: null,
+    errorMessage: null,
+  };
+  try {
+    await controlTowerAIEpisodes.insertOne(episode);
+    return true;
+  } catch (error) {
+    if (
+      error
+      && typeof error === "object"
+      && "code" in error
+      && (error as { code?: number }).code === 11000
+    ) {
+      return false;
+    }
+    throw error;
+  }
+}
+
 export async function maybeRunControlTowerAI(): Promise<void> {
+  const aiEnabled = await getControlTowerAIEnabled();
+
+  if (!aiEnabled) {
+    const snapshotResult = await buildControlTowerAISnapshot();
+    const episodeId = `CTAI:HARDCODED:${hashValue([snapshotResult.semanticHash, CONTROL_TOWER_AI_PROMPT_VERSION])}`;
+    const claimed = await claimHardcodedEpisode({
+      id: episodeId,
+      semanticHash: snapshotResult.semanticHash,
+      snapshotHash: snapshotResult.snapshotHash,
+      snapshot: snapshotResult.snapshot,
+    });
+    if (!claimed) return;
+    const judgments = buildHardcodedJudgments(snapshotResult.snapshot);
+    const conclusion = buildRuleConclusion(judgments);
+    const now = new Date();
+    const { controlTowerAIEpisodes } = await collections();
+    await controlTowerAIEpisodes.updateOne(
+      { _id: episodeId, status: "RUNNING" },
+      {
+        $set: {
+          status: "COMPLETE",
+          judgments,
+          replies: [],
+          conclusion,
+          updatedAt: now,
+          completedAt: now,
+        },
+      },
+    );
+    return;
+  }
+
   if (!process.env.OPENAI_API_KEY) return;
 
   const snapshotResult = await buildControlTowerAISnapshot();
@@ -292,12 +462,29 @@ export async function maybeRunControlTowerAI(): Promise<void> {
   }
 
   try {
-    const conclusion = await generateControlTowerConclusion({
-      snapshot: snapshotResult.snapshot,
-      judgments,
-      replies,
-    });
+    const requiresLLMConclusion = replies.length > 0
+      || judgments.some((judgment) => judgment.severity === "CRITICAL")
+      || new Set(judgments.map((judgment) => judgment.verdict)).size > 1;
+    const conclusion = requiresLLMConclusion
+      ? await generateControlTowerConclusion({
+        snapshot: snapshotResult.snapshot,
+        judgments,
+        replies,
+      })
+      : buildRuleConclusion(judgments);
     usage = aggregateUsage([...judgments, ...replies, conclusion]);
+    if (usage.totalTokens > TOKEN_BUDGET) {
+      await finishPartial({
+        id: episodeId,
+        judgments,
+        replies,
+        error: new ControlTowerOpenAIError(
+          "CONTROL_TOWER_TOKEN_BUDGET",
+          "관제탑 판단의 episode 토큰 상한에 도달했습니다.",
+        ),
+      });
+      return;
+    }
     const now = new Date();
     const { controlTowerAIEpisodes } = await collections();
     await controlTowerAIEpisodes.updateOne(

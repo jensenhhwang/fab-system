@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
-import { listActiveLotStates } from "@/lib/lot-route";
+import { listExistingActiveLotStates } from "@/lib/lot-route";
 import { FAB_IDS, type FabId } from "@/lib/fab-domain";
 import type { Product } from "@/lib/db";
 
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const states = await listActiveLotStates(fabId, product, access.user.id);
+    const states = await listExistingActiveLotStates(fabId, product);
     return NextResponse.json(states, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "로트 조회 실패" }, { status: 409 });

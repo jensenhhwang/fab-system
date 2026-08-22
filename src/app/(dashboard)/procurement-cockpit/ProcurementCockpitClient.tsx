@@ -9,6 +9,125 @@ import {
   type ShadowVerdict,
 } from "@/lib/procurement-agent";
 
+type PendingApprovalItem = {
+  id: string;
+  materialId: string;
+  materialCode: string;
+  materialName: string;
+  unit: string;
+  qty: number;
+  orderedAt: string;
+  autonomyCeiling: 2 | 4 | null;
+  autonomyReason: string | null;
+  waitingMinutes: number;
+  escalationTier: "NORMAL" | "WARNING" | "URGENT";
+};
+
+const ESCALATION_STYLE: Record<PendingApprovalItem["escalationTier"], { label: string; color: string; bg: string; rowBg: string }> = {
+  NORMAL: { label: "대기", color: "#B54708", bg: "#FFFAEB", rowBg: "#FFF7ED" },
+  WARNING: { label: "주의 · 15분+", color: "#B54708", bg: "#FFEDD5", rowBg: "#FFF1DE" },
+  URGENT: { label: "긴급 · 60분+", color: "#C01048", bg: "#FFF1F3", rowBg: "#FFF0F2" },
+};
+
+function PendingApprovalPanel() {
+  const [items, setItems] = useState<PendingApprovalItem[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const res = await fetch("/api/twin/purchase-orders/pending-approval", { cache: "no-store", signal });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error ?? "승인 대기 발주를 불러오지 못했습니다.");
+      setItems(payload.items ?? []);
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      setError(cause instanceof Error ? cause.message : "불러오지 못했습니다.");
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const run = async () => { await load(controller.signal); };
+    void run();
+    const interval = window.setInterval(() => void run(), 15_000);
+    return () => { controller.abort(); window.clearInterval(interval); };
+  }, [load]);
+
+  async function decide(id: string, action: "APPROVE" | "REJECT") {
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/twin/purchase-orders/${encodeURIComponent(id)}/approval`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (!res.ok) { const p = await res.json().catch(() => ({})); throw new Error(p.error ?? "처리 실패"); }
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "처리 실패");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (items.length === 0) return null;
+
+  const urgentCount = items.filter((i) => i.escalationTier === "URGENT").length;
+
+  return (
+    <div className="rounded-2xl border bg-white p-4" style={{ borderColor: urgentCount > 0 ? "#C01048" : "#FDA29B", boxShadow: "var(--shadow-1)" }}>
+      <div className="flex items-center gap-2">
+        <span className="rounded-full bg-[#FFFAEB] px-2 py-0.5 text-[10px] font-extrabold text-[#B54708]">승인 대기</span>
+        <h2 className="text-sm font-bold text-[#141413]">Twin 실제 발주 승인 — 김구매 자율등급 L2 (위험물·단일소싱)</h2>
+        {urgentCount > 0 && (
+          <span className="rounded-full bg-[#FFF1F3] px-2 py-0.5 text-[10px] font-extrabold text-[#C01048] animate-pulse">긴급 {urgentCount}건 · 60분+ 방치</span>
+        )}
+      </div>
+      <p className="mt-1 text-[11px] text-[#888]">
+        위 그림자모드 판단과 달리, 이 발주는 Twin이 실제로 만든 발주입니다. 승인해야 리드타임이 시작되고 실제 입고로 이어집니다. 오래 방치될수록 긴급도가 올라갑니다.
+      </p>
+      {error && <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] text-red-700">{error}</div>}
+      <div className="mt-3 space-y-2">
+        {items.map((item) => {
+          const esc = ESCALATION_STYLE[item.escalationTier];
+          return (
+          <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2.5" style={{ background: esc.rowBg }}>
+            <div>
+              <div className="text-xs font-bold text-[#141413] flex items-center gap-1.5">
+                {item.materialName} <span className="text-[#999]">({item.materialCode})</span>
+                {item.escalationTier !== "NORMAL" && (
+                  <span className="rounded-full px-1.5 py-0.5 text-[9px] font-extrabold" style={{ background: esc.bg, color: esc.color }}>{esc.label}</span>
+                )}
+              </div>
+              <div className="mt-0.5 text-[11px] text-[#888]">
+                {Math.round(item.qty).toLocaleString("ko-KR")} {item.unit} · {item.autonomyReason ?? "자율등급 상한"} · {item.waitingMinutes}분 대기
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                disabled={busyId === item.id}
+                onClick={() => void decide(item.id, "APPROVE")}
+                className="rounded-lg bg-[#00875A] px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-40"
+              >
+                승인
+              </button>
+              <button
+                disabled={busyId === item.id}
+                onClick={() => void decide(item.id, "REJECT")}
+                className="rounded-lg border border-[#D0D5DD] px-3 py-1.5 text-[11px] font-bold text-[#555] disabled:opacity-40"
+              >
+                반려
+              </button>
+            </div>
+          </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 type ActiveScenarioInfo = { label: string; submittedBy: string; submittedAt: string } | null;
 
 type ProcurementShadowPayload = {
@@ -252,6 +371,8 @@ export default function ProcurementCockpitClient() {
         </div>
         <span className="rounded-full bg-[#F1F1F0] px-3 py-1 text-[11px] font-bold text-[#777]">정책 {report?.policyVersion ?? "…"}</span>
       </div>
+
+      <PendingApprovalPanel />
 
       {/* 그림자 모드 배너 */}
       <div

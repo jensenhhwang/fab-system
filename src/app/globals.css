@@ -4,30 +4,44 @@
 :root {
   /* Brand */
   --sk-red:       #EA002C;
+  --sk-red-ink:   #B8001F;  /* 텍스트/아이콘용 저채도 red — 큰 면적에 순색 red를 쓰지 않기 위함 */
   --sk-orange:    #F47725;
 
   /* Surface */
   --bg-page:      #F3F0EE;  /* Canvas Cream — warm putty (기존 #F4F4F4) */
   --bg-card:      #FFFFFF;
   --bg-section:   #FCFBFA;  /* Lifted Cream — 중첩 서피스 */
-  --bg-sidebar:   #FAFAF9;  /* Sidebar warm off-white */
+  --bg-sidebar:   #FAF8F6;  /* Sidebar warm off-white, 카드보다 한 톤 낮춤 */
+  --bg-hover:     #EFEBE7;  /* 은은한 hover tint — 순색 bg-[#F3F0EE] 남용 대체 */
 
   /* Text */
   --text-1:       #141413;  /* Ink Black — 살짝 따뜻한 near-black */
-  --text-2:       #555555;
-  --text-3:       #696969;  /* Slate Gray (기존 #999999) */
+  --text-2:       #55524E;  /* 기존 순회색(#555)에 미세하게 warm 톤 부여 */
+  --text-3:       #8A8681;  /* Slate — 기존(#696969)보다 한 단계 밝혀 라벨 위계를 분명히 함 */
+  --text-4:       #B4AFA9;  /* placeholder·disabled 전용 최저 위계 */
 
   /* Border */
-  --border:       #E5E1DD;  /* Warm toned border */
+  --border:       #E7E2DD;  /* Warm toned border */
+  --border-strong:#D8D2CA;  /* 강조가 필요한 구분선(활성 탭 하단 등) */
 
   /* Semantic */
-  --green:        #00B96B;
-  --yellow:       #F7A600;
-  --blue:         #0078D4;
+  --green:        #00A05C;
+  --green-tint:   #E9F7F0;
+  --yellow:       #C77700;
+  --yellow-tint:  #FDF3E2;
+  --blue:         #0068B8;
+  --blue-tint:    #E8F2FB;
+  --red-tint:     #FDECEE;
 
-  /* Shadow */
-  --shadow-1:     rgba(0, 0, 0, 0.04) 0px 4px 24px 0px;
-  --shadow-2:     rgba(0, 0, 0, 0.08) 0px 24px 48px 0px;
+  /* Radius — 페이지마다 rounded-lg/xl/2xl이 뒤섞이던 것을 3단으로 정리 */
+  --radius-sm:    10px;
+  --radius-md:    14px;
+  --radius-lg:    20px;
+
+  /* Shadow — 단일 flat shadow 대신 결(ambient+key) 2겹으로 입체감 부여 */
+  --shadow-1:     0 1px 2px rgba(20, 20, 19, 0.04), 0 6px 20px -4px rgba(20, 20, 19, 0.07);
+  --shadow-2:     0 2px 4px rgba(20, 20, 19, 0.05), 0 16px 40px -8px rgba(20, 20, 19, 0.12);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 /* 다크모드 완전 비활성화 — OS 설정 무시하고 라이트 강제 */

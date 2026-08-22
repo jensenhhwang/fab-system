@@ -43,20 +43,14 @@ async function getInventoryData() {
 export default async function InventoryPage() {
   const baseItems = await getInventoryData();
 
-  const { inventoryLots, inventoryPolicies, inboundPlans, simState: simStateColl } = await collections();
-  const [lotAgg, policyDocs, activeInbound, simStateDoc] = await Promise.all([
-    inventoryLots.aggregate<{ _id: string; count: number }>([
-      { $match: { qualityStatus: "AVAILABLE" } },
-      { $group: { _id: "$materialId", count: { $sum: 1 } } },
-    ]).toArray(),
+  const { inventoryPolicies, inboundPlans } = await collections();
+  const [policyDocs, activeInbound] = await Promise.all([
     inventoryPolicies.find({}).toArray(),
     inboundPlans.aggregate<{ _id: string; quantity: number }>([
       { $match: { status: { $in: ["DRAFT", "CONFIRMED"] }, remainingQuantity: { $gt: 0 } } },
       { $group: { _id: "$materialId", quantity: { $sum: "$remainingQuantity" } } },
     ]).toArray(),
-    simStateColl.findOne({ _id: "singleton" }),
   ]);
-  const lotCounts = Object.fromEntries(lotAgg.map((r) => [r._id, r.count]));
   const policyMap = new Map(policyDocs.map(policy => [policy.materialId, policy]));
   const inboundMap = new Map(activeInbound.map(item => [item._id, item.quantity]));
   const items = baseItems.map(item => {
@@ -72,17 +66,11 @@ export default async function InventoryPage() {
 
   return (
     <>
-      {simStateDoc?.status === "RUNNING" && (
-        <div className="mb-4 flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium w-fit">
-          <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-          시뮬레이션 진행 중 · {new Date(simStateDoc.simDate).toLocaleDateString("ko-KR")}
-        </div>
-      )}
       <div className="mb-1 text-2xl font-extrabold tracking-tight">재고 · 보관일수</div>
       <div className="text-sm text-[#999] mb-6">
         전체 자재 DOH = 전체 현재고 ÷ 전체 일평균사용량 · 위치/HU 단위 DOH는 수요 배정 전 계산하지 않음 · 기준: {new Date().toLocaleDateString("ko-KR")}
       </div>
-      <InventoryClient items={items} lotCounts={lotCounts} />
+      <InventoryClient items={items} />
     </>
   );
 }

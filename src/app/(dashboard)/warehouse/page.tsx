@@ -2,13 +2,18 @@ export const dynamic = "force-dynamic";
 
 import { getWarehouseCapacity, type WarehouseCapacity } from "@/lib/queries";
 import Link from "next/link";
+import InboundHoldPanel from "./InboundHoldPanel";
 
+// 자재 카테고리 + 완제품 제품명. 완제품 창고는 byCategory의 "카테고리"가 제품명이라(queries.ts
+// FINISHED_GOODS 분기) DRAM/NAND도 여기 있어야 한다 — 없으면 회색으로 떨어져 "반영이 안 된 것"처럼 보인다.
 const CAT_COLOR: Record<string, string> = {
   GAS: "#C81E1E", CHM: "#2563EB", CSM: "#7C3AED", UTL: "#059669", PKG: "#64748B",
+  HBM: "#EA002C", DRAM: "#0078D4", NAND: "#00B96B",
 };
 const TYPE_LABEL: Record<string, string> = {
   AS_RS: "자동화 (AS/RS)", FLAT: "평치", HAZMAT: "위험물 방폭", MRO: "공구·MRO",
   BULK_GAS: "벌크가스 중앙공급", BULK_CHEM: "벌크 케미컬 BCDS", PRECURSOR: "전구체 항온공급", ON_SITE: "현장생산",
+  FINISHED_GOODS: "완제품 창고",
 };
 const TYPE_DESC: Record<string, string> = {
   AS_RS: "고층 랙 · 스태커크레인 · 고밀도 자동보관",
@@ -19,6 +24,7 @@ const TYPE_DESC: Record<string, string> = {
   BULK_CHEM: "물질별 탱크 · 방유 구획 · 펌프·필터 · 이중배관",
   PRECURSOR: "캐니스터 항온·건조 보관 · 기화 공급",
   ON_SITE: "현장 생산 · 품질 모니터링 · 순환 Loop 연속공급",
+  FINISHED_GOODS: "생산 완료 로트 적재 · 출하 대기",
 };
 
 function pctColor(p: number) {
@@ -62,8 +68,46 @@ function CategoryBar({ wh }: { wh: WarehouseCapacity }) {
   );
 }
 
+// 완제품 창고(WH-FG01/02/03)는 물리적으로 하나로 합치지 않는다 — 8/10에 정확히 이 구조를
+// (STACK/CHIP/DIE 단위가 다른데 그대로 합산)를 시도했다가 HBM 132일치 적체가 WH-FG01을
+// 198%로 만들며 DRAM·NAND WIP까지 동반 정지시킨 사고가 있었다(단위 합산 버그). 대신 정규화된
+// %만 나란히 비교하는 카드로 "3팹 한눈에" 니즈를 채운다 — 창고 자체는 계속 분리 상태다.
+const FG_FAB_LABEL: Record<string, string> = { HBM: "M20", DRAM: "M21", NAND: "M22" };
+
+function FinishedGoodsCompareCard({ warehouses }: { warehouses: WarehouseCapacity[] }) {
+  const items = warehouses
+    .filter((wh) => wh.type === "FINISHED_GOODS")
+    .map((wh) => ({ wh, product: wh.byCategory[0]?.category ?? "?" }))
+    .sort((a, b) => (FG_FAB_LABEL[a.product] ?? "").localeCompare(FG_FAB_LABEL[b.product] ?? ""));
+  if (items.length === 0) return null;
+
+  return (
+    <div className="mb-6 rounded-2xl bg-white p-5 shadow-sm border border-[#EDF0F3]">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="text-sm font-bold text-[#111]">완제품 창고 점유율 비교 (M20 · M21 · M22)</div>
+        <a href="/finished-goods" className="text-[11px] font-bold text-[#0078D4] hover:underline">완제품 재고 →</a>
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        {items.map(({ wh, product }) => (
+          <Link key={wh.id} href={`/warehouse/${wh.code}`} className="block rounded-xl p-3 hover:bg-[#F5F8FB] transition-colors">
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="h-2 w-2 rounded-sm" style={{ background: CAT_COLOR[product] ?? "#999" }} />
+              <span className="text-[10px] font-black text-[#999]">{FG_FAB_LABEL[product] ?? wh.code}</span>
+              <span className="text-[11px] font-bold text-[#333]">{product}</span>
+              {wh.utilization >= 100 && <span className="ml-auto rounded-full bg-[#FFF0F2] px-1.5 py-0.5 text-[9px] font-black text-[#EA002C]">CAPACITY_OVER</span>}
+            </div>
+            <Gauge pct={wh.utilization} />
+            <div className="mt-1 text-[9px] text-[#999]">{wh.occupancy.toLocaleString()} / {wh.totalCapacity.toLocaleString()} {wh.unit}</div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default async function WarehousePage() {
   const caps = await getWarehouseCapacity();
+  const operationalWarehouses = caps.filter((warehouse) => warehouse.type !== "FINISHED_GOODS");
   const avg = caps.length ? Math.round(caps.reduce((s, w) => s + w.utilization, 0) / caps.length) : 0;
   const hazmatOver = caps.filter((w) => w.legalUtilization !== null && w.legalUtilization >= 90);
 
@@ -72,6 +116,10 @@ export default async function WarehousePage() {
       <div className="mb-1 text-2xl font-extrabold tracking-tight">창고 Capacity</div>
       <div className="text-sm text-[#999] mb-6">
         점유 = Σ(재고 × 단위 파렛트 환산) · 재고 데이터와 실시간 연동 · 기준: {new Date().toLocaleDateString("ko-KR")}
+      </div>
+
+      <div className="mb-6">
+        <InboundHoldPanel />
       </div>
 
       {/* 요약 KPI */}
@@ -91,9 +139,11 @@ export default async function WarehousePage() {
         </div>
       </div>
 
+      <FinishedGoodsCompareCard warehouses={caps} />
+
       {/* 창고별 카드 */}
       <div className="grid grid-cols-2 gap-5">
-        {caps.map((wh) => (
+        {operationalWarehouses.map((wh) => (
           <Link key={wh.id} href={`/warehouse/${wh.code}`}
             className="group block bg-white rounded-2xl shadow-sm p-5 border border-transparent hover:border-[#0078D4]/30 hover:shadow-md hover:-translate-y-0.5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0078D4]">
             <div className="flex items-start justify-between mb-3">

@@ -1,11 +1,31 @@
 import type { Product } from "@/lib/db";
 import { getProductionConfig } from "@/lib/fab-production-config";
+import { operatingDaysToMs } from "@/lib/twin/operating-clock";
 
 // 하위호환용 — 옛 코드경로가 참조. 제품별 단위는 finishedGoodsUnit(product)를 쓴다.
 export const FINISHED_GOODS_UNIT = "STACK" as const;
+// 하위호환용 — HBM(M20) 전용 창고. 제품별 창고는 finishedGoodsWarehouseFor(product)를 쓴다.
 export const FINISHED_GOODS_WAREHOUSE_ID = "WH-FG01";
 
-function fabForProduct(product: Product): "M20" | "M21" | "M22" {
+// 완제품 창고는 팹별로 분리한다. 하나를 3제품이 공유하면 (1) getWarehouseCapacity가 단위가 다른
+// STACK/CHIP/DIE를 raw 합산해 점유율이 무의미해지고 (2) 한 제품의 재고 적체가 나머지 두 제품의
+// 생산까지 CAPACITY_OVER 게이팅으로 멈춘다 — 실관측: HBM 132일치(25.1M STACK) 적체로 WH-FG01이
+// 198%가 되면서 DRAM/NAND WIP까지 마지막 스텝에서 동반 정지했다.
+const FINISHED_GOODS_WAREHOUSE_BY_PRODUCT: Record<Product, string> = {
+  HBM: FINISHED_GOODS_WAREHOUSE_ID,
+  DRAM: "WH-FG02",
+  NAND: "WH-FG03",
+};
+
+export function finishedGoodsWarehouseFor(product: Product): string {
+  return FINISHED_GOODS_WAREHOUSE_BY_PRODUCT[product];
+}
+
+export function finishedGoodsWarehouseIds(): string[] {
+  return Object.values(FINISHED_GOODS_WAREHOUSE_BY_PRODUCT);
+}
+
+export function fabForProduct(product: Product): "M20" | "M21" | "M22" {
   return product === "HBM" ? "M20" : product === "DRAM" ? "M21" : "M22";
 }
 
@@ -35,28 +55,29 @@ export function capacityGbPerUnit(product: Product): number {
 export const FINAL_TEST_DURATION_DAYS = 1;
 
 export function applyFinalTestQueue(input: {
-  now: Date;
+  /** 지금 운영시각(ms). 최종테스트 대기는 운영시간으로 흐른다(RULES.md § Twin 운영시간). */
+  operatingEpochMs: number;
   pendingTestQuantity: number;
-  pendingTestReadyAt: Date | null;
+  /** 운영시각 기준 방출 예정 시각. 벽시계가 아니다 — 필드명으로 구분한다. */
+  pendingTestReadyOperatingMs: number | null;
   newlyCompletedQuantity: number;
-  simMsPerDay: number;
-}): { releasedQuantity: number; nextPendingTestQuantity: number; nextPendingTestReadyAt: Date | null } {
+}): { releasedQuantity: number; nextPendingTestQuantity: number; nextPendingTestReadyOperatingMs: number | null } {
   let pending = input.pendingTestQuantity;
-  let readyAt = input.pendingTestReadyAt;
+  let readyAt = input.pendingTestReadyOperatingMs;
   let released = 0;
 
-  if (readyAt && input.now.getTime() >= readyAt.getTime() && pending > 0) {
+  if (readyAt != null && input.operatingEpochMs >= readyAt && pending > 0) {
     released = pending;
     pending = 0;
     readyAt = null;
   }
 
   if (input.newlyCompletedQuantity > 0) {
-    if (pending <= 0 || !readyAt) {
-      readyAt = new Date(input.now.getTime() + FINAL_TEST_DURATION_DAYS * input.simMsPerDay);
+    if (pending <= 0 || readyAt == null) {
+      readyAt = input.operatingEpochMs + operatingDaysToMs(FINAL_TEST_DURATION_DAYS);
     }
     pending += input.newlyCompletedQuantity;
   }
 
-  return { releasedQuantity: released, nextPendingTestQuantity: pending, nextPendingTestReadyAt: readyAt };
+  return { releasedQuantity: released, nextPendingTestQuantity: pending, nextPendingTestReadyOperatingMs: readyAt };
 }

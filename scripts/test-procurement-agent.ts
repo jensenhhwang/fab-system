@@ -1,6 +1,96 @@
 import assert from "node:assert/strict";
-import { buildProcurementShadow } from "../src/lib/procurement-agent";
+import {
+  autonomyCeiling, approvalEscalationTier, buildProcurementShadow, initialPurchaseOrderStatus,
+  shouldAutoApprovePendingOrder, buildLiveProcurementShadow, type ProcurementLiveOrderSignal,
+} from "../src/lib/procurement-agent";
 import type { MaterialRecommendation, ScenarioMaterial } from "../src/lib/scenario-engine";
+
+// P1a 회귀: autonomyCeiling을 MaterialRecommendation 없이, category·procurementAlternatives만으로
+// 직접 호출할 수 있어야 한다(Twin 발주 루프가 재사용할 수 있게 시그니처를 축소했다).
+//
+// I2 회귀 배경: GAS/CHM 카테고리 전체를 위험물로 뭉뚱그려 L2를 걸었더니(승인 필요) 44종 중
+// 41종이 승인대기로 쌓였다. 실제로는 벌크가스(N2·Ar 등)·벌크케미컬(BCDS)은 밴더관리 자동보충이
+// 업계 관행이라 승인이 필요없고, 개별 실린더(SPECIALTY_CYLINDER)에 든 특수가스만 진짜 위험물
+// 취급이 필요하다. supplyMode로 더 정확하게 판정한다.
+assert.equal(autonomyCeiling({ category: "GAS", supplyMode: "SPECIALTY_CYLINDER", procurementAlternatives: [{ supplierName: "X", standardDays: 10, emergencyOrderAllowed: false }] }).level, 2, "개별 실린더 특수가스는 대체공급사 있어도 L2");
+assert.equal(autonomyCeiling({ category: "GAS", supplyMode: "BULK_GAS", procurementAlternatives: [{ supplierName: "X", standardDays: 10, emergencyOrderAllowed: false }] }).level, 4, "벌크가스는 밴더관리 자동보충 — 대체공급사 있으면 L4");
+assert.equal(autonomyCeiling({ category: "CHM", supplyMode: "BULK_CHEMICAL", procurementAlternatives: [{ supplierName: "X", standardDays: 10, emergencyOrderAllowed: false }] }).level, 4, "벌크케미컬(BCDS)도 대체공급사 있으면 L4");
+assert.equal(autonomyCeiling({ category: "CHM", supplyMode: "DRUM_CHEMICAL", procurementAlternatives: [] }).level, 2, "드럼케미컬도 단일소싱이면 L2(위험물 사유는 아니지만)");
+assert.equal(autonomyCeiling({ category: "CSM", procurementAlternatives: [] }).level, 2, "단일소싱은 L2 상한");
+assert.equal(autonomyCeiling({ category: "CSM", procurementAlternatives: [{ supplierName: "X", standardDays: 10, emergencyOrderAllowed: false }] }).level, 4, "대체공급사 있으면 L4");
+
+// K4 회귀 배경(2026-08-11, K1·K2를 대체): 승인 게이트의 시간 단위가 sim-time과 어긋나 있었다.
+// PENDING_APPROVAL은 실벽시계 60분을 기다려 풀리는데(K2의 SLA 절충), twin의 소모는 sim-time으로
+// 가속돼서 그 60분이 실측 약 103 sim일에 해당했다(측정: tick 26.2초 × 0.75 sim일/tick =
+// 1.72 sim일/실분). 자재의 ropDays는 7~45일이라, 재발주가 걸린 뒤 승인만 기다리다 ROP의 2~15배
+// 시간이 흘러 전 자재가 차례로 결품났다 — 실관측: 44종 중 19종 CRITICAL/STOCKOUT(13종 재고 0),
+// M20 IN_PROGRESS 로트 14,040개 전부 materialBlockedAt으로 라인 완전 정지, 전구체 공급실은
+// 최다소모 TEOS(Si) 재고 0인 채 저소모 TEMAHf가 방의 38%를 73일치로 점유.
+// 사용자 결정(2026-08-11): 승인 게이트 자체를 제거하고 2026-08-08 정책("김구매가 스스로 판단해서
+// 실행하고, 사람의 승인 클릭을 요구하지 않는다")으로 완전 복귀한다 — 이 가속비에서는 사람이
+// 실시간으로 승인 버튼을 누를 시간 자체가 존재하지 않으므로, 게이트를 두면 그게 곧 교착이다.
+// autonomyCeiling의 분류·사유는 계속 PO에 기록되므로(engine.ts) 투명성은 유지된다.
+assert.equal(initialPurchaseOrderStatus(2), "ORDERED", "L2(위험물·단일소싱)도 사람 승인 없이 바로 발주 — 분류·사유는 PO에 기록만 한다");
+assert.equal(initialPurchaseOrderStatus(4), "ORDERED", "L4는 지금까지처럼 바로 자동 발주");
+
+// K4-b: shouldAutoApprovePendingOrder는 남긴다 — 게이트 제거 이전에 이미 PENDING_APPROVAL로
+// 쌓여 있던 PO와, 사람이 화면에서 직접 만든 발주를 풀어주는 backstop이다. 신규 발주가 더는
+// 이 상태로 생성되지 않으므로 위 103 sim일 문제의 경로는 아니다.
+assert.equal(shouldAutoApprovePendingOrder(59), false, "59분은 아직 URGENT 전이라 자동승인 안 됨");
+assert.equal(shouldAutoApprovePendingOrder(60), true, "60분(URGENT 티어)이면 자동승인");
+assert.equal(shouldAutoApprovePendingOrder(120), true, "그 이상 방치돼도 계속 자동승인 대상");
+
+// K3 회귀 배경: 관제탑의 김구매 카드가 실제 twin 발주 상태가 아니라 별도의 그림자 조종석
+// 시뮬레이션(buildProcurementShadow, "자동모드였다면 ~했을 것")을 그대로 보여주고 있었다 —
+// 진짜로 발주를 실행하는 engine.ts 결과와 무관했다. buildLiveProcurementShadow는 실제
+// twinPurchaseOrders 상태(PENDING_APPROVAL·INBOUND_HOLD)만 보고 가정법 없이 서술해야 한다.
+function liveSignal(overrides: Partial<ProcurementLiveOrderSignal>): ProcurementLiveOrderSignal {
+  return {
+    materialId: "GAS-004", materialCode: "GAS-004", materialName: "실란", unit: "kg",
+    qty: 500, status: "PENDING_APPROVAL", waitingMinutes: 10, autonomyReason: "위험물(가스·케미컬) 자동입고 금지",
+    ...overrides,
+  };
+}
+
+const emptyLive = buildLiveProcurementShadow([], "2026-08-10T00:00:00Z");
+assert.equal(emptyLive.top, null, "대기·보류가 없으면 top이 없다");
+assert.deepEqual(emptyLive.summary, { pendingApproval: 0, urgent: 0, inboundHeld: 0 });
+
+const waitingLive = buildLiveProcurementShadow([liveSignal({ waitingMinutes: 10 })], "2026-08-10T00:00:00Z");
+assert.equal(waitingLive.top?.verdict, "APPROVAL_WAITING", "60분 미만은 대기 상태");
+assert.ok(!waitingLive.top!.verdictText.includes("것"), `가정법("~것") 문구가 남아있으면 안 된다 (got ${waitingLive.top!.verdictText})`);
+assert.ok(waitingLive.top!.verdictText.includes("10분"), "실제 경과시간을 그대로 서술해야 한다");
+
+const urgentLive = buildLiveProcurementShadow([liveSignal({ waitingMinutes: 75 })], "2026-08-10T00:00:00Z");
+assert.equal(urgentLive.top?.verdict, "APPROVAL_URGENT", "60분 이상은 긴급");
+assert.ok(urgentLive.top!.verdictText.includes("자동 승인"), "SLA 타임아웃으로 자동 승인된다는 사실을 알려줘야 한다");
+assert.equal(urgentLive.summary.urgent, 1);
+
+const heldLive = buildLiveProcurementShadow(
+  [liveSignal({ materialId: "UTL-001", materialCode: "UTL-001", materialName: "초순수", status: "INBOUND_HOLD", waitingMinutes: 5, autonomyReason: null })],
+  "2026-08-10T00:00:00Z",
+);
+assert.equal(heldLive.top?.verdict, "INBOUND_HELD");
+assert.equal(heldLive.summary.inboundHeld, 1);
+assert.equal(heldLive.summary.pendingApproval, 0, "INBOUND_HOLD는 승인대기 건수에 안 잡힌다");
+
+// 랭킹: INBOUND_HELD/APPROVAL_URGENT(긴급)가 APPROVAL_WAITING(일반 대기)보다 우선해야 한다
+const mixed = buildLiveProcurementShadow(
+  [
+    liveSignal({ materialId: "A", materialCode: "A", materialName: "일반대기자재", waitingMinutes: 5 }),
+    liveSignal({ materialId: "B", materialCode: "B", materialName: "긴급자재", waitingMinutes: 90 }),
+  ],
+  "2026-08-10T00:00:00Z",
+);
+assert.equal(mixed.top?.code, "B", "긴급(URGENT)이 일반 대기보다 먼저 보여야 한다");
+
+// J1 회귀 배경: PENDING_APPROVAL이 며칠째 방치돼도 관제탑 배지가 그냥 "N건"이라고만 떠서
+// 아무도 안 눌렀다 — 방치시간에 따라 긴급도를 올려서 눈에 띄게 한다.
+assert.equal(approvalEscalationTier(5), "NORMAL", "15분 미만은 정상");
+assert.equal(approvalEscalationTier(15), "WARNING", "15분부터 주의");
+assert.equal(approvalEscalationTier(59), "WARNING", "60분 미만은 계속 주의");
+assert.equal(approvalEscalationTier(60), "URGENT", "60분부터 긴급");
+assert.equal(approvalEscalationTier(500), "URGENT", "그 이상도 긴급");
 
 function mat(over: Partial<ScenarioMaterial> & Pick<ScenarioMaterial, "id" | "code" | "name" | "category" | "unit">): ScenarioMaterial {
   return {
@@ -50,6 +140,7 @@ const recs: MaterialRecommendation[] = [
   rec({
     material: mat({
       id: "GAS-004", code: "GAS-004", name: "실란 (SiH₄)", category: "GAS", unit: "봄베",
+      supplyMode: "SPECIALTY_CYLINDER",
       procurementAlternatives: [
         { supplierName: "X", standardDays: 14, emergencyOrderAllowed: false },
         { supplierName: "Y", standardDays: 30, emergencyOrderAllowed: false },
@@ -185,5 +276,19 @@ assert.equal(gasOverridden.verdict, "WOULD_PROPOSE", "위험물은 override로�
 const empty = buildProcurementShadow([], "없음", now);
 assert.equal(empty.chains.length, 0);
 assert.equal(empty.summary.actionable, 0);
+
+// ── reasonCodes 중복 금지: scenario-engine이 EXISTING_SHORTAGE를 classification과
+// warnings[].code 양쪽에 동시에 넣기 때문에(baseline.recommendedInbound > 0일 때),
+// 그대로 합치면 같은 문자열이 두 번 들어가 React key 충돌(같은 key `EXISTING_SHORTAGE`
+// 두 번)이 난다. reasonCodes는 항상 고유해야 한다.
+const dupRec = rec({
+  material: mat({ id: "CHM-020", code: "CHM-020", name: "테스트 케미컬", category: "CHM", unit: "L" }),
+  classification: "EXISTING_SHORTAGE",
+  baseline: { grossRequirement: 0, recommendedInbound: 300, firstNeedDay: 4 },
+  warnings: [{ code: "EXISTING_SHORTAGE", label: "기준 계획에서도 보충 필요", severity: "HIGH" }],
+});
+const dupChain = buildProcurementShadow([dupRec], "위험 점검", now).chains[0];
+const uniqueCodes = new Set(dupChain.reasonCodes);
+assert.equal(uniqueCodes.size, dupChain.reasonCodes.length, `reasonCodes에 중복이 있으면 안 된다 (got ${JSON.stringify(dupChain.reasonCodes)})`);
 
 console.log("✅ procurement-agent 그림자 로직 + 자율등급 추천/override 통과");

@@ -16,9 +16,9 @@ MES (작업지시·피킹·공정 실적)
 
 | 레이어 | 역할 | 현황 |
 |---|---|---|
-| WMS | 입출고, 위치, 로트·용기 재고 추적 | ✅ Phase 1 구현 |
+| WMS | 입출고, 위치, 로트·용기 재고 추적 | ⚠️ Phase 1 화면(`/wms`, work order 기반 피킹)은 삭제됨. 실행은 twin tick 엔진(`advanceAggregateWip`/`advanceStepBucketWip`)이 자동 처리하고, 사람 확인은 `/erp-bridge`의 입고 확인 패널로 축소됨 |
 | Planning Bridge/SCM | 자재·공급사 기준, 수동 입고계획, WMS 실입고 연결 | 🔄 입고계획 Phase 1, 생산계획 연결 필요 |
-| MES | 작업지시, BOM, FEFO 피킹, 공정 준비도 | ✅ Phase 1 구현 |
+| MES | 작업지시, BOM, FEFO 피킹, 공정 준비도 | ⚠️ Phase 1 화면(`/mes`, 작업지시·피킹 UI)은 삭제됨. 현재 운영 역할의 책임과 학습 경계는 [`docs/roles/`](./roles/README.md)를 기준으로 하며, 삭제된 M20 파일럿 에이전트 문서는 운영 근거로 사용하지 않는다 |
 
 자재 ID를 운영 정보의 기준축으로 사용한다. 자재 운영 허브에서 전체·창고별 재고, Lot 품질, 공정 사용량, BOM, 승인 공급사와 리드타임을 하나의 흐름으로 조회하고, 조달 기준 수정은 SCM과 What-if에 동일하게 반영된다. 공정별 사용량을 일사용량과 DOH의 기준으로 사용하고, Planning Bridge의 확정 입고계획은 WMS 실입고와 연결되며 WMS 로트 재고는 MES 피킹과 movement 기록으로 이어진다. 다음 핵심 과제는 수동 생산계획과 MES 공정 실적·원가를 같은 흐름에 연결하는 것이다.
 
@@ -71,4 +71,4 @@ Planning Bridge는 외부 ERP를 대체하지 않는다. 회계·세무·결산 
 
 25번 줄의 "과거의 랜덤 자동운전과 타임 액셀러레이터는 현행 목표에서 제외한다"는 **What-if 디지털 트윈(Phase 4)**, 즉 결과가 재현 가능해야 하고 입력·결과·승인 이력이 남아야 하는 의사결정 시뮬레이션에 해당하는 원칙이다.
 
-FOUP 3D 실시간 추적(`waferLots`/`waferLotStepEvents` 실행 원장, `AUTO_ADVANCE_INTERVAL_MS` 자동 진행)은 이것과 다른 층위다 — 랜덤이 아니라 `routeMaster`에 정의된 순서를 결정론적으로 따라가고, 각 스텝이 실제 이벤트(`OPERATOR_CONFIRM` 또는 `MES_TELEMETRY`)로 원장에 기록되며, 패키징 진입 시 실제 M20 파일럿 워크오더·발주 에이전트를 트리거한다. 즉 "설명 불가능한 배속 연출"이 아니라 "MES 텔레메트리가 아직 없어서 사람이 지켜보지 않아도 흐름이 계속 돌아가게 하는 임시 대역"이며, 실제 설비 신호가 붙으면 `MES_TELEMETRY` 트리거가 그대로 대체한다.
+FOUP 3D 실시간 추적(`waferLots`/`waferLotStepEvents` 실행 원장)은 이것과 다른 층위다 — 랜덤이 아니라 `routeMaster`에 정의된 순서를 결정론적으로 따라가고, 각 스텝이 실제 이벤트(`OPERATOR_CONFIRM` 또는 `MES_TELEMETRY`)로 원장에 기록된다. 이 VISUAL 이벤트 원장은 3D로 보여주는 12개 Watched FOUP 전용이며, 실제 생산 수량을 움직이는 AGGREGATE/STEP_BUCKET WIP 진행(`src/lib/twin/engine.ts`의 `executeTwinTick`)은 이제 M20 파일럿 워크오더를 생성하지 않고 tick마다 직접 WIP를 진행·소모·발주한다(`src/lib/lot-route.ts:251` 주석: "P10 package operation 진입 시에도 createM20PilotWorkOrder를 절대 호출하지 않는다"). 즉 "설명 불가능한 배속 연출"이 아니라 "MES 텔레메트리가 아직 없어서 사람이 지켜보지 않아도 흐름이 계속 돌아가게 하는 임시 대역"이며, 실제 설비 신호가 붙으면 `MES_TELEMETRY` 트리거가 VISUAL 12개 원장에서는 그대로 대체한다 — AGGREGATE/STEP_BUCKET 대량 진행은 애초에 사람 확인 이벤트 자체를 남기지 않는다.

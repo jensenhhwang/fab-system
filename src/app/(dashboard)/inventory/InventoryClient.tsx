@@ -90,7 +90,7 @@ function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; s
   );
 }
 
-export default function InventoryClient({ items, lotCounts = {} }: { items: InventoryItem[]; lotCounts?: Record<string, number> }) {
+export default function InventoryClient({ items }: { items: InventoryItem[] }) {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("ALL");
   const [catFilter, setCatFilter] = useState<CatKey>("ALL");
   const [sortKey, setSortKey] = useState<SortKey>("code");
@@ -300,11 +300,6 @@ export default function InventoryClient({ items, lotCounts = {} }: { items: Inve
                           <Link href={`/inventory/materials/${encodeURIComponent(inv.materialId)}`} className="font-semibold hover:text-[#0078D4] hover:underline" style={{ color: "var(--text-1)" }}>
                             {inv.material.name}
                           </Link>
-                          {(lotCounts[inv.materialId] ?? 0) > 0 && (
-                            <span className="ml-1 text-[10px] font-bold text-[#0078D4] bg-[#E6F0FA] px-1.5 py-0.5 rounded-full">
-                              전체 {lotCounts[inv.materialId]} Lots
-                            </span>
-                          )}
                         </div>
                         {inv.material.nameEn && (
                           <div className="text-[10px] text-[#999]">{inv.material.nameEn}</div>

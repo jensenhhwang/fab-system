@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FabId } from "@/lib/fab-domain";
 import type { FoupFleetProjection } from "@/lib/foup-wip-model";
-import { M20_PRODUCTION_SCENARIOS, targetWipCount } from "@/lib/fab-scenario";
+import { targetWipCount } from "@/lib/fab-scenario";
+import { getProductionConfig } from "@/lib/fab-production-config";
+import type { Product } from "@/lib/db";
+
+// 팹의 정본 제품. 다이얼은 3팹 공용이므로 fabId에서 제품을 유도한다 —
+// 2026-08-12까지 product=HBM과 M20 사이클타임이 하드코딩돼 있어 M20에서만 맞았다.
+const FAB_PRODUCT: Record<FabId, Product> = { M20: "HBM", M21: "DRAM", M22: "NAND" };
 
 type ScenarioResponse = {
   scenario: { id: FabId; nominalWspm: number; utilization: number };
@@ -22,6 +28,11 @@ type LotLookupResponse = {
 };
 
 export default function FabThroughputDial({ fabId, foupFleet }: { fabId: FabId; foupFleet?: FoupFleetProjection | null }) {
+  const product = FAB_PRODUCT[fabId];
+  const productionConfig = getProductionConfig(fabId, product);
+  // 개별 로트 조회는 per-lot 원장(waferLots)이 있는 팹에서만 성립한다. M21/M22는 step-bucket
+  // 집계라 FOUP 코드로 짚을 개체가 없다.
+  const supportsLotLookup = productionConfig?.wipMode === "PER_LOT";
   const [scenario, setScenario] = useState<ScenarioResponse | null>(null);
   const [wip, setWip] = useState<AggregateWipResponse | null>(null);
   const [sliderValue, setSliderValue] = useState<number | null>(null);
@@ -42,7 +53,7 @@ export default function FabThroughputDial({ fabId, foupFleet }: { fabId: FabId; 
   }, [fabId]);
 
   const loadWip = useCallback(async () => {
-    const response = await fetch(`/api/wafer-lots/aggregate-wip?fabId=${fabId}&product=HBM`, { cache: "no-store" });
+    const response = await fetch(`/api/wafer-lots/aggregate-wip?fabId=${fabId}&product=${product}`, { cache: "no-store" });
     if (!response.ok) return;
     const data = await response.json() as AggregateWipResponse;
     setWip(data);
@@ -87,7 +98,7 @@ export default function FabThroughputDial({ fabId, foupFleet }: { fabId: FabId; 
     if (!code) return;
     setLookingUp(true); setLookupError(null); setLookupResult(null);
     try {
-      const response = await fetch(`/api/wafer-lots/lookup?fabId=${fabId}&product=HBM&foupCode=${encodeURIComponent(code)}`, { cache: "no-store" });
+      const response = await fetch(`/api/wafer-lots/lookup?fabId=${fabId}&product=${product}&foupCode=${encodeURIComponent(code)}`, { cache: "no-store" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "조회 실패");
       setLookupResult(body as LotLookupResponse);
@@ -106,7 +117,7 @@ export default function FabThroughputDial({ fabId, foupFleet }: { fabId: FabId; 
   const isPreviewing = previewValue !== null;
   const previewUtilizedWspm = previewValue !== null ? scenario.scenario.nominalWspm * previewValue : scenario.metrics.utilizedWspm;
   const targetWip = previewValue !== null
-    ? targetWipCount(previewUtilizedWspm, M20_PRODUCTION_SCENARIOS.NORMAL.cycleTimeDays)
+    ? targetWipCount(previewUtilizedWspm, productionConfig?.cycleTimeDays ?? 0)
     : (scenario.targetWip ?? 0);
   const occupiedTarget = foupFleet?.target.occupied ?? wip?.occupiedTarget ?? 0;
   const currentWip = foupFleet?.actual.occupied ?? wip?.currentWip ?? 0;
@@ -150,17 +161,22 @@ export default function FabThroughputDial({ fabId, foupFleet }: { fabId: FabId; 
           <div className="h-full rounded-full transition-all" style={{ width: `${wipRatio * 100}%`, background: wipColor }} />
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-2 rounded-lg bg-[#F7F9FA] p-2 text-[9px]">
-        <div><div className="text-[#8A929A]">Physical Fleet</div><div className="font-mono font-black text-[#303840]">{(foupFleet?.actual.physicalFleet ?? 0).toLocaleString()}</div></div>
-        <div><div className="text-[#8A929A]">Reserve</div><div className="font-mono font-black text-[#303840]">{(foupFleet?.actual.reserve ?? 0).toLocaleString()}</div></div>
-        <div><div className="text-[#8A929A]">Watched</div><div className="font-mono font-black text-sky-600">{(foupFleet?.actual.watched ?? wip?.visualWip ?? 0).toLocaleString()}</div></div>
-      </div>
+      {/* Physical Fleet·Reserve·Watched는 M20 FOUP Fleet 투영에서만 나온다 — 다른 팹에서 0으로
+          채워 넣으면 "실물 캐리어가 없다"는 거짓 정보가 된다. */}
+      {foupFleet && (
+        <div className="mt-2 grid grid-cols-3 gap-2 rounded-lg bg-[#F7F9FA] p-2 text-[9px]">
+          <div><div className="text-[#8A929A]">Physical Fleet</div><div className="font-mono font-black text-[#303840]">{foupFleet.actual.physicalFleet.toLocaleString()}</div></div>
+          <div><div className="text-[#8A929A]">Reserve</div><div className="font-mono font-black text-[#303840]">{foupFleet.actual.reserve.toLocaleString()}</div></div>
+          <div><div className="text-[#8A929A]">Watched</div><div className="font-mono font-black text-sky-600">{(foupFleet.actual.watched ?? wip?.visualWip ?? 0).toLocaleString()}</div></div>
+        </div>
+      )}
       <div className="mt-2 text-[9px] leading-4 text-[#8A929A]">
-        전체 105일 WIP는 {targetWip.toLocaleString()} FOUP-eq입니다. P10 이후 {(wip?.downstreamWipEquivalent ?? 0).toLocaleString()} lot-eq는 아직 `NOT_BOOTSTRAPPED`이며 실물 FOUP 수가 아닙니다.
+        전체 {productionConfig?.cycleTimeDays ?? 0}일 WIP는 {targetWip.toLocaleString()} FOUP-eq입니다.
+        {(wip?.downstreamWipEquivalent ?? 0) > 0 && <> P10 이후 {(wip?.downstreamWipEquivalent ?? 0).toLocaleString()} lot-eq는 아직 `NOT_BOOTSTRAPPED`이며 실물 FOUP 수가 아닙니다.</>}
       </div>
       {error && <div className="mt-2 text-[10px] font-bold text-[#EA002C]">{error}</div>}
 
-      <div className="mt-4 border-t border-[#EEF1F4] pt-3">
+      {supportsLotLookup && <div className="mt-4 border-t border-[#EEF1F4] pt-3">
         <div className="text-[10px] font-black uppercase tracking-[0.08em] text-[#7D8790]">로트 조회</div>
         <div className="mt-2 flex items-center gap-2">
           <input
@@ -192,7 +208,7 @@ export default function FabThroughputDial({ fabId, foupFleet }: { fabId: FabId; 
             </div>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

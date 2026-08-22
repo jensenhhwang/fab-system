@@ -83,18 +83,158 @@ function dayLabel(day: number | null): string {
   return day > 0 ? `D+${day}` : `D${day}`;
 }
 
-function autonomyCeiling(r: MaterialRecommendation): { level: AutonomyCeiling; reason: string | null; code: string | null } {
-  const cat = (r.material.category ?? "").toUpperCase();
-  if (cat === "GAS" || cat === "CHM") {
+// Twin 발주 루프 등 MaterialRecommendation 전체를 안 만드는 호출부에서도 재사용할 수 있도록
+// category·procurementAlternatives·supplyMode만 받는다(김구매 판단 없이 Twin이 발주를 쏘던
+// 문제 수정). I2 회귀: GAS/CHM 카테고리 전체를 위험물로 뭉뚱그렸더니 44종 중 41종이 승인대기로
+// 쌓였다 — 실제로는 벌크가스(N2·Ar 등)·벌크케미컬(BCDS)은 밴더관리 자동보충이 업계 관행이라
+// 사람 승인이 필요 없고, 개별 실린더(SPECIALTY_CYLINDER)에 든 특수가스만 진짜 위험물 취급이
+// 필요하다. supplyMode가 없으면(레거시 호출부) 이전처럼 category만으로 보수적으로 판단한다.
+export function autonomyCeiling(
+  material: Pick<MaterialRecommendation["material"], "category" | "procurementAlternatives"> & { supplyMode?: MaterialRecommendation["material"]["supplyMode"] },
+): { level: AutonomyCeiling; reason: string | null; code: string | null } {
+  const cat = (material.category ?? "").toUpperCase();
+  const isHazmatCategory = cat === "GAS" || cat === "CHM";
+  // supplyMode가 있으면 그걸로 정밀 판정한다: 개별 실린더(SPECIALTY_CYLINDER)만 진짜 위험물
+  // 상한 대상이다. 벌크(BULK_GAS/BULK_CHEMICAL)는 밴더관리 자동보충이 업계 관행이라 제외하고,
+  // 드럼/캐니스터 화학물질은 위험물 상한이 아니라 아래 단일소싱 여부로만 판정한다(대부분
+  // 실제로도 단일 공급사라 자연스럽게 걸러진다). supplyMode가 없으면(레거시 호출부) 이전처럼
+  // category만으로 보수적으로 판단한다.
+  const isHazmatCylinder = material.supplyMode
+    ? material.supplyMode === "SPECIALTY_CYLINDER"
+    : isHazmatCategory;
+  if (isHazmatCylinder) {
     return { level: 2, reason: "위험물(가스·케미컬) 자동입고 금지", code: "HAZMAT_AUTONOMY_CAP" };
   }
   // procurementAlternatives는 "주 공급사를 제외한" 대체 공급사 목록이다(buildProcurementSummary).
   // 즉 승인 공급사가 1곳뿐이면 alternatives는 0건 — 단일소싱 판정은 <=1이 아니라 0건이어야 한다.
-  const alt = r.material.procurementAlternatives ?? [];
+  const alt = material.procurementAlternatives ?? [];
   if (alt.length === 0) {
     return { level: 2, reason: "단일 승인 공급사 — 자동입고 제한", code: "SINGLE_SOURCE_CAP" };
   }
   return { level: 4, reason: null, code: null };
+}
+
+// Twin 발주 루프(engine.ts)가 새 PO를 만들 때 쓰는 초기 상태 — 자율등급과 무관하게 항상 ORDERED.
+//
+// 2026-08-11 사용자 결정: 승인 게이트를 제거하고 2026-08-08 정책("김구매가 스스로 판단해서
+// 실행하고, 사람의 승인 클릭을 요구하지 않는다")으로 완전 복귀한다. 08-09에 되살렸던 L2 게이트는
+// 시간 단위가 twin과 어긋나 있었다 — PENDING_APPROVAL은 실벽시계로 풀리는데(60분 SLA) 자재
+// 소모는 sim-time으로 가속돼서, 그 60분이 실측 약 103 sim일이었다(tick 26.2초 × 0.75 sim일/tick).
+// 자재 ropDays가 7~45일이니 승인을 기다리는 동안 ROP의 2~15배 시간이 흘러 전 자재가 차례로
+// 결품났다(실관측: 44종 중 19종 CRITICAL/STOCKOUT, M20 로트 14,040개 전부 materialBlockedAt으로
+// 라인 정지). 이 가속비에서는 사람이 실시간으로 승인을 누를 시간 자체가 없으므로, 게이트를 두는
+// 것이 곧 교착이다. 위험물·단일소싱 분류와 사유(autonomyCeiling·autonomyReason)는 engine.ts가
+// 계속 PO에 기록하므로 "왜 이 발주가 민감한가"의 투명성은 유지된다 — 사람은 사후에 REJECT할 수 있다.
+export function initialPurchaseOrderStatus(_ceilingLevel: AutonomyCeiling): "PENDING_APPROVAL" | "ORDERED" {
+  return "ORDERED";
+}
+
+// PENDING_APPROVAL이 방치되는 문제(실관측: 며칠째 41건 방치)에 대한 최소 대응 — 관제탑 배지가
+// 그냥 "N건"으로만 뜨면 아무도 안 누른다. 방치시간(분)에 따라 긴급도를 올려서 눈에 띄게 한다.
+// 승인은 여전히 사람이 하지만, "지금 봐야 하는지"를 시스템이 판단해서 알려준다.
+export type ApprovalEscalationTier = "NORMAL" | "WARNING" | "URGENT";
+export const APPROVAL_ESCALATION_WARNING_MIN = 15;
+export const APPROVAL_ESCALATION_URGENT_MIN = 60;
+export function approvalEscalationTier(waitingMinutes: number): ApprovalEscalationTier {
+  if (waitingMinutes >= APPROVAL_ESCALATION_URGENT_MIN) return "URGENT";
+  if (waitingMinutes >= APPROVAL_ESCALATION_WARNING_MIN) return "WARNING";
+  return "NORMAL";
+}
+
+// SLA 타임아웃 backstop. 2026-08-11에 승인 게이트를 제거해서(initialPurchaseOrderStatus) twin
+// 발주 루프는 더 이상 PENDING_APPROVAL을 만들지 않지만, 게이트 제거 이전에 쌓인 PO와 사람이
+// 화면에서 직접 만든 발주는 여전히 이 상태로 존재할 수 있다. 그것들이 영원히 안 풀려서
+// planInbound의 inTransit에 잡힌 채 재발주까지 막는 교착을 남기지 않도록, URGENT 티어(60분
+// 이상 방치)에 도달하면 자동 승인한다.
+export function shouldAutoApprovePendingOrder(waitingMinutes: number): boolean {
+  return approvalEscalationTier(waitingMinutes) === "URGENT";
+}
+
+// 관제탑의 김구매 카드가 실제 twin 발주 상태가 아니라 별도의 그림자 조종석 계산
+// (buildProcurementShadow, "자동모드였다면 ~했을 것")을 그대로 보여주고 있었다 — 진짜로
+// 발주를 결정·실행하는 engine.ts(initialPurchaseOrderStatus·shouldAutoApprovePendingOrder)의
+// 결과와 무관한 별개 시뮬레이션이었다. 이 함수는 실제 twinPurchaseOrders 상태(PENDING_APPROVAL·
+// INBOUND_HOLD)로 "지금 실제로 무슨 일이 있는지"를 서술한다 — 가정법 없음.
+export type ProcurementLiveOrderSignal = {
+  materialId: string;
+  materialCode: string;
+  materialName: string;
+  unit: string;
+  qty: number;
+  status: "PENDING_APPROVAL" | "INBOUND_HOLD";
+  waitingMinutes: number;
+  autonomyReason: string | null;
+};
+
+export type ProcurementLiveVerdict = "APPROVAL_URGENT" | "INBOUND_HELD" | "APPROVAL_WAITING" | "PROCUREMENT_NORMAL";
+
+const LIVE_VERDICT_RANK: Record<ProcurementLiveVerdict, number> = {
+  APPROVAL_URGENT: 3, INBOUND_HELD: 3, APPROVAL_WAITING: 2, PROCUREMENT_NORMAL: 1,
+};
+
+function liveVerdictOf(signal: ProcurementLiveOrderSignal): ProcurementLiveVerdict {
+  if (signal.status === "INBOUND_HOLD") return "INBOUND_HELD";
+  return shouldAutoApprovePendingOrder(signal.waitingMinutes) ? "APPROVAL_URGENT" : "APPROVAL_WAITING";
+}
+
+function liveVerdictTextOf(signal: ProcurementLiveOrderSignal, verdict: ProcurementLiveVerdict): string {
+  const qtyLabel = `${nf.format(signal.qty)}${signal.unit}`;
+  if (verdict === "INBOUND_HELD") {
+    return `${signal.materialName} 입고 ${qtyLabel} — 목적창고 용량 초과로 보류 중입니다. 창고 여유가 생기면 자동으로 정산됩니다.`;
+  }
+  if (verdict === "APPROVAL_URGENT") {
+    return `${signal.materialName} 발주 ${qtyLabel} — ${Math.round(signal.waitingMinutes)}분째 승인 대기 중입니다(${signal.autonomyReason ?? "위험물/단일소싱"}). SLA 타임아웃으로 곧 자동 승인됩니다.`;
+  }
+  return `${signal.materialName} 발주 ${qtyLabel} — 승인 대기 중입니다(${Math.round(signal.waitingMinutes)}분 경과, ${signal.autonomyReason ?? "위험물/단일소싱"}).`;
+}
+
+export type ProcurementLiveRuleItem = {
+  materialId: string;
+  code: string;
+  name: string;
+  verdict: ProcurementLiveVerdict;
+  verdictText: string;
+};
+
+export type ProcurementLiveReport = {
+  generatedAt: string;
+  policyVersion: string;
+  scenarioLabel: string;
+  shadowMode: true;
+  top: ProcurementLiveRuleItem | null;
+  summary: { pendingApproval: number; urgent: number; inboundHeld: number };
+};
+
+export function buildLiveProcurementShadow(signals: ProcurementLiveOrderSignal[], now: string): ProcurementLiveReport {
+  const ranked = signals
+    .map((signal) => ({ signal, verdict: liveVerdictOf(signal) }))
+    .sort((a, b) => {
+      const rankDiff = LIVE_VERDICT_RANK[b.verdict] - LIVE_VERDICT_RANK[a.verdict];
+      if (rankDiff !== 0) return rankDiff;
+      return b.signal.waitingMinutes - a.signal.waitingMinutes;
+    });
+
+  const topEntry = ranked[0] ?? null;
+  const top: ProcurementLiveRuleItem | null = topEntry ? {
+    materialId: topEntry.signal.materialId,
+    code: topEntry.signal.materialCode,
+    name: topEntry.signal.materialName,
+    verdict: topEntry.verdict,
+    verdictText: liveVerdictTextOf(topEntry.signal, topEntry.verdict),
+  } : null;
+
+  return {
+    generatedAt: now,
+    policyVersion: PROCUREMENT_AGENT_POLICY_VERSION,
+    scenarioLabel: "실제 발주 상태 점검",
+    shadowMode: true,
+    top,
+    summary: {
+      pendingApproval: signals.filter((s) => s.status === "PENDING_APPROVAL").length,
+      urgent: signals.filter((s) => liveVerdictOf(s) === "APPROVAL_URGENT").length,
+      inboundHeld: signals.filter((s) => s.status === "INBOUND_HOLD").length,
+    },
+  };
 }
 
 // 에이전트 추천 레이어: 엔진이 이미 계산한 사실(분류·경고)만 보고 자율등급을 "추천"한다.
@@ -123,7 +263,7 @@ export function buildProcurementShadow(
 
   const chains: ProcurementReasoningChain[] = actionable.map((r) => {
     const m = r.material;
-    const ceiling = autonomyCeiling(r);
+    const ceiling = autonomyCeiling(r.material);
     const agentRecommendation = recommendAutonomyLevel(r, ceiling.level);
     const humanOverride = overrides[m.id] ?? null;
     // 안전 백스탑: 사람 override든 에이전트 추천이든 상한을 절대 넘지 못한다.
@@ -133,9 +273,15 @@ export function buildProcurementShadow(
       ? r.baseline.recommendedInbound
       : r.policyAdjustedOrderQuantity > 0 ? r.policyAdjustedOrderQuantity : r.incrementalOrderQuantity;
 
-    const reasonCodes: string[] = [r.classification, ...r.warnings.map((w) => w.code)];
-    if (ceiling.code) reasonCodes.push(ceiling.code);
-    reasonCodes.push(agentRecommendation.code);
+    // scenario-engine은 EXISTING_SHORTAGE를 classification과 warnings[].code 양쪽에
+    // 동시에 채우므로(baseline.recommendedInbound > 0), 합친 뒤 반드시 중복을 제거한다 —
+    // 안 그러면 화면 목록에서 같은 근거가 두 번 뜨고 React key가 충돌한다.
+    const reasonCodes: string[] = [...new Set([
+      r.classification,
+      ...r.warnings.map((w) => w.code),
+      ...(ceiling.code ? [ceiling.code] : []),
+      agentRecommendation.code,
+    ])];
 
     const leadTimeMissing = m.leadTimeDays == null;
     const supplierMissing = !m.supplierName;

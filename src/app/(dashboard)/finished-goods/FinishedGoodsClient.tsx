@@ -12,13 +12,57 @@ type Receipt = {
   tickAt: string; product: string; unit: string; producedAdded: number; producedQueued: number;
   consumed: { materialId: string; code: string; qty: number; shortfall: number }[];
 };
-type Customer = {
-  _id: string; name: string; priorityTier: 1 | 2 | 3;
-  contractedMonthlyQty: number; shippedThisMonth: number; fulfillmentPct: number | null;
+// 고객 × 제품 계약 라인 — 예전엔 고객당 1행이었고 단위가 다른 출하가 한 숫자로 합산됐다.
+type ContractLine = {
+  customerId: string; customerName: string; priorityTier: 1 | 2 | 3;
+  product: string; unit: string; contractedMonthlyQty: number; contractType: "LTA" | "COMMITTED" | "SPOT";
+  shippedThisMonth: number; shipmentCount: number; fulfillmentPct: number | null; shortfall: number;
 };
-type Shipment = { _id: string; customerId: string; customerName: string; quantity: number; unit: string; shippedAt: string };
+type ContractTotal = {
+  product: string; unit: string; designMonthlyQty: number;
+  contracted: number; shipped: number; spotShipped: number;
+  contractLineCount: number; spotLineCount: number; pct: number | null;
+};
+type Shipment = { _id: string; customerId: string; customerName: string; product: string; fabId: string; quantity: number; unit: string; shippedAt: string };
 
 const PRODUCT_COLOR: Record<string, string> = { HBM: "#EA002C", DRAM: "#2563EB", NAND: "#7C3AED" };
+
+// 이행률 게이지. 값 범위가 12%~258%로 21배까지 벌어져서 Math.min(100, pct)로 자르면 초과
+// 라인들이 전부 꽉 찬 같은 바가 된다(= 계산을 고쳐도 화면이 계속 거짓말을 함). 그래서
+// 100%를 트랙의 고정 55% 지점에 못 박고 초과분만 로그로 압축해 300%에서 포화시킨다.
+// 100% 틱이 모든 행에서 같은 x에 있어 세로로 스캔된다.
+function gaugeX(pct: number): number {
+  if (pct <= 100) return pct * 0.55;
+  return 55 + Math.min(45, (Math.log10(pct / 100) / Math.log10(3)) * 45);
+}
+
+// 스팟 라인은 게이지를 아예 그리지 않는다 — 색만 바꾸면 "이것도 %인가" 하고 읽지만,
+// 트랙이 없으면 오독이 불가능하다. 퍼센트가 존재하지 않는 개념이라는 걸 부재로 표현한다.
+function FulfillmentGauge({ pct, color }: { pct: number | null; color: string }) {
+  if (pct == null) {
+    return <span className="w-[136px] text-right text-[10px] font-bold text-[#667085]">SPOT</span>;
+  }
+  const x = gaugeX(pct);
+  const filled = Math.min(x, 55);
+  const over = Math.max(0, x - 55);
+  const badge = pct >= 95 && pct <= 105 ? "#00875A" : pct < 95 ? "#B97500" : "#667085";
+  return (
+    <span className="flex w-[136px] items-center gap-1.5">
+      <span className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-[#EEE]">
+        <span className="absolute left-0 top-0 h-full" style={{ width: `${filled}%`, background: color }} />
+        {over > 0 && (
+          <span
+            className="absolute top-0 h-full"
+            style={{ left: "55%", width: `${over}%`, background: color, opacity: 0.35 }}
+          />
+        )}
+        {/* 100% 기준선 */}
+        <span className="absolute top-[-1px] h-[8px] w-[1.5px] bg-[#141413]" style={{ left: "55%" }} />
+      </span>
+      <span className="w-9 text-right text-[10px] font-bold tabular-nums" style={{ color: badge }}>{pct}%</span>
+    </span>
+  );
+}
 const TIER_LABEL: Record<number, { label: string; color: string; bg: string }> = {
   1: { label: "Tier-1", color: "#087A55", bg: "#E9F8F2" },
   2: { label: "Tier-2", color: "#B54708", bg: "#FFFAEB" },
@@ -42,11 +86,14 @@ function fmtGb(gb: number): string {
 export default function FinishedGoodsClient() {
   const [products, setProducts] = useState<ProductView[] | null>(null);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [lines, setLines] = useState<ContractLine[]>([]);
+  const [totals, setTotals] = useState<ContractTotal[]>([]);
+  const [openBand, setOpenBand] = useState<string | null>(null);
   const [shipments, setShipments] = useState<Shipment[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [gbMode, setGbMode] = useState(false);
   const [customerId, setCustomerId] = useState("");
+  const [shipProduct, setShipProduct] = useState("HBM");
   const [qty, setQty] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +114,11 @@ export default function FinishedGoodsClient() {
       if (!fgRes.ok) throw new Error(fgPayload.error ?? "완제품 재고를 불러오지 못했습니다.");
       setProducts(fgPayload.products ?? []);
       if (mbRes.ok) setReceipts(mbPayload.receipts ?? []);
-      if (custRes.ok) setCustomers(custPayload.customers ?? []);
+      if (custRes.ok) {
+        // 고객 목록 자체는 더 이상 안 쓴다 — 화면 단위가 "고객"이 아니라 "고객 × 제품 계약 라인"이다.
+        setLines(custPayload.lines ?? []);
+        setTotals(custPayload.totals ?? []);
+      }
       if (shipRes.ok) setShipments(shipPayload.shipments ?? []);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
@@ -89,6 +140,8 @@ export default function FinishedGoodsClient() {
   }
 
   const hbm = products?.find((p) => p.product === "HBM") ?? products?.[0];
+  // 출하 대상 제품의 가용 재고 — 3제품 출하가 열리면서 "HBM 재고"가 아니라 선택 제품 기준이어야 한다.
+  const shipTarget = products?.find((p) => p.product === shipProduct) ?? hbm;
 
   async function submitShipment() {
     if (!customerId || !qty || Number(qty) <= 0) return;
@@ -98,7 +151,7 @@ export default function FinishedGoodsClient() {
       const res = await fetch("/api/twin/shipments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customerId, quantity: Number(qty) }),
+        body: JSON.stringify({ customerId, quantity: Number(qty), product: shipProduct }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error ?? "출하 처리에 실패했습니다.");
@@ -197,52 +250,93 @@ export default function FinishedGoodsClient() {
         </div>
       </div>
 
-      {/* 고객사 계약 이행률 (HBM 기준) */}
+      {/* 고객사 계약 이행률 — 제품별 밴드 */}
       <div className="rounded-2xl border bg-white p-4" style={{ borderColor: "var(--border)", boxShadow: "var(--shadow-1)" }}>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-[#F0EEEB] px-2 py-0.5 text-[10px] font-extrabold text-[#6F6963]">고객사 계약 이행률</span>
-          <h2 className="text-sm font-bold text-[#141413]">이번 달 계약물량 대비 출하 (HBM)</h2>
+          <h2 className="text-sm font-bold text-[#141413]">이번 달 계약물량 대비 출하</h2>
         </div>
-        <p className="mt-1 text-[11px] text-[#999]">계약물량도 가상 데이터(HBM 설계기준 월산출을 등급 비율로 배분)입니다.</p>
+        <p className="mt-1 text-[11px] text-[#999]">
+          계약물량은 가상 데이터(제품별 설계기준 월산출을 등급 비율로 배분)입니다. 제품마다 단위와 자릿수가
+          달라 합산하지 않고 제품별로 나눠 봅니다. 스팟 계약은 약정 물량이 없어 이행률 대신 배정량만 표시합니다.
+        </p>
         <div className="mt-3 space-y-2">
-          {customers.map((c) => {
-            const pct = c.fulfillmentPct ?? 0;
-            const barColor = pct >= 100 ? "#00875A" : pct >= 50 ? "#0078D4" : "#B97500";
+          {totals.map((t) => {
+            const productLines = lines.filter((l) => l.product === t.product);
+            const open = openBand === t.product;
+            const color = PRODUCT_COLOR[t.product] ?? "#141413";
             return (
-              <div key={c._id} className="rounded-xl bg-[#FAFAFA] px-3 py-2.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold">{c.name} <span className="ml-1 rounded-full px-1.5 py-0.5 text-[9px] font-extrabold" style={{ background: TIER_LABEL[c.priorityTier].bg, color: TIER_LABEL[c.priorityTier].color }}>{TIER_LABEL[c.priorityTier].label}</span></span>
-                  <span className="text-[#888]">{fmt(c.shippedThisMonth)} / {c.contractedMonthlyQty.toLocaleString("ko-KR")} {hbm?.unit ?? "STACK"}</span>
-                </div>
-                <div className="mt-1.5 flex items-center gap-2">
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#EEE]">
-                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, background: barColor }} />
+              <div key={t.product} className="rounded-xl border" style={{ borderColor: "var(--border)" }}>
+                <button
+                  type="button"
+                  onClick={() => setOpenBand(open ? null : t.product)}
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left"
+                >
+                  <span className="w-14 text-xs font-extrabold" style={{ color }}>{t.product}</span>
+                  <span className="text-[10px] text-[#999]">계약라인 {t.contractLineCount} · 스팟 {t.spotLineCount}</span>
+                  <span className="ml-auto text-[11px] tabular-nums text-[#888]">
+                    {fmt(t.shipped)} / {fmt(t.contracted)} {t.unit}
+                  </span>
+                  <FulfillmentGauge pct={t.pct} color={color} />
+                  <span className="w-4 text-center text-[10px] text-[#999]">{open ? "▾" : "▸"}</span>
+                </button>
+                {open && (
+                  <div className="space-y-1.5 border-t px-3 py-2.5" style={{ borderColor: "var(--border)" }}>
+                    {[...productLines]
+                      // 부족분이 큰 라인부터 — 정렬 자체가 "어디를 먼저 채워야 하나" 랭킹이 된다.
+                      .sort((a, b) => b.shortfall - a.shortfall)
+                      .map((l) => (
+                        <div key={`${l.customerId}-${l.product}`} className="flex items-center gap-2 rounded-lg bg-[#FAFAFA] px-2.5 py-2 text-xs">
+                          <span className="font-bold">{l.customerName}</span>
+                          <span className="rounded-full px-1.5 py-0.5 text-[9px] font-extrabold" style={{ background: TIER_LABEL[l.priorityTier].bg, color: TIER_LABEL[l.priorityTier].color }}>
+                            {TIER_LABEL[l.priorityTier].label}
+                          </span>
+                          <span className="rounded-full bg-[#F2F4F7] px-1.5 py-0.5 text-[9px] font-extrabold text-[#667085]">{l.contractType}</span>
+                          <span className="ml-auto tabular-nums text-[#888]">
+                            {l.contractType === "SPOT"
+                              ? `${fmt(l.shippedThisMonth)} ${l.unit} 배정 · 계약없음`
+                              : `${fmt(l.shippedThisMonth)} / ${fmt(l.contractedMonthlyQty)} ${l.unit}`}
+                          </span>
+                          <FulfillmentGauge pct={l.fulfillmentPct} color={color} />
+                        </div>
+                      ))}
                   </div>
-                  <span className="text-[10px] font-bold" style={{ color: barColor }}>{pct}%</span>
-                </div>
+                )}
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* 출하 처리 (HBM) */}
+      {/* 출하 처리 (3제품) */}
       <div className="rounded-2xl border bg-white p-4" style={{ borderColor: "var(--border)", boxShadow: "var(--shadow-1)" }}>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-[#F0EEEB] px-2 py-0.5 text-[10px] font-extrabold text-[#6F6963]">출하 처리</span>
-          <h2 className="text-sm font-bold text-[#141413]">가상 고객사에게 HBM 완제품 출하</h2>
+          <h2 className="text-sm font-bold text-[#141413]">가상 고객사에게 완제품 출하</h2>
         </div>
-        <p className="mt-1 text-[11px] text-[#999]">고객사 데이터는 실제 영업 계약이 아닌 데모용 가상 데이터입니다. (DRAM/NAND 출하는 후속 과제)</p>
+        <p className="mt-1 text-[11px] text-[#999]">고객사 데이터는 실제 영업 계약이 아닌 데모용 가상 데이터입니다. 완제품 창고가 차면 마지막 공정이 막히므로, 출하가 곧 생산 재개 조건입니다.</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          <select value={shipProduct} onChange={(e) => setShipProduct(e.target.value)} className="rounded-lg border border-[#DDE2E7] bg-white px-2.5 py-2 text-xs font-bold" style={{ color: PRODUCT_COLOR[shipProduct] ?? "#141413" }}>
+            {(products ?? []).map((p) => (
+              <option key={p.product} value={p.product}>{p.product}</option>
+            ))}
+          </select>
           <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} className="rounded-lg border border-[#DDE2E7] bg-white px-2.5 py-2 text-xs">
             <option value="">고객사 선택</option>
-            {customers.map((c) => (
-              <option key={c._id} value={c._id}>{c.name} · {TIER_LABEL[c.priorityTier].label}</option>
-            ))}
+            {/* 제품이 이미 정해진 뒤에 고르는 순서이므로, 그 제품 기준 부족분을 같이 보여준다 */}
+            {lines
+              .filter((l) => l.product === shipProduct)
+              .sort((a, b) => b.shortfall - a.shortfall)
+              .map((l) => (
+                <option key={l.customerId} value={l.customerId}>
+                  {l.customerName} · {TIER_LABEL[l.priorityTier].label} · {l.contractType}
+                  {l.contractType === "SPOT" ? " · 계약없음" : ` · 미달 ${fmt(l.shortfall)} ${l.unit}`}
+                </option>
+              ))}
           </select>
           <input
             type="number" min="1" value={qty} onChange={(e) => setQty(e.target.value)}
-            placeholder={`수량 (${hbm?.unit ?? "STACK"})`}
+            placeholder={`수량 (${shipTarget?.unit ?? "STACK"})`}
             className="w-40 rounded-lg border border-[#DDE2E7] bg-white px-2.5 py-2 text-xs"
           />
           <button
@@ -251,14 +345,17 @@ export default function FinishedGoodsClient() {
           >
             {busy ? "처리 중…" : "출하 처리"}
           </button>
-          <span className="text-[11px] text-[#999]">HBM 가용 재고 {fmt(hbm?.quantity ?? 0)} {hbm?.unit ?? "STACK"}</span>
+          <span className="text-[11px] text-[#999]">{shipProduct} 가용 재고 {fmt(shipTarget?.quantity ?? 0)} {shipTarget?.unit ?? "STACK"}</span>
         </div>
 
         <div className="mt-4 space-y-1.5">
           {shipments.length === 0 && <div className="text-[11px] text-[#999]">출하 이력이 없습니다.</div>}
           {shipments.map((s) => (
             <div key={s._id} className="flex items-center justify-between rounded-lg bg-[#FAFAFA] px-3 py-2 text-xs">
-              <span className="font-bold">{s.customerName} · {fmt(s.quantity)} {s.unit}</span>
+              <span className="font-bold">
+                <span style={{ color: PRODUCT_COLOR[s.product] ?? "#141413" }}>{s.product}</span>
+                {" · "}{s.customerName} · {fmt(s.quantity)} {s.unit}
+              </span>
               <span className="text-[#888]">{new Date(s.shippedAt).toLocaleString("ko-KR")}</span>
             </div>
           ))}

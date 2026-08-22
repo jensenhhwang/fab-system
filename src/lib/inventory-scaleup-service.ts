@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { collections, type InboundPlanDoc, type MaterialSupplierDoc } from "@/lib/db";
 import { getInventoryRows } from "@/lib/queries";
 import { currentLeadTime } from "@/lib/procurement";
@@ -25,6 +25,44 @@ export type InventoryScaleUpOverview = {
   proposals: InventoryScaleUpProposal[];
   counts: { total: number; ready: number; capacityReview: number; masterReview: number; creatable: number };
 };
+
+export type InventoryScaleUpDraftPreview = {
+  proposal: InventoryScaleUpProposal & {
+    supplierId: string;
+    supplierName: string;
+    plannedDate: Date;
+    reviewStatus: "READY";
+  };
+  previewHash: string;
+  formulaVersion: typeof INVENTORY_SCALE_UP_VERSION;
+};
+
+export class InventoryScaleUpDraftError extends Error {
+  constructor(public readonly code: string, message: string) {
+    super(message);
+    this.name = "InventoryScaleUpDraftError";
+  }
+}
+
+function scaleUpPreviewHash(input: {
+  proposal: InventoryScaleUpDraftPreview["proposal"];
+  formulaVersion: typeof INVENTORY_SCALE_UP_VERSION;
+}) {
+  const item = input.proposal;
+  return createHash("sha256").update(JSON.stringify({
+    formulaVersion: input.formulaVersion,
+    materialId: item.materialId,
+    supplierId: item.supplierId,
+    plannedDate: item.plannedDate.toISOString(),
+    currentQuantity: item.currentQuantity,
+    activeInboundQuantity: item.activeInboundQuantity,
+    safetyStock: item.safetyStock,
+    dailyUsage: item.dailyUsage,
+    targetQuantity: item.targetQuantity,
+    replenishmentQuantity: item.replenishmentQuantity,
+    reviewStatus: item.reviewStatus,
+  })).digest("hex");
+}
 
 function addDays(date: Date, days: number) {
   const next = new Date(date);
@@ -144,4 +182,108 @@ export async function createInventoryScaleUpDrafts(input: { userId: string; requ
   });
   if (docs.length) await inboundPlans.insertMany(docs);
   return { overview: await getInventoryScaleUpOverview(now), created: docs.length, duplicate: false };
+}
+
+export async function previewInventoryScaleUpDraftForMaterial(
+  materialId: string,
+  now = new Date(),
+): Promise<InventoryScaleUpDraftPreview> {
+  const overview = await getInventoryScaleUpOverview(now);
+  const candidate = overview.proposals.find((item) => item.materialId === materialId);
+  if (!candidate) {
+    throw new InventoryScaleUpDraftError(
+      "SCALE_UP_NOT_REQUIRED",
+      "최신 재고 기준으로는 이 자재의 추가 입고계획이 필요하지 않습니다.",
+    );
+  }
+  if (
+    candidate.reviewStatus !== "READY"
+    || !candidate.supplierId
+    || !candidate.supplierName
+    || !candidate.plannedDate
+  ) {
+    throw new InventoryScaleUpDraftError(
+      "SCALE_UP_REVIEW_REQUIRED",
+      candidate.blockReason ?? "공급사 또는 보관 Capacity 검토가 먼저 필요합니다.",
+    );
+  }
+  const proposal: InventoryScaleUpDraftPreview["proposal"] = {
+    ...candidate,
+    supplierId: candidate.supplierId,
+    supplierName: candidate.supplierName,
+    plannedDate: candidate.plannedDate,
+    reviewStatus: "READY",
+  };
+  return {
+    proposal,
+    formulaVersion: overview.formulaVersion,
+    previewHash: scaleUpPreviewHash({ proposal, formulaVersion: overview.formulaVersion }),
+  };
+}
+
+export async function createInventoryScaleUpDraftForMaterial(input: {
+  materialId: string;
+  userId: string;
+  actionId: string;
+  expectedPreviewHash: string;
+  now?: Date;
+}) {
+  const now = input.now ?? new Date();
+  const { inboundPlans } = await collections();
+  const id = `CT-INBOUND:${input.actionId}`;
+  const existing = await inboundPlans.findOne({ _id: id });
+  if (existing) return { plan: existing, duplicate: true };
+
+  const preview = await previewInventoryScaleUpDraftForMaterial(input.materialId, now);
+  if (preview.previewHash !== input.expectedPreviewHash) {
+    throw new InventoryScaleUpDraftError(
+      "SCALE_UP_PREVIEW_STALE",
+      "재고 또는 진행 중 입고가 변경되었습니다. 최신 미리보기를 다시 확인해 주세요.",
+    );
+  }
+  const item = preview.proposal;
+  const datePart = now.toISOString().slice(0, 10).replaceAll("-", "");
+  const doc: InboundPlanDoc = {
+    _id: id,
+    planNo: `CT-${datePart}-${input.actionId.slice(0, 6).toUpperCase()}`,
+    materialId: item.materialId,
+    supplierId: item.supplierId,
+    unit: item.unit,
+    plannedDate: item.plannedDate,
+    plannedQuantity: item.replenishmentQuantity,
+    receivedQuantity: 0,
+    remainingQuantity: item.replenishmentQuantity,
+    status: "DRAFT",
+    note: `관제탑 Q&A 실행 · 재고 스케일업 · 목표 ${item.targetQuantity.toLocaleString()} ${item.unit}`,
+    source: "INVENTORY_SCALE_UP",
+    scaleUpRequestId: input.actionId,
+    scaleUp: {
+      formulaVersion: preview.formulaVersion,
+      reviewStatus: item.reviewStatus,
+      referenceQuantity: item.currentQuantity,
+      activeInboundQuantity: item.activeInboundQuantity,
+      safetyStock: item.safetyStock,
+      dailyUsage: item.dailyUsage,
+      targetQuantity: item.targetQuantity,
+    },
+    createdBy: input.userId,
+    createdAt: now,
+    updatedAt: now,
+    events: [{ type: "CREATED", userId: input.userId, at: now }],
+  };
+  try {
+    await inboundPlans.insertOne(doc);
+    return { plan: doc, duplicate: false };
+  } catch (error) {
+    if (
+      error
+      && typeof error === "object"
+      && "code" in error
+      && (error as { code?: number }).code === 11000
+    ) {
+      const duplicate = await inboundPlans.findOne({ _id: id });
+      if (duplicate) return { plan: duplicate, duplicate: true };
+    }
+    throw error;
+  }
 }

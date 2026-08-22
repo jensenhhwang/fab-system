@@ -14,37 +14,45 @@ import {
   type ControlTowerRole,
 } from "@/lib/control-tower-live";
 import type { ControlTowerAISnapshot } from "@/lib/control-tower-snapshot-server";
+import {
+  ControlTowerAIBudgetError,
+  runBudgetedControlTowerCall,
+} from "@/lib/control-tower-ai-budget-server";
 
 export const CONTROL_TOWER_AI_MODEL =
-  process.env.OPENAI_CONTROL_TOWER_MODEL?.trim() || "gpt-5.6";
-export const CONTROL_TOWER_AI_PROMPT_VERSION = "CONTROL_TOWER_PUBLIC_V1";
+  process.env.OPENAI_CONTROL_TOWER_MODEL?.trim() || "gpt-5.6-luna";
+export const CONTROL_TOWER_AI_PROMPT_VERSION = "CONTROL_TOWER_PUBLIC_V2";
+
+const JUDGMENT_MAX_OUTPUT_TOKENS = 650;
+const REPLY_MAX_OUTPUT_TOKENS = 450;
+const CONCLUSION_MAX_OUTPUT_TOKENS = 750;
 
 const NoDigits = z.string().regex(/^[^0-9]*$/);
 
 const JudgmentSchema = z.object({
   verdict: z.enum(["OBSERVE", "CHECK", "ESCALATE", "HOLD"]),
   severity: z.enum(["NORMAL", "ATTENTION", "CRITICAL"]),
-  summary: NoDigits,
-  proposedDecision: NoDigits,
-  evidenceRefs: z.array(z.string()).min(1).max(5),
-  assumptions: z.array(NoDigits).max(4),
+  summary: NoDigits.max(120),
+  proposedDecision: NoDigits.max(160),
+  evidenceRefs: z.array(z.string().max(40)).min(1).max(3),
+  assumptions: z.array(NoDigits.max(120)).max(2),
   questionForRole: z.enum(["PROCUREMENT", "MATERIALS", "PRODUCTION", "LOGISTICS"]).nullable(),
-  question: NoDigits.nullable(),
+  question: NoDigits.max(140).nullable(),
 });
 
 const ReplySchema = z.object({
   stance: z.enum(["AGREE", "QUALIFY", "DISAGREE"]),
-  message: NoDigits,
-  revisedDecision: NoDigits,
-  evidenceRefs: z.array(z.string()).min(1).max(5),
+  message: NoDigits.max(140),
+  revisedDecision: NoDigits.max(160),
+  evidenceRefs: z.array(z.string().max(40)).min(1).max(3),
 });
 
 const ConclusionSchema = z.object({
   alignment: z.enum(["ALIGNED", "CONDITIONAL", "DISAGREEMENT"]),
-  summary: NoDigits,
-  decisions: z.array(NoDigits).max(6),
-  openIssues: z.array(NoDigits).max(6),
-  evidenceRefs: z.array(z.string()).min(1).max(8),
+  summary: NoDigits.max(220),
+  decisions: z.array(NoDigits.max(160)).max(3),
+  openIssues: z.array(NoDigits.max(160)).max(3),
+  evidenceRefs: z.array(z.string().max(40)).min(1).max(6),
   advisoryOnly: z.literal(true),
 });
 
@@ -73,7 +81,11 @@ function openaiClient() {
       "OpenAI API 키가 서버에 설정되지 않았습니다.",
     );
   }
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY, logLevel: "error" });
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    logLevel: "error",
+    maxRetries: 0,
+  });
 }
 
 function safetyIdentifier() {
@@ -98,6 +110,9 @@ function usageOf(response: {
 
 function normalizeError(error: unknown) {
   if (error instanceof ControlTowerOpenAIError) return error;
+  if (error instanceof ControlTowerAIBudgetError) {
+    return new ControlTowerOpenAIError(error.code, error.message);
+  }
   if (error instanceof OpenAI.APIError) {
     if (error.code === "insufficient_quota") {
       return new ControlTowerOpenAIError(
@@ -139,6 +154,13 @@ function validateEvidenceRefs(refs: string[], allowedRefs: Set<string>) {
   return valid;
 }
 
+function ruleForRole(snapshot: ControlTowerAISnapshot, role: ControlTowerRole) {
+  if (role === "PROCUREMENT") return snapshot.procurementRule;
+  if (role === "MATERIALS") return snapshot.materialsRule;
+  if (role === "PRODUCTION") return snapshot.productionRule;
+  return snapshot.logisticsRule;
+}
+
 function publicJudgments(judgments: ControlTowerAIJudgment[]) {
   return judgments.map((judgment) => ({
     role: judgment.role,
@@ -163,28 +185,37 @@ export async function generateControlTowerJudgment(input: {
   const allowedRefs = new Set(facts.map((fact) => fact.ref));
   const startedAt = Date.now();
   try {
-    const response = await openaiClient().responses.parse({
-      model: CONTROL_TOWER_AI_MODEL,
-      store: false,
-      safety_identifier: safetyIdentifier(),
-      prompt_cache_key: `control-tower:${CONTROL_TOWER_AI_PROMPT_VERSION}:${input.role}`,
-      reasoning: { effort: "low" },
-      max_output_tokens: 1000,
-      instructions: `${BASE_INSTRUCTIONS}
+    const instructions = `${BASE_INSTRUCTIONS}
 당신은 ${persona.team}의 ${persona.name}이며 책임 범위는 ${persona.remit}입니다.
 판단 방식은 ${input.mode === "RULE_LLM"
   ? "RULE_LLM입니다. 제공된 규칙 엔진 판정은 바꾸지 말고 설명과 확인 질문만 보완하세요."
   : "LLM_ONLY입니다. 규칙 엔진이 아직 없음을 전제로 가정을 명시하고 보수적으로 판단하세요."}
-질문이 필요하면 다른 담당자 한 명에게만 질문하고, 아니면 questionForRole과 question을 null로 반환하세요.`,
-      input: JSON.stringify({
-        capturedAt: input.snapshot.capturedAt,
-        facts,
-        procurementRule: input.role === "PROCUREMENT" ? input.snapshot.procurementRule : null,
+질문이 필요하면 다른 담당자 한 명에게만 질문하고, 아니면 questionForRole과 question을 null로 반환하세요.`;
+    const inputText = JSON.stringify({
+      capturedAt: input.snapshot.capturedAt,
+      facts,
+      rule: input.mode === "RULE_LLM" ? ruleForRole(input.snapshot, input.role) : null,
+    });
+    const response = await runBudgetedControlTowerCall({
+      kind: "JUDGMENT",
+      model: CONTROL_TOWER_AI_MODEL,
+      promptChars: instructions.length + inputText.length,
+      maxOutputTokens: JUDGMENT_MAX_OUTPUT_TOKENS,
+      call: () => openaiClient().responses.parse({
+        model: CONTROL_TOWER_AI_MODEL,
+        service_tier: "default",
+        store: false,
+        safety_identifier: safetyIdentifier(),
+        prompt_cache_key: `control-tower:${CONTROL_TOWER_AI_PROMPT_VERSION}:${input.role}`,
+        reasoning: { effort: "low" },
+        max_output_tokens: JUDGMENT_MAX_OUTPUT_TOKENS,
+        instructions,
+        input: inputText,
+        text: {
+          verbosity: "low",
+          format: zodTextFormat(JudgmentSchema, "control_tower_judgment"),
+        },
       }),
-      text: {
-        verbosity: "low",
-        format: zodTextFormat(JudgmentSchema, "control_tower_judgment"),
-      },
     });
     const parsed = response.output_parsed;
     if (!parsed) {
@@ -226,27 +257,36 @@ export async function generateControlTowerReply(input: {
   const allowedRefs = new Set(input.snapshot.facts.map((fact) => fact.ref));
   const startedAt = Date.now();
   try {
-    const response = await openaiClient().responses.parse({
-      model: CONTROL_TOWER_AI_MODEL,
-      store: false,
-      safety_identifier: safetyIdentifier(),
-      prompt_cache_key: `control-tower:${CONTROL_TOWER_AI_PROMPT_VERSION}:reply`,
-      reasoning: { effort: "low" },
-      max_output_tokens: 900,
-      instructions: `${BASE_INSTRUCTIONS}
+    const instructions = `${BASE_INSTRUCTIONS}
 당신은 ${persona.name}입니다. ${CONTROL_TOWER_PERSONAS[input.replyToRole].name}의 공개 질문에 담당 영역 근거로 답하세요.
-다른 담당자의 판단을 그대로 반복하지 말고 동의, 조건부 보완, 이견 중 하나를 분명히 하세요.`,
-      input: JSON.stringify({
-        capturedAt: input.snapshot.capturedAt,
-        yourFacts: input.snapshot.facts.filter((fact) => fact.role === input.speakerRole),
-        publicJudgments: publicJudgments(input.judgments),
-        questionFrom: input.replyToRole,
-        question: input.question,
+다른 담당자의 판단을 그대로 반복하지 말고 동의, 조건부 보완, 이견 중 하나를 분명히 하세요.`;
+    const inputText = JSON.stringify({
+      capturedAt: input.snapshot.capturedAt,
+      yourFacts: input.snapshot.facts.filter((fact) => fact.role === input.speakerRole),
+      publicJudgments: publicJudgments(input.judgments),
+      questionFrom: input.replyToRole,
+      question: input.question,
+    });
+    const response = await runBudgetedControlTowerCall({
+      kind: "REPLY",
+      model: CONTROL_TOWER_AI_MODEL,
+      promptChars: instructions.length + inputText.length,
+      maxOutputTokens: REPLY_MAX_OUTPUT_TOKENS,
+      call: () => openaiClient().responses.parse({
+        model: CONTROL_TOWER_AI_MODEL,
+        service_tier: "default",
+        store: false,
+        safety_identifier: safetyIdentifier(),
+        prompt_cache_key: `control-tower:${CONTROL_TOWER_AI_PROMPT_VERSION}:reply`,
+        reasoning: { effort: "low" },
+        max_output_tokens: REPLY_MAX_OUTPUT_TOKENS,
+        instructions,
+        input: inputText,
+        text: {
+          verbosity: "low",
+          format: zodTextFormat(ReplySchema, "control_tower_reply"),
+        },
       }),
-      text: {
-        verbosity: "low",
-        format: zodTextFormat(ReplySchema, "control_tower_reply"),
-      },
     });
     const parsed = response.output_parsed;
     if (!parsed) {
@@ -276,33 +316,43 @@ export async function generateControlTowerConclusion(input: {
   const allowedRefs = new Set(input.snapshot.facts.map((fact) => fact.ref));
   const startedAt = Date.now();
   try {
-    const response = await openaiClient().responses.parse({
-      model: CONTROL_TOWER_AI_MODEL,
-      store: false,
-      safety_identifier: safetyIdentifier(),
-      prompt_cache_key: `control-tower:${CONTROL_TOWER_AI_PROMPT_VERSION}:conclusion`,
-      reasoning: { effort: "low" },
-      max_output_tokens: 1100,
-      instructions: `${BASE_INSTRUCTIONS}
+    const instructions = `${BASE_INSTRUCTIONS}
 당신은 읽기 전용 관제탑 조정자입니다. 네 담당자의 공개 판단과 답변만 종합하세요.
 합의를 강요하지 말고 이견과 데이터 부족을 openIssues에 남기세요.
-운영 실행을 승인하거나 수행하지 말고 advisoryOnly는 반드시 true로 반환하세요.`,
-      input: JSON.stringify({
-        capturedAt: input.snapshot.capturedAt,
-        publicJudgments: publicJudgments(input.judgments),
-        publicReplies: input.replies.map((reply) => ({
-          speakerRole: reply.speakerRole,
-          replyToRole: reply.replyToRole,
-          stance: reply.stance,
-          message: reply.message,
-          revisedDecision: reply.revisedDecision,
-          evidenceRefs: reply.evidenceRefs,
-        })),
+운영 실행을 승인하거나 수행하지 말고 advisoryOnly는 반드시 true로 반환하세요.
+evidenceRefs에는 스냅샷 근거 카드의 짧은 ref 코드만 나열하세요(예: MATERIALS:CHM-002). 문장·요약·설명을 evidenceRefs에 쓰지 마세요.`;
+    const inputText = JSON.stringify({
+      capturedAt: input.snapshot.capturedAt,
+      publicJudgments: publicJudgments(input.judgments),
+      publicReplies: input.replies.map((reply) => ({
+        speakerRole: reply.speakerRole,
+        replyToRole: reply.replyToRole,
+        stance: reply.stance,
+        message: reply.message,
+        revisedDecision: reply.revisedDecision,
+        evidenceRefs: reply.evidenceRefs,
+      })),
+    });
+    const response = await runBudgetedControlTowerCall({
+      kind: "CONCLUSION",
+      model: CONTROL_TOWER_AI_MODEL,
+      promptChars: instructions.length + inputText.length,
+      maxOutputTokens: CONCLUSION_MAX_OUTPUT_TOKENS,
+      call: () => openaiClient().responses.parse({
+        model: CONTROL_TOWER_AI_MODEL,
+        service_tier: "default",
+        store: false,
+        safety_identifier: safetyIdentifier(),
+        prompt_cache_key: `control-tower:${CONTROL_TOWER_AI_PROMPT_VERSION}:conclusion`,
+        reasoning: { effort: "low" },
+        max_output_tokens: CONCLUSION_MAX_OUTPUT_TOKENS,
+        instructions,
+        input: inputText,
+        text: {
+          verbosity: "low",
+          format: zodTextFormat(ConclusionSchema, "control_tower_conclusion"),
+        },
       }),
-      text: {
-        verbosity: "low",
-        format: zodTextFormat(ConclusionSchema, "control_tower_conclusion"),
-      },
     });
     const parsed = response.output_parsed;
     if (!parsed) {

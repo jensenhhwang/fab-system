@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 import { collections } from "@/lib/db";
-import { FINISHED_GOODS_WAREHOUSE_ID, capacityGbPerUnit, finishedGoodsUnit } from "@/lib/finished-goods";
+import { finishedGoodsWarehouseFor, capacityGbPerUnit, finishedGoodsUnit } from "@/lib/finished-goods";
 import { ACTIVE_PRODUCTION_PRODUCTS } from "@/lib/fab-production-config";
 
 export const dynamic = "force-dynamic";
@@ -13,21 +13,24 @@ export async function GET() {
   if (access.error) return access.error;
 
   const { finishedGoods, finishedGoodsEvents, warehouses } = await collections();
-  const warehouse = await warehouses.findOne({ _id: FINISHED_GOODS_WAREHOUSE_ID });
 
+  // 완제품 창고는 팹별로 분리돼 있다(WH-FG01/02/03) — 제품마다 자기 창고를 조회한다.
   const products = await Promise.all(ACTIVE_PRODUCTION_PRODUCTS.map(async ({ fabId, product }) => {
-    const [doc, events] = await Promise.all([
-      finishedGoods.findOne({ _id: `${fabId}__${product}__${FINISHED_GOODS_WAREHOUSE_ID}` }),
+    const warehouseId = finishedGoodsWarehouseFor(product);
+    const [doc, events, warehouse] = await Promise.all([
+      finishedGoods.findOne({ _id: `${fabId}__${product}__${warehouseId}` }),
       finishedGoodsEvents.find({ product }).sort({ tickAt: -1 }).limit(6).toArray(),
+      warehouses.findOne({ _id: warehouseId }),
     ]);
     return {
-      fabId, product, warehouseId: FINISHED_GOODS_WAREHOUSE_ID,
-      warehouseName: warehouse?.name ?? FINISHED_GOODS_WAREHOUSE_ID,
+      fabId, product, warehouseId,
+      warehouseName: warehouse?.name ?? warehouseId,
       quantity: doc?.quantity ?? 0,
       unit: finishedGoodsUnit(product),
       capacityGbPerUnit: capacityGbPerUnit(product),
       pendingTestQuantity: doc?.pendingTestQuantity ?? 0,
-      pendingTestReadyAt: doc?.pendingTestReadyAt?.toISOString() ?? null,
+      // 운영시각(ms) — 벽시계가 아니다. 화면에서 표기를 구분한다(RULES.md).
+      pendingTestReadyOperatingMs: doc?.pendingTestReadyOperatingMs ?? null,
       updatedAt: doc?.updatedAt?.toISOString() ?? null,
       recentEvents: events.map((e) => ({ id: e._id, at: e.tickAt.toISOString(), addedQty: e.addedQty, queuedQty: e.queuedQty })),
     };

@@ -1,4 +1,17 @@
 import type { FabEquipmentMasterView } from "@/lib/fab-equipment-master-view";
+import type { BayLoad } from "@/lib/process-bay-load";
+
+// 계획 부하만 보여주면 "모든 공정이 계획 범위에서 고르게 돈다"로 읽히는데, 실제 WIP은 한두
+// 공정에 몰려 있을 수 있다(실측 2026-08-12 M20: 계획은 전 공정 70~85%인데 실제 WIP은 P03
+// 45.6%·P07 36.6%에 몰리고 P02·P04는 0%). 같은 축(processCode)에 실측을 같이 얹어 그 간극과
+// 원인을 카드에서 바로 읽게 한다(§lib/process-bay-load).
+const REASON_LABEL: Record<BayLoad["reason"], { text: string; cls: string }> = {
+  MATERIAL_BLOCKED: { text: "자재 대기", cls: "bg-[#FFF1F3] text-[#C51636]" },
+  CAPACITY_TIGHT:   { text: "설비 빠듯", cls: "bg-[#FFF5ED] text-[#B45309]" },
+  CONGESTED:        { text: "적체",     cls: "bg-[#FFFAEB] text-[#9A6700]" },
+  STARVED:          { text: "굶는 중",  cls: "bg-[#F2F4F6] text-[#52616C]" },
+  NORMAL:           { text: "",        cls: "" },
+};
 
 function loadStyle(load: number) {
   if (load <= 0.85) return { label: "계획 범위", text: "text-[#087A55]", bar: "bg-[#10B981]", bg: "bg-[#F3FBF7]" };
@@ -12,12 +25,15 @@ export default function FabEquipmentMasterCard({
   ledgerCounts,
   selectedProcess,
   onProcessSelect,
+  bayLoads = [],
 }: {
   master: FabEquipmentMasterView;
   ledgerCounts: Record<string, number>;
   selectedProcess: string | null;
   onProcessSelect: (processCode: string) => void;
+  bayLoads?: BayLoad[];
 }) {
+  const bayLoadByProcess = new Map(bayLoads.map((load) => [load.processCode, load]));
   const ledgerTotal = Object.values(ledgerCounts).reduce((sum, count) => sum + count, 0);
   const assessed = master.processes.filter((process) => process.normalPlannedLoad !== null);
   const peak = assessed.length
@@ -57,6 +73,7 @@ export default function FabEquipmentMasterCard({
             ?? (process.processCode === "P05" ? "Capacity visit 미정" : "Die/Stack native unit 필요");
           const style = load === null ? null : loadStyle(load);
           const bottleneckStage = process.capacityStages.find((stage) => stage.stageCode === process.bottleneckCapacityStage);
+          const bayLoad = bayLoadByProcess.get(process.processCode);
           return (
             <button
               key={process.processCode}
@@ -101,6 +118,26 @@ export default function FabEquipmentMasterCard({
                   </div>
                   {bottleneckStage && (
                     <div className="mt-1 text-right text-[8px] font-bold text-[#7E22CE]">병목 · {bottleneckStage.name}</div>
+                  )}
+                  {bayLoad && (
+                    <div className="mt-2 border-t border-white/70 pt-1.5">
+                      <div className="flex items-center justify-between text-[8px]">
+                        <span className="text-[#7D8992]">실제 WIP</span>
+                        <span className="font-mono font-black text-[#283A48]">{Math.round(bayLoad.wipCount).toLocaleString()}</span>
+                      </div>
+                      <div className="mt-0.5 flex items-center justify-between text-[8px]">
+                        <span className="text-[#7D8992]">흐름 기대 대비</span>
+                        <span className={`font-mono font-black ${bayLoad.deviationPp > 0 ? "text-[#C51636]" : bayLoad.deviationPp < 0 ? "text-[#1D5FBF]" : "text-[#52616C]"}`}>
+                          {bayLoad.deviationPp >= 0 ? "+" : ""}{bayLoad.deviationPp.toFixed(1)}%p
+                        </span>
+                      </div>
+                      {bayLoad.reason !== "NORMAL" && (
+                        <div className={`mt-1 rounded px-1.5 py-0.5 text-center text-[8px] font-black ${REASON_LABEL[bayLoad.reason].cls}`}>
+                          {REASON_LABEL[bayLoad.reason].text}
+                          {bayLoad.blockingMaterialIds.length > 0 && ` · ${bayLoad.blockingMaterialIds.join(", ")}`}
+                        </div>
+                      )}
+                    </div>
                   )}
                   {master.fabId === "M20" && process.processCode === "P10" && (
                     <div className="mt-1 text-right text-[8px] font-bold text-[#9A6700]">Base Die Attach CAPA · 검증 대기</div>

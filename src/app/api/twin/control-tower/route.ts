@@ -2,16 +2,21 @@ import { NextResponse } from "next/server";
 import { requireRole, WRITE_ROLES } from "@/lib/api-auth";
 import { collections } from "@/lib/db";
 import { M20_MATERIAL_CONSUMPTION } from "@/lib/material-consumption";
-import { runProcurementShadow } from "@/lib/procurement-agent-server";
-import { getLatestControlTowerAIEpisode } from "@/lib/control-tower-episode-server";
+import { getControlTowerAIEnabled, getLatestControlTowerAIEpisode } from "@/lib/control-tower-episode-server";
 import { CONTROL_TOWER_AI_MODEL } from "@/lib/control-tower-openai-server";
+import { getWarehouseCapacity } from "@/lib/queries";
+import { buildMaterialsShadow, coverageState, type MaterialSignal } from "@/lib/materials-agent";
+import { buildAggregateProductionShadow } from "@/lib/production-agent";
+import { buildLogisticsShadow, type WarehouseSignal } from "@/lib/logistics-agent";
+import { buildLiveProcurementShadow, shouldAutoApprovePendingOrder, type ProcurementLiveOrderSignal } from "@/lib/procurement-agent";
 import {
   CONTROL_TOWER_PERSONAS,
   CONTROL_TOWER_ROLE_ORDER,
   type AgentWatchMetric,
   type ControlTowerAgentView,
+  type ControlTowerRole,
   type ControlTowerView,
-  type ProcurementJudgmentView,
+  type RoleJudgmentView,
   type TwinEventView,
 } from "@/lib/control-tower-live";
 
@@ -24,25 +29,53 @@ export async function GET() {
 
   try {
     const now = new Date();
-    const { twinEngineState, twinBurnEvents, twinPurchaseOrders, inventory, materials, workOrders, waferLots } = await collections();
+    const { twinEngineState, twinBurnEvents, twinPurchaseOrders, inventory, materials, waferLots } = await collections();
     const materialIds = [...new Set(M20_MATERIAL_CONSUMPTION.map((r) => r.materialId))];
 
-    const [state, matDocs, invDocs, recentBurns, totalBurnEvents, openPOs, recentPOs, wipCount, queuedWO, latestAI] = await Promise.all([
+    const [state, matDocs, invDocs, recentBurns, totalBurnEvents, openPOs, pendingOrHeldPOs, recentPOs, wipCount, warehouseCapacity, latestAI, aiEnabled, materialBlockedLotCount, finishedGoodsHoldLotCount] = await Promise.all([
       twinEngineState.findOne({ _id: "singleton" }),
       materials.find({ _id: { $in: materialIds } }).toArray(),
       inventory.find({ materialId: { $in: materialIds } }).toArray(),
       twinBurnEvents.find({}).sort({ tickAt: -1 }).limit(14).toArray(),
       twinBurnEvents.countDocuments(),
-      twinPurchaseOrders.find({ status: { $ne: "RECEIVED" } }).toArray(),
+      twinPurchaseOrders.find({ status: { $in: ["ORDERED", "IN_TRANSIT"] } }).toArray(),
+      // 김구매(PROCUREMENT) 카드가 실제 twin 상태를 서술하는 데 쓴다 — 문서만 세지 않고
+      // buildLiveProcurementShadow의 입력으로 그대로 넘긴다(§ 아래).
+      twinPurchaseOrders.find({ status: { $in: ["PENDING_APPROVAL", "INBOUND_HOLD"] } }).toArray(),
       twinPurchaseOrders.find({}).sort({ orderedAt: -1 }).limit(8).toArray(),
       waferLots.countDocuments({ fabId: "M20", product: "HBM", cohort: { $in: ["AGGREGATE", "MODELED_FOUP"] }, status: "IN_PROGRESS" }),
-      workOrders.countDocuments({ status: { $in: ["QUEUED", "MATERIAL_WAIT"] } }),
+      getWarehouseCapacity(),
       getLatestControlTowerAIEpisode(),
+      getControlTowerAIEnabled(),
+      // K1: 최생산 판단은 legacy workOrders(M20_PILOT, /mes 폐기 후 정지)가 아니라 advanceAggregateWip이
+      // 실제로 쓰는 라이브 신호(waferLots 집계)로 계산한다.
+      waferLots.countDocuments({ fabId: "M20", product: "HBM", materialBlockedAt: { $exists: true } }),
+      waferLots.countDocuments({ fabId: "M20", product: "HBM", finishedGoodsHoldAt: { $exists: true } }),
     ]);
 
     const matById = new Map(matDocs.map((m) => [m._id, m]));
+    // pendingOrHeldPOs는 M20 소비 자재(materialIds) 밖의 자재를 참조할 수 있다(DRAM/NAND 전용
+    // 자재 등) — matById에 없으면 별도로 채워서 이름·코드가 materialId로 깨져 보이지 않게 한다.
+    const missingMaterialIds = [...new Set(pendingOrHeldPOs.map((po) => po.materialId))].filter((id) => !matById.has(id));
+    if (missingMaterialIds.length > 0) {
+      for (const m of await materials.find({ _id: { $in: missingMaterialIds } }).toArray()) matById.set(m._id, m);
+    }
     const nameOf = (id: string) => matById.get(id)?.name ?? id;
     const codeOf = (id: string) => matById.get(id)?.code ?? id;
+
+    const procurementSignals: ProcurementLiveOrderSignal[] = pendingOrHeldPOs.map((po) => ({
+      materialId: po.materialId,
+      materialCode: codeOf(po.materialId),
+      materialName: nameOf(po.materialId),
+      unit: matById.get(po.materialId)?.unit ?? "",
+      qty: po.qty,
+      status: po.status as "PENDING_APPROVAL" | "INBOUND_HOLD",
+      waitingMinutes: (now.getTime() - po.orderedAt.getTime()) / 60_000,
+      autonomyReason: po.autonomyReason ?? null,
+    }));
+    const pendingApprovalCount = procurementSignals.filter((s) => s.status === "PENDING_APPROVAL").length;
+    const urgentApprovalCount = procurementSignals.filter((s) => s.status === "PENDING_APPROVAL" && shouldAutoApprovePendingOrder(s.waitingMinutes)).length;
+    const inboundHoldCount = procurementSignals.filter((s) => s.status === "INBOUND_HOLD").length;
 
     // 자재별 대표 재고(최대 수량) 선택
     const invByMat = new Map<string, { quantity: number; avgDailyBurn: number }>();
@@ -51,52 +84,84 @@ export async function GET() {
       if (!prev || d.quantity > prev.quantity) invByMat.set(d.materialId, { quantity: d.quantity, avgDailyBurn: d.avgDailyBurn ?? 0 });
     }
 
-    // MATERIALS 관측 신호: ROP 미만 자재 수 + 최저 커버리지
+    // MATERIALS 관측 신호: ROP 미만 자재 수 + 최저 커버리지 + 규칙엔진 입력 신호
     let belowRop = 0;
     let lowestCoverage: { code: string; days: number } | null = null;
+    const materialSignals: MaterialSignal[] = [];
     for (const id of materialIds) {
       const inv = invByMat.get(id);
       const mat = matById.get(id);
       if (!inv || !mat) continue;
       const rop = inv.avgDailyBurn * mat.ropDays;
       if (inv.avgDailyBurn > 0 && inv.quantity < rop) belowRop += 1;
-      if (inv.avgDailyBurn > 0) {
-        const days = inv.quantity / inv.avgDailyBurn;
-        if (!lowestCoverage || days < lowestCoverage.days) lowestCoverage = { code: mat.code, days };
+      const coverageDays = inv.avgDailyBurn > 0 ? inv.quantity / inv.avgDailyBurn : null;
+      if (coverageDays !== null && (!lowestCoverage || coverageDays < lowestCoverage.days)) {
+        lowestCoverage = { code: mat.code, days: coverageDays };
       }
+      materialSignals.push({
+        materialId: id, code: mat.code, name: mat.name, unit: mat.unit,
+        ropDays: mat.ropDays, quantity: inv.quantity, dailyBurn: inv.avgDailyBurn, coverageDays,
+        state: coverageState(inv.quantity, inv.avgDailyBurn, mat.ropDays),
+      });
     }
 
     const inTransitQty = openPOs.reduce((s, po) => s + po.qty, 0);
 
-    // ── PROCUREMENT(김구매) 실제 판단 ──
-    let judgment: ProcurementJudgmentView | null = null;
-    const shadow = await runProcurementShadow({});
-    const topChain = shadow.chains[0] ?? null;
-    let top: NonNullable<ProcurementJudgmentView["top"]> | null = null;
-    if (topChain) {
-      top = {
-        materialCode: topChain.materialCode,
-        materialName: topChain.materialName,
-        verdict: topChain.verdict,
-        verdictText: topChain.verdictText,
-        voice: topChain.verdictText,
-        voiceSource: "FALLBACK",
-      };
-    }
-    judgment = {
-      scenarioLabel: shadow.scenarioLabel,
-      actionable: shadow.summary.actionable,
-      wouldAutoReceive: shadow.summary.wouldAutoReceive,
-      wouldPropose: shadow.summary.wouldPropose,
-      blocked: shadow.summary.blocked,
-      top,
+    // ── 네 역할 실제 판단(규칙엔진, 실제 twin 상태 기반 — 가정법 없음) ──
+    const nowIso = now.toISOString();
+    const procurementShadow = buildLiveProcurementShadow(procurementSignals, nowIso);
+
+    const materialsShadow = buildMaterialsShadow(materialSignals, nowIso);
+    const productionShadow = buildAggregateProductionShadow(
+      { fabId: "M20", inProgressCount: wipCount, materialBlockedCount: materialBlockedLotCount, finishedGoodsHoldCount: finishedGoodsHoldLotCount },
+      nowIso,
+    );
+    const warehouseSignals: WarehouseSignal[] = warehouseCapacity.map((wh) => ({
+      code: wh.code, name: wh.name, utilization: wh.utilization, legalUtilization: wh.legalUtilization,
+      capacityMode: wh.capacityMode,
+    }));
+    const logisticsShadow = buildLogisticsShadow(warehouseSignals, openPOs.length, nowIso);
+
+    const judgmentByRole: Record<ControlTowerRole, RoleJudgmentView> = {
+      PROCUREMENT: {
+        scenarioLabel: procurementShadow.scenarioLabel,
+        top: procurementShadow.top ? {
+          code: procurementShadow.top.code, name: procurementShadow.top.name,
+          verdict: procurementShadow.top.verdict, verdictText: procurementShadow.top.verdictText,
+          voice: procurementShadow.top.verdictText, voiceSource: "FALLBACK",
+        } : null,
+      },
+      MATERIALS: {
+        scenarioLabel: materialsShadow.scenarioLabel,
+        top: materialsShadow.top ? {
+          code: materialsShadow.top.code, name: materialsShadow.top.name,
+          verdict: materialsShadow.top.verdict, verdictText: materialsShadow.top.verdictText,
+          voice: materialsShadow.top.verdictText, voiceSource: "FALLBACK",
+        } : null,
+      },
+      PRODUCTION: {
+        scenarioLabel: productionShadow.scenarioLabel,
+        top: productionShadow.top ? {
+          code: productionShadow.top.code, name: productionShadow.top.name,
+          verdict: productionShadow.top.verdict, verdictText: productionShadow.top.verdictText,
+          voice: productionShadow.top.verdictText, voiceSource: "FALLBACK",
+        } : null,
+      },
+      LOGISTICS: {
+        scenarioLabel: logisticsShadow.scenarioLabel,
+        top: logisticsShadow.top ? {
+          code: logisticsShadow.top.code, name: logisticsShadow.top.name,
+          verdict: logisticsShadow.top.verdict, verdictText: logisticsShadow.top.verdictText,
+          voice: logisticsShadow.top.verdictText, voiceSource: "FALLBACK",
+        } : null,
+      },
     };
 
     const watching: Record<string, AgentWatchMetric[]> = {
       PROCUREMENT: [
-        { label: "조치 대상", value: `${shadow.summary.actionable}종` },
-        { label: "발주 제안", value: `${shadow.summary.wouldPropose}종`, tone: shadow.summary.wouldPropose > 0 ? "warn" : "normal" },
-        { label: "판단 보류", value: `${shadow.summary.blocked}종`, tone: shadow.summary.blocked > 0 ? "critical" : "normal" },
+        { label: "승인 대기", value: `${procurementShadow.summary.pendingApproval}건`, tone: procurementShadow.summary.pendingApproval > 0 ? "warn" : "normal" },
+        { label: "긴급(60분+, 자동승인)", value: `${procurementShadow.summary.urgent}건`, tone: procurementShadow.summary.urgent > 0 ? "critical" : "normal" },
+        { label: "입고 보류", value: `${procurementShadow.summary.inboundHeld}건`, tone: procurementShadow.summary.inboundHeld > 0 ? "critical" : "normal" },
       ],
       MATERIALS: [
         { label: "ROP 미만 자재", value: `${belowRop}종`, tone: belowRop > 0 ? "warn" : "normal" },
@@ -105,7 +170,8 @@ export async function GET() {
       ],
       PRODUCTION: [
         { label: "진행 중 WIP", value: `${wipCount.toLocaleString("ko-KR")} FOUP` },
-        { label: "대기 작업지시", value: `${queuedWO}건`, tone: queuedWO > 0 ? "warn" : "normal" },
+        { label: "자재차단", value: `${materialBlockedLotCount.toLocaleString("ko-KR")}건`, tone: materialBlockedLotCount > 0 ? "critical" : "normal" },
+        { label: "완제품창고 차단", value: `${finishedGoodsHoldLotCount.toLocaleString("ko-KR")}건`, tone: finishedGoodsHoldLotCount > 0 ? "warn" : "normal" },
       ],
       LOGISTICS: [
         { label: "입고 중 PO", value: `${openPOs.length}건` },
@@ -119,7 +185,7 @@ export async function GET() {
         role, name: p.name, team: p.team, color: p.color, remit: p.remit,
         consciousness: p.consciousness, judgmentMode: p.judgmentMode, roadmapNote: p.roadmapNote,
         watching: watching[role] ?? [],
-        judgment: role === "PROCUREMENT" ? judgment : null,
+        judgment: judgmentByRole[role],
       };
     });
 
@@ -163,9 +229,14 @@ export async function GET() {
         tickIntervalMs: state?.tickIntervalMs ?? 5000,
         totalBurnEvents,
         openPOs: openPOs.length,
+        pendingApprovalPOs: pendingApprovalCount,
+        urgentApprovalPOs: urgentApprovalCount,
+        inboundHoldPOs: inboundHoldCount,
+        materialBlockedLots: materialBlockedLotCount,
       },
       ai: {
         configured: Boolean(process.env.OPENAI_API_KEY),
+        enabled: aiEnabled,
         model: CONTROL_TOWER_AI_MODEL,
         episode: latestAI,
       },
