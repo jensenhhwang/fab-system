@@ -43,7 +43,14 @@ export async function releaseTwinLock(owner: string): Promise<void> {
 }
 
 export async function ensureTwinIndexes(): Promise<void> {
-  const { twinPurchaseOrders, twinBurnEvents } = await collections();
+  const { twinPurchaseOrders, twinBurnEvents, waferLots } = await collections();
   await twinPurchaseOrders.createIndex({ status: 1, etaAt: 1 });
   await twinBurnEvents.createIndex({ materialId: 1, tickAt: -1 });
+  await waferLots.createIndex({
+    fabId: 1,
+    product: 1,
+    cohort: 1,
+    status: 1,
+    nextStepOperatingMs: 1,
+  });
 }

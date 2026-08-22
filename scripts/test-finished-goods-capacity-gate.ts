@@ -19,19 +19,26 @@ async function main() {
   const stepConsumption = buildStepConsumption(visits, [...M20_MATERIAL_CONSUMPTION]);
 
   const old = new Date(0);
+  const timing = {
+    operatingEpochMs: 10 * 86_400_000,
+    elapsedOperatingMs: 5 * 60_000,
+    recordedAt: new Date("2026-08-22T00:00:00Z"),
+  };
   const ids = [randomUUID(), randomUUID()];
   await waferLots.insertMany([
     { _id: ids[0], fabId: "M20", product: "HBM", routeMasterId: "M20:HBM", foupCode: "FOUP-FGC-A",
       status: "IN_PROGRESS", cohort: "AGGREGATE", currentStepIndex: totalSteps - 1, waferQty: 25,
-      createdBy: "test", createdAt: old, updatedAt: old, lastEventAt: old } as never,
+      createdBy: "test", createdAt: old, updatedAt: old, lastEventAt: old,
+      nextStepOperatingMs: timing.operatingEpochMs - 1 } as never,
     { _id: ids[1], fabId: "M20", product: "HBM", routeMasterId: "M20:HBM", foupCode: "FOUP-FGC-B",
       status: "IN_PROGRESS", cohort: "AGGREGATE", currentStepIndex: totalSteps - 1, waferQty: 25,
-      createdBy: "test", createdAt: old, updatedAt: old, lastEventAt: old } as never,
+      createdBy: "test", createdAt: old, updatedAt: old, lastEventAt: old,
+      nextStepOperatingMs: timing.operatingEpochMs - 1 } as never,
   ]);
 
   try {
     // 1) 완제품 창고 초과 상태 — 완료 직전 로트가 막혀야 한다
-    const held = await advanceAggregateWip("M20", "HBM", {
+    const held = await advanceAggregateWip("M20", "HBM", timing, {
       stepConsumption, blockedMaterialIds: new Set(), finishedGoodsCapacityOver: true,
     });
     assert.ok(held.blocked >= 2, `완제품 창고 초과 시 완료 직전 로트가 막혀야 한다 (blocked=${held.blocked})`);
@@ -43,9 +50,12 @@ async function main() {
       assert.ok(lot.finishedGoodsHoldAt, "finishedGoodsHoldAt이 기록돼야 한다");
     }
 
-    // 2) 창고 여유 회복 — 다시 대기시간 지나면 정상 완료돼야 한다
-    await waferLots.updateMany({ _id: { $in: ids } }, { $set: { lastEventAt: old } });
-    const released = await advanceAggregateWip("M20", "HBM", {
+    // 2) 창고 여유 회복 — 다음 운영 예정시각이 오면 정상 완료돼야 한다
+    await waferLots.updateMany(
+      { _id: { $in: ids } },
+      { $set: { nextStepOperatingMs: timing.operatingEpochMs - 1 } },
+    );
+    const released = await advanceAggregateWip("M20", "HBM", timing, {
       stepConsumption, blockedMaterialIds: new Set(), finishedGoodsCapacityOver: false,
     });
     assert.ok(released.completed >= 2, `여유 회복 후엔 정상 완료돼야 한다 (completed=${released.completed})`);

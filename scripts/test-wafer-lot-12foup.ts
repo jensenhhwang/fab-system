@@ -17,6 +17,15 @@ async function main() {
   for (const state of initialStates) {
     assert.equal(state.totalSteps, 134, `${state.lot.foupCode} totalSteps는 HBM4 12-Hi 기준 134여야 합니다`);
   }
+  const historyCountByLot = new Map(initialStates.map((state) => [state.lot._id, state.history.length]));
+  const repeatedRead = await listActiveLotStates("M20", "HBM", ACTOR);
+  for (const state of repeatedRead) {
+    assert.equal(
+      state.history.length,
+      historyCountByLot.get(state.lot._id),
+      `${state.lot.foupCode} 목록 조회는 공정을 자동 진행하지 않아야 합니다`,
+    );
+  }
   console.log(`✅ 1) FOUP×12 활성 로트 확인 완료 (${returnedCodes.join(", ")})`);
 
   // 2) FOUP-05를 패키징 첫 스텝(절대 stepIndex 122)까지 전진시켜 M20 파일럿 워크오더 자동 생성을 확인한다.

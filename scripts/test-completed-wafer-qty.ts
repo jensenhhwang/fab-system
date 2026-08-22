@@ -15,18 +15,25 @@ async function main() {
   const totalSteps = expandRouteMaster(route).length;
 
   const old = new Date(0);
+  const timing = {
+    operatingEpochMs: 10 * 86_400_000,
+    elapsedOperatingMs: 5 * 60_000,
+    recordedAt: new Date("2026-08-22T00:00:00Z"),
+  };
   const ids = [randomUUID(), randomUUID()];
   await waferLots.insertMany([
     { _id: ids[0], fabId: "M20", product: "HBM", routeMasterId: "M20:HBM", foupCode: "FOUP-CWQ-A",
       status: "IN_PROGRESS", cohort: "AGGREGATE", currentStepIndex: totalSteps - 1, waferQty: 25,
-      createdBy: "test", createdAt: old, updatedAt: old, lastEventAt: old } as never,
+      createdBy: "test", createdAt: old, updatedAt: old, lastEventAt: new Date(),
+      nextStepOperatingMs: timing.operatingEpochMs - 1 } as never,
     { _id: ids[1], fabId: "M20", product: "HBM", routeMasterId: "M20:HBM", foupCode: "FOUP-CWQ-B",
       status: "IN_PROGRESS", cohort: "AGGREGATE", currentStepIndex: totalSteps - 1, waferQty: 18,
-      createdBy: "test", createdAt: old, updatedAt: old, lastEventAt: old } as never,
+      createdBy: "test", createdAt: old, updatedAt: old, lastEventAt: new Date(),
+      nextStepOperatingMs: timing.operatingEpochMs - 1 } as never,
   ]);
 
   try {
-    const result = await advanceAggregateWip("M20", "HBM");
+    const result = await advanceAggregateWip("M20", "HBM", timing);
     assert.ok(result.completed >= 2, `테스트 로트 2개가 완료돼야 한다 (completed=${result.completed})`);
     assert.ok(result.completedWaferQty >= 43, `완료된 로트의 웨이퍼 합(25+18=43)이 반영돼야 한다 (completedWaferQty=${result.completedWaferQty})`);
 

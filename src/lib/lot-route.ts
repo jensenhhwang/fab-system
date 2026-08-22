@@ -7,6 +7,9 @@ import { getRouteMaster, getRouteMasterById, expandRouteMaster, type RouteVisit 
 import type { StepConsumption } from "@/lib/twin/burn";
 import { M20_PRODUCTION_SCENARIOS, targetWipCount } from "@/lib/fab-scenario";
 import { getProductionConfig } from "@/lib/fab-production-config";
+import { operatingMsToDays } from "@/lib/twin/operating-clock";
+import { stableOperatingPhaseMs, stepDwellOperatingMs } from "@/lib/twin/wip-flow";
+import type { AnyBulkWriteOperation } from "mongodb";
 import {
   FOUP_WIP_BOOTSTRAP_VERSION,
   FOUP_WIP_DWELL_MODEL,
@@ -14,12 +17,6 @@ import {
 } from "@/lib/foup-wip-model";
 
 export const FOUP_CODES = Array.from({ length: 12 }, (_, i) => `FOUP-${String(i + 1).padStart(2, "0")}`);
-
-// MES 텔레메트리가 아직 없어서, 폴링될 때마다 "마지막 스텝 이후 이만큼 지났으면 다음 스텝으로 진행"하는 방식으로
-// 자동 진행을 흉내낸다. 실제 설비 신호가 붙으면 이 타이머 대신 MES_TELEMETRY 이벤트가 들어오면 된다.
-// 실제 웨이퍼 투입→패키징 완료는 약 3~4개월인데 HBM4 12-Hi V2 140스텝을 5초 간격으로 돌리면 약 11.7분 — 약 1.1만~1.5만배 배속 타임랩스다.
-// 균등 배분 가정이라 정밀한 시간 비례는 아님. 자세한 근거는 docs/route-master.md의 "시뮬레이션 배속 가정" 참고.
-export const AUTO_ADVANCE_INTERVAL_MS = 5_000;
 
 // 생산 기준의 단일 출처는 fab-master/M20_PRODUCTION_SCENARIOS다.
 export const M20_CYCLE_DAYS = M20_PRODUCTION_SCENARIOS.NORMAL.cycleTimeDays;
@@ -63,11 +60,10 @@ export async function getOrCreateActiveLot(fabId: FabId, product: Product, foupC
   return doc;
 }
 
-// 레거시 시뮬레이션/검증용 진입점. FOUP-01~12 활성 로트를 보장한 뒤 자동 진행한다.
-// HTTP GET에서는 호출하지 않는다. 조회가 공정 진행이나 작업지시 생성을 유발하면 안 된다.
+// 레거시 시뮬레이션/검증용 진입점. FOUP-01~12 활성 로트만 보장하고 조회한다.
+// 조회가 공정 진행이나 작업지시 생성을 유발하지 않도록 자동 진행은 하지 않는다.
 export async function listActiveLotStates(fabId: FabId, product: Product, actorId: string): Promise<LotRouteState[]> {
   const lots = await Promise.all(FOUP_CODES.map((foupCode) => getOrCreateActiveLot(fabId, product, foupCode, actorId)));
-  await Promise.all(lots.map((lot) => autoAdvanceIfDue(lot._id, actorId)));
   return Promise.all(lots.map((lot) => getLotRouteState(lot._id)));
 }
 
@@ -86,18 +82,6 @@ export async function listExistingActiveLotStates(fabId: FabId, product: Product
     if (!latestByFoup.has(lot.foupCode)) latestByFoup.set(lot.foupCode, lot);
   }
   return Promise.all([...latestByFoup.values()].map((lot) => getLotRouteState(lot._id)));
-}
-
-async function autoAdvanceIfDue(lotId: string, actorId: string): Promise<void> {
-  const state = await getLotRouteState(lotId);
-  if (state.isDone) return;
-  const lastEventAt = state.history.at(-1)?.completedAt ?? state.lot.createdAt;
-  if (Date.now() - new Date(lastEventAt).getTime() < AUTO_ADVANCE_INTERVAL_MS) return;
-  try {
-    await advanceLotStep(lotId, actorId, `${lotId}:AUTO:${state.currentStepIndex}`, "MES_TELEMETRY");
-  } catch {
-    // 동시 폴링 등으로 인한 경합은 다음 주기에 자연히 해소된다.
-  }
 }
 
 export async function getLotRouteState(lotId: string): Promise<LotRouteState> {
@@ -218,21 +202,6 @@ export async function ensureAggregateWip(fabId: FabId, product: Product, actorId
   return { targetWip: modeledSummary.occupiedTarget, currentWip: modeledSummary.currentWip, created: 0 };
 }
 
-// tick당 advance 배치 상한은 이제 제품별 config(cfg.advanceBatchMax = targetOccupiedFoup + 2,000)에서
-// 가져온다. AUTO_ADVANCE_INTERVAL_MS(5s)가 tick 간격과 같아 만재고에서 전체가 동시에 due가 될 수
-// 있으므로, 상한을 목표 재고보다 넉넉히 잡아 특정 스텝에 로트가 뭉치는 정체를 막는다(Day-N 발견).
-
-// tick 간격과 AUTO_ADVANCE_INTERVAL_MS가 같아서(둘 다 5s), 한 번이라도 같은 tick에 같이
-// 처리된 로트들은 그 순간부터 영원히 동기화된 채로 움직인다 — 자재 소모/발주가 tick마다
-// 거대하게 몰려 창고가 넘치는 원인이었다(Day-N 발견). 매 advance/release마다 소확률로
-// 정확히 한 tick 더 미뤄서, 뭉친 무리가 시간이 지나면서 서서히 흩어지게 한다.
-// 확률을 낮게 유지하는 이유: 평균 처리량(목표 생산속도)을 크게 해치지 않기 위해서다.
-export const DESYNC_EXTRA_DELAY_CHANCE = 0.15;
-
-export function jitteredLastEventAt(now: Date, intervalMs: number, rand: number): Date {
-  return rand < DESYNC_EXTRA_DELAY_CHANCE ? new Date(now.getTime() + intervalMs) : now;
-}
-
 // 이자재(MATERIALS)가 COVERAGE_CRITICAL로 판단한 자재를 다음 스텝에서 쓰는 로트인지 확인한다.
 // true면 advanceAggregateWip가 그 로트의 진행을 막는다 — "자재 없이 공정을 통과한" 물리적
 // 모순 없이 WIP 진행(최생산 도메인)과 자재 소모(이자재 도메인)를 한 지점에서 같이 게이팅한다.
@@ -247,17 +216,70 @@ export function isLotMaterialBlocked(
   return consumers.some((c) => blockedMaterialIds.has(c.materialId));
 }
 
-// AGGREGATE 코호트를 벌크로 한 스텝씩 진행시킨다. VISUAL 코호트(advanceLotStep)와 달리
-// waferLotStepEvents를 쓰지 않고, P10 package operation 진입 시에도 createM20PilotWorkOrder를 절대 호출하지 않는다
-// (자재 소비 트리거는 여전히 VISUAL 12개 전용 스코프).
+export type AggregateWipTiming = {
+  operatingEpochMs: number;
+  elapsedOperatingMs: number;
+  recordedAt: Date;
+};
+
+type AggregateAdvanceResult = {
+  advanced: number;
+  completed: number;
+  completedWaferQty: number;
+  blocked: number;
+  advancedFromStepIndex: Record<number, number>;
+};
+
+function emptyAggregateAdvance(): AggregateAdvanceResult {
+  return { advanced: 0, completed: 0, completedWaferQty: 0, blocked: 0, advancedFromStepIndex: {} };
+}
+
+// 기존 M20 로트에는 운영 예정시각이 없다. 현재 운영시각부터 평균 체류시간 사이에 안정적으로
+// 분산해 첫 전환 tick의 14K 동시 이동을 막는다. 진행 상태와 감사시각은 바꾸지 않는다.
+async function initializeAggregateOperatingSchedules(input: {
+  fabId: FabId;
+  product: Product;
+  operatingEpochMs: number;
+  recordedAt: Date;
+  stepDwellMs: number;
+  limit: number;
+}): Promise<number> {
+  const { waferLots } = await collections();
+  const unscheduled = await waferLots.find({
+    fabId: input.fabId,
+    product: input.product,
+    cohort: { $in: ["AGGREGATE", "MODELED_FOUP"] },
+    status: "IN_PROGRESS",
+    nextStepOperatingMs: { $exists: false },
+  }).limit(input.limit).toArray();
+  if (unscheduled.length === 0) return 0;
+
+  const ops: AnyBulkWriteOperation<WaferLotDoc>[] = unscheduled.map((lot) => ({
+    updateOne: {
+      filter: { _id: lot._id, nextStepOperatingMs: { $exists: false } },
+      update: {
+        $set: {
+          nextStepOperatingMs: input.operatingEpochMs + stableOperatingPhaseMs(lot._id, input.stepDwellMs),
+          updatedAt: input.recordedAt,
+        },
+      },
+    },
+  }));
+  const result = await waferLots.bulkWrite(ops, { ordered: false });
+  return result.modifiedCount;
+}
+
+// 엔진 관리 M20 로트를 운영 예정시각 순서로 진행한다. VISUAL/WATCHED 코호트와 달리
+// waferLotStepEvents나 M20_PILOT 작업지시를 만들지 않는다.
 export async function advanceAggregateWip(
   fabId: FabId,
   product: Product,
+  timing: AggregateWipTiming,
   gating?: { stepConsumption: StepConsumption; blockedMaterialIds: ReadonlySet<string>; finishedGoodsCapacityOver?: boolean },
-): Promise<{ advanced: number; completed: number; completedWaferQty: number; blocked: number; advancedFromStepIndex: Record<number, number> }> {
-  const empty = { advanced: 0, completed: 0, completedWaferQty: 0, blocked: 0, advancedFromStepIndex: {} };
+): Promise<AggregateAdvanceResult> {
+  const empty = emptyAggregateAdvance();
   const cfg = getProductionConfig(fabId, product);
-  if (!cfg) return empty;
+  if (!cfg || cfg.wipMode !== "PER_LOT") return empty;
 
   const { waferLots } = await collections();
   const routeMaster = await getRouteMaster(fabId, product);
@@ -265,62 +287,93 @@ export async function advanceAggregateWip(
   const visits = expandRouteMaster(routeMaster);
   const totalSteps = visits.length;
   if (totalSteps === 0) return empty;
+  const stepDwellMs = stepDwellOperatingMs(cfg.cycleTimeDays, totalSteps);
 
-  // 라이브 WIP 원장은 MODELED_FOUP 코호트로 만들어지는데, 진행기가 옛 이름 AGGREGATE만
-  // 조회해 실제로는 아무 로트도 진행·소모되지 않던 버그(Day15 발견). 두 코호트 모두 진행한다.
-  // 밀릴 때는 가장 오래 밀린 로트부터 처리해 특정 로트가 계속 굶지 않게 한다(FIFO 공정성).
+  await initializeAggregateOperatingSchedules({
+    fabId,
+    product,
+    operatingEpochMs: timing.operatingEpochMs,
+    recordedAt: timing.recordedAt,
+    stepDwellMs,
+    limit: cfg.advanceBatchMax,
+  });
+  if (timing.elapsedOperatingMs <= 0) return empty;
+
   const due = await waferLots.find({
     fabId, product, cohort: { $in: ["AGGREGATE", "MODELED_FOUP"] }, status: "IN_PROGRESS",
-    lastEventAt: { $lte: new Date(Date.now() - AUTO_ADVANCE_INTERVAL_MS) },
-  }).sort({ lastEventAt: 1 }).limit(cfg.advanceBatchMax).toArray();
+    nextStepOperatingMs: { $lte: timing.operatingEpochMs },
+  }).sort({ nextStepOperatingMs: 1 }).limit(cfg.advanceBatchMax).toArray();
   if (due.length === 0) return empty;
 
-  const now = new Date();
   let completed = 0;
   let completedWaferQty = 0;
   let advanced = 0;
   let blocked = 0;
   const advancedFromStepIndex: Record<number, number> = {};
-  const ops = due.map((lot) => {
-    const fromStep = lot.currentStepIndex ?? 0;
-    const nextStep = fromStep + 1;
-    const isDone = nextStep >= totalSteps;
-    const materialBlocked = Boolean(gating && isLotMaterialBlocked(fromStep, gating.stepConsumption, gating.blockedMaterialIds));
-    // 박물류(LOGISTICS)가 완제품 창고를 CAPACITY_OVER로 판정하면, 이번 스텝으로 완제품이 될
-    // 로트는 자재차단과 같은 방식으로 멈춘다 — 안 그러면 갈 곳 없는 완제품이 계속 쌓인다.
-    const fgHeld = isDone && gating?.finishedGoodsCapacityOver === true;
-    if (materialBlocked || fgHeld) {
-      // 진행은 안 시키되, lastEventAt은 갱신해서 FIFO 대기열 선두를 영구 점유하지 않게 한다
-      // (안 그러면 오늘 낮 겪은 배치상한 정체 버그가 재발한다). 최초 차단 시각은 보존한다.
-      blocked++;
-      const setFields: Record<string, Date> = {
-        lastEventAt: jitteredLastEventAt(now, AUTO_ADVANCE_INTERVAL_MS, Math.random()),
-        updatedAt: now,
-      };
-      if (materialBlocked) setFields.materialBlockedAt = lot.materialBlockedAt ?? now;
-      if (fgHeld) setFields.finishedGoodsHoldAt = lot.finishedGoodsHoldAt ?? now;
-      return {
-        updateOne: {
-          filter: { _id: lot._id, lastEventAt: lot.lastEventAt },
-          update: { $set: setFields },
-        },
-      };
+  const maxStepsPerLot = Math.ceil(timing.elapsedOperatingMs / stepDwellMs) + 1;
+  const ops: AnyBulkWriteOperation<WaferLotDoc>[] = due.map((lot) => {
+    const originalDue = lot.nextStepOperatingMs as number;
+    let nextDue = originalDue;
+    let currentStep = lot.currentStepIndex ?? 0;
+    let movedSteps = 0;
+    let materialHeld = false;
+    let finishedGoodsHeld = false;
+
+    while (
+      currentStep < totalSteps
+      && nextDue <= timing.operatingEpochMs
+      && movedSteps < maxStepsPerLot
+    ) {
+      const fromStep = currentStep;
+      const nextStep = fromStep + 1;
+      const isDone = nextStep >= totalSteps;
+      materialHeld = Boolean(
+        gating && isLotMaterialBlocked(fromStep, gating.stepConsumption, gating.blockedMaterialIds),
+      );
+      finishedGoodsHeld = isDone && gating?.finishedGoodsCapacityOver === true;
+
+      if (materialHeld || finishedGoodsHeld) {
+        blocked++;
+        nextDue = timing.operatingEpochMs + stepDwellMs;
+        break;
+      }
+
+      const waferQty = lot.waferQty ?? cfg.wafersPerFoup;
+      advanced++;
+      movedSteps++;
+      advancedFromStepIndex[fromStep] = (advancedFromStepIndex[fromStep] ?? 0) + waferQty;
+      currentStep = nextStep;
+      nextDue += stepDwellMs;
+      if (isDone) {
+        completed++;
+        completedWaferQty += waferQty;
+        break;
+      }
     }
-    advanced++;
-    advancedFromStepIndex[fromStep] = (advancedFromStepIndex[fromStep] ?? 0) + (lot.waferQty ?? 25);
-    if (isDone) { completed++; completedWaferQty += lot.waferQty ?? 25; }
-    const nextNodeId = isDone ? visits[totalSteps - 1].nodeId : visits[nextStep].nodeId;
+
+    const isDone = currentStep >= totalSteps;
+    const nextNodeId = isDone
+      ? visits[totalSteps - 1].nodeId
+      : visits[currentStep].nodeId;
+    const setFields: Partial<WaferLotDoc> = {
+      currentStepIndex: currentStep,
+      currentNodeId: nextNodeId,
+      nextStepOperatingMs: nextDue,
+      updatedAt: timing.recordedAt,
+      status: isDone ? "DONE" : "IN_PROGRESS",
+    };
+    if (movedSteps > 0) setFields.lastEventAt = timing.recordedAt;
+    if (materialHeld) setFields.materialBlockedAt = lot.materialBlockedAt ?? timing.recordedAt;
+    if (finishedGoodsHeld) setFields.finishedGoodsHoldAt = lot.finishedGoodsHoldAt ?? timing.recordedAt;
+
+    const update: Record<string, unknown> = { $set: setFields };
+    if (movedSteps > 0 && !materialHeld && !finishedGoodsHeld) {
+      update.$unset = { materialBlockedAt: "", finishedGoodsHoldAt: "" };
+    }
     return {
       updateOne: {
-        filter: { _id: lot._id, lastEventAt: lot.lastEventAt },
-        update: {
-          $set: {
-            currentStepIndex: isDone ? totalSteps : nextStep, currentNodeId: nextNodeId,
-            lastEventAt: jitteredLastEventAt(now, AUTO_ADVANCE_INTERVAL_MS, Math.random()),
-            updatedAt: now, status: isDone ? "DONE" as const : "IN_PROGRESS" as const,
-          },
-          $unset: { materialBlockedAt: "" as const, finishedGoodsHoldAt: "" as const },
-        },
+        filter: { _id: lot._id, nextStepOperatingMs: originalDue },
+        update,
       },
     };
   });
@@ -353,24 +406,29 @@ export function computeAggregateReleasePlan(input: {
 export async function releaseAggregateWip(
   fabId: FabId,
   product: Product,
-  now: Date,
-  simDays: number,
+  timing: AggregateWipTiming,
   carry: number,
 ): Promise<{ released: number; nextCarry: number }> {
   const cfg = getProductionConfig(fabId, product);
-  if (!cfg) return { released: 0, nextCarry: carry };
+  if (!cfg || cfg.wipMode !== "PER_LOT") return { released: 0, nextCarry: carry };
 
   const { waferLots } = await collections();
   const routeMaster = await getRouteMaster(fabId, product);
   if (!routeMaster) return { released: 0, nextCarry: carry };
   const visits = expandRouteMaster(routeMaster);
   if (visits.length === 0) return { released: 0, nextCarry: carry };
+  const stepDwellMs = stepDwellOperatingMs(cfg.cycleTimeDays, visits.length);
+  const elapsedOperatingDays = operatingMsToDays(Math.max(0, timing.elapsedOperatingMs));
 
   const currentOccupied = await waferLots.countDocuments({
     fabId, product, cohort: { $in: ["AGGREGATE", "MODELED_FOUP"] }, status: "IN_PROGRESS",
   });
   const { releaseCount, nextCarry } = computeAggregateReleasePlan({
-    dailyRate: cfg.dailyLotRelease, simDays, carry, currentOccupied, targetOccupied: cfg.targetOccupiedFoup,
+    dailyRate: cfg.dailyLotRelease,
+    simDays: elapsedOperatingDays,
+    carry,
+    currentOccupied,
+    targetOccupied: cfg.targetOccupiedFoup,
   });
   if (releaseCount <= 0) return { released: 0, nextCarry };
 
@@ -378,21 +436,22 @@ export async function releaseAggregateWip(
   const docs: WaferLotDoc[] = Array.from({ length: releaseCount }, () => {
     const id = randomUUID();
     return {
-      _id: `WLOT-${fabId}-AUTO-${now.getTime()}-${id}`,
+      _id: `WLOT-${fabId}-AUTO-${timing.recordedAt.getTime()}-${id}`,
       fabId, product, routeMasterId: routeMaster._id,
       foupCode: `FOUP-${fabId}-AUTO-${id}`,
       status: "IN_PROGRESS",
       createdBy: "TWIN_AUTO_RELEASE",
-      createdAt: now, updatedAt: now,
+      createdAt: timing.recordedAt, updatedAt: timing.recordedAt,
       cohort: "MODELED_FOUP",
       currentStepIndex: 0,
       currentNodeId: firstVisit.nodeId,
-      lastEventAt: jitteredLastEventAt(now, AUTO_ADVANCE_INTERVAL_MS, Math.random()),
+      lastEventAt: timing.recordedAt,
       waferQty: cfg.wafersPerFoup,
       watched: false,
       source: "MODELED_BASELINE",
       bootstrapVersion: FOUP_WIP_BOOTSTRAP_VERSION,
-      modeledReleaseAt: now,
+      modeledReleaseAt: timing.recordedAt,
+      nextStepOperatingMs: timing.operatingEpochMs + stepDwellMs,
       dwellModel: FOUP_WIP_DWELL_MODEL,
     };
   });

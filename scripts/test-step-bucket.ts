@@ -1,40 +1,112 @@
-import "dotenv/config";
-import { computeStepAdvance, computeStepRelease, buildSeedCounts } from "../src/lib/twin/step-bucket";
+import assert from "node:assert/strict";
+import { buildSeedCounts, computeStepFlow } from "../src/lib/twin/step-bucket";
 import type { StepConsumption } from "../src/lib/twin/burn";
 
-function assert(c: boolean, m: string) { if (!c) throw new Error(`FAIL: ${m}`); }
+const EPSILON = 1e-9;
 
-// buildSeedCounts: 합이 정확히 target, 균등 분포.
+function assertClose(actual: number, expected: number, message: string): void {
+  assert.ok(Math.abs(actual - expected) < EPSILON, `${message}: expected=${expected}, actual=${actual}`);
+}
+
+function assertCountsClose(actual: number[], expected: number[], message: string): void {
+  assert.equal(actual.length, expected.length, `${message}: length`);
+  actual.forEach((value, index) => assertClose(value, expected[index], `${message}[${index}]`));
+}
+
 const seed = buildSeedCounts(5, 12);
-assert(seed.reduce((s, c) => s + c, 0) === 12, `seed 합=${seed.reduce((s, c) => s + c, 0)}`);
-assert(Math.max(...seed) - Math.min(...seed) <= 1, "seed 균등");
+assert.equal(seed.reduce((sum, count) => sum + count, 0), 12);
+assert.ok(Math.max(...seed) - Math.min(...seed) <= 1, "seed는 route에 균등 분포한다");
 
-// 소모 없음, 차단 없음: 한 스텝 시프트 + 마지막 스텝 완료.
 const noConsumption: StepConsumption = new Map();
-const counts = [10, 20, 30]; // 3스텝
-const adv = computeStepAdvance({ counts, stepConsumption: noConsumption, blockedMaterialIds: new Set(), finishedGoodsCapacityOver: false, wafersPerFoup: 25 });
-assert(JSON.stringify(adv.nextCounts) === JSON.stringify([0, 10, 20]), `nextCounts=${JSON.stringify(adv.nextCounts)}`);
-assert(adv.completedFoup === 30, `completedFoup=${adv.completedFoup}`);
-assert(adv.completedWaferQty === 30 * 25, `completedWaferQty=${adv.completedWaferQty}`);
+const baseInput = {
+  counts: [10, 20, 30],
+  quantumCount: 1,
+  quantumOperatingDays: 0.1,
+  stepDwellDays: 1,
+  dailyRate: 3,
+  target: 60,
+  stepConsumption: noConsumption,
+  blockedMaterialIds: new Set<string>(),
+  finishedGoodsCapacityOver: false,
+  wafersPerFoup: 25,
+};
 
-// 자재 소모: 스텝 1이 MAT-A를 wafer당 2 소모. 스텝1 count=20, wafers=500 → burn 1000.
-const withConsumption: StepConsumption = new Map([[1, [{ materialId: "MAT-A", equivalentPerWafer: 2 }]]]);
-const adv2 = computeStepAdvance({ counts: [0, 20, 0], stepConsumption: withConsumption, blockedMaterialIds: new Set(), finishedGoodsCapacityOver: false, wafersPerFoup: 25 });
-assert(adv2.burnByMaterial.get("MAT-A") === 1000, `burn=${adv2.burnByMaterial.get("MAT-A")}`);
+const result = computeStepFlow(baseInput);
+assertCountsClose(result.nextCounts, [9.3, 19, 29], "10% 부분 이동");
+assertClose(result.advancedFoup, 6, "전체 이동 FOUP_EQ");
+assertClose(result.completedFoup, 3, "마지막 스텝 완료량");
+assertClose(result.completedWaferQty, 75, "완료 웨이퍼");
+assertClose(result.releasedFoup, 0.3, "운영시간 비례 투입");
+assertClose(result.processedOperatingDays, 0.1, "처리 운영시간");
+assertClose(
+  result.nextCounts.reduce((sum, count) => sum + count, 0),
+  baseInput.counts.reduce((sum, count) => sum + count, 0) + result.releasedFoup - result.completedFoup,
+  "WIP 질량보존",
+);
 
-// 자재 차단: MAT-A가 CRITICAL이면 스텝1 count는 제자리, 소모 0.
-const adv3 = computeStepAdvance({ counts: [0, 20, 0], stepConsumption: withConsumption, blockedMaterialIds: new Set(["MAT-A"]), finishedGoodsCapacityOver: false, wafersPerFoup: 25 });
-assert(JSON.stringify(adv3.nextCounts) === JSON.stringify([0, 20, 0]), `blocked nextCounts=${JSON.stringify(adv3.nextCounts)}`);
-assert(adv3.blockedFoup === 20 && (adv3.burnByMaterial.get("MAT-A") ?? 0) === 0, "blocked no burn");
+const noTime = computeStepFlow({ ...baseInput, quantumCount: 0 });
+assertCountsClose(noTime.nextCounts, baseInput.counts, "운영시간 0이면 무이동");
+assert.equal(noTime.advancedFoup, 0);
+assert.equal(noTime.releasedFoup, 0);
 
-// 완제품 창고 CAPACITY_OVER: 마지막 스텝 완료 차단.
-const adv4 = computeStepAdvance({ counts: [0, 0, 30], stepConsumption: noConsumption, blockedMaterialIds: new Set(), finishedGoodsCapacityOver: true, wafersPerFoup: 25 });
-assert(adv4.completedFoup === 0 && adv4.nextCounts[2] === 30, "fg capacity over blocks completion");
+const withConsumption: StepConsumption = new Map([
+  [1, [{ materialId: "MAT-A", equivalentPerWafer: 2 }]],
+]);
+const burn = computeStepFlow({
+  ...baseInput,
+  counts: [0, 20, 0],
+  target: 20,
+  dailyRate: 0,
+  stepConsumption: withConsumption,
+});
+assertClose(burn.burnByMaterial.get("MAT-A") ?? 0, 100, "2 FOUP×25 wafer×2 원단위");
 
-// release: target 여유만큼 step0에 투입.
-const rel = computeStepRelease({ counts: [0, 0, 0], dailyRate: 100, simDays: 1, carry: 0, target: 50 });
-assert(rel.released === 50 && rel.nextCounts[0] === 50, `released=${rel.released}`); // room=50이 wanted=100을 캡
-const rel2 = computeStepRelease({ counts: [50, 0, 0], dailyRate: 100, simDays: 1, carry: 0, target: 50 });
-assert(rel2.released === 0, "만재고면 release 0");
+const materialBlocked = computeStepFlow({
+  ...baseInput,
+  counts: [0, 20, 0],
+  target: 20,
+  dailyRate: 0,
+  stepConsumption: withConsumption,
+  blockedMaterialIds: new Set(["MAT-A"]),
+});
+assertCountsClose(materialBlocked.nextCounts, [0, 20, 0], "자재 차단은 제자리");
+assertClose(materialBlocked.blockedFoup, 2, "이번 퀀텀에 이동할 양만 차단 집계");
+assert.equal(materialBlocked.burnByMaterial.get("MAT-A") ?? 0, 0);
 
-console.log("✅ step-bucket 순수함수 OK");
+const finishedGoodsBlocked = computeStepFlow({
+  ...baseInput,
+  counts: [0, 0, 30],
+  target: 30,
+  dailyRate: 0,
+  finishedGoodsCapacityOver: true,
+});
+assertCountsClose(finishedGoodsBlocked.nextCounts, [0, 0, 30], "완제품 포화는 마지막 스텝 유지");
+assert.equal(finishedGoodsBlocked.completedFoup, 0);
+assertClose(finishedGoodsBlocked.blockedFoup, 3, "마지막 스텝 이동 예정량 차단");
+
+const tenAtOnce = computeStepFlow({ ...baseInput, quantumCount: 10 });
+let splitCounts = baseInput.counts;
+let splitCompleted = 0;
+let splitReleased = 0;
+for (let i = 0; i < 10; i++) {
+  const step = computeStepFlow({ ...baseInput, counts: splitCounts, quantumCount: 1 });
+  splitCounts = step.nextCounts;
+  splitCompleted += step.completedFoup;
+  splitReleased += step.releasedFoup;
+}
+assertCountsClose(tenAtOnce.nextCounts, splitCounts, "퀀텀 분할 불변성");
+assertClose(tenAtOnce.completedFoup, splitCompleted, "완료량 분할 불변성");
+assertClose(tenAtOnce.releasedFoup, splitReleased, "투입량 분할 불변성");
+
+const steady = computeStepFlow({
+  ...baseInput,
+  counts: [10, 10, 10],
+  quantumCount: 100,
+  dailyRate: 10,
+  target: 30,
+});
+assertCountsClose(steady.nextCounts, [10, 10, 10], "정상상태 WIP 유지");
+assertClose(steady.completedFoup, 100, "10 운영일×10 FOUP/day 완료");
+assertClose(steady.releasedFoup, 100, "완료량만큼 재투입");
+
+console.log("✅ step-bucket 운영시간 부분 흐름 통과");

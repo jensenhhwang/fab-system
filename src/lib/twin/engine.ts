@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import type { Product } from "@/lib/db";
 import type { FabId } from "@/lib/fab-domain";
 import { collections } from "@/lib/db";
-import { advanceAggregateWip, releaseAggregateWip } from "@/lib/lot-route";
+import { advanceAggregateWip, releaseAggregateWip, type AggregateWipTiming } from "@/lib/lot-route";
 import { getRouteMaster, expandRouteMaster } from "@/lib/route-master";
 import { materialConsumptionFor } from "@/lib/material-consumption";
 import { buildStepConsumption, computeBurn, type StepConsumption } from "@/lib/twin/burn";
@@ -19,7 +19,8 @@ import { BURN_EMA_CEILING_MULTIPLIER, warehouseOccupancyFactor } from "@/lib/cap
 import { blockingMaterialIds, coverageState, criticalMaterialIds, type MaterialSignal } from "@/lib/materials-agent";
 import { finishedGoodsPerWafer, finishedGoodsUnit, finishedGoodsWarehouseFor, applyFinalTestQueue } from "@/lib/finished-goods";
 import { ACTIVE_PRODUCTION_PRODUCTS, getProductionConfig } from "@/lib/fab-production-config";
-import { advanceStepBucketWip, releaseStepBucketWip } from "@/lib/twin/step-bucket";
+import { advanceStepBucketWip } from "@/lib/twin/step-bucket";
+import { planWipFlowWindow, stepDwellOperatingMs, WIP_FLOW_QUANTUM_MS } from "@/lib/twin/wip-flow";
 import { planAutoShipments } from "@/lib/twin/auto-shipment";
 import { buildContractLines, designMonthlyOutput } from "@/lib/customer-contracts";
 import { buildProcurementSummary } from "@/lib/procurement";
@@ -42,17 +43,6 @@ const EMA_ALPHA = 0.2;
 // (실관측 2026-08-11: 용량 인식 발주를 넣자 MWH-01·MWH-02가 정확히 100%에서 고착). 발주는
 // 정원의 이 비율까지만 채워서 박물류가 판단할 여유를 남긴다.
 const ORDER_CAPACITY_TARGET_RATIO = 0.95;
-
-// 한 스텝이 차지하는 운영시간(일) = 사이클타임 / 전체 스텝수.
-//
-// 2026-08-12까지 이 값은 "한 tick에 흐르는 시간"으로 쓰였다(tick 횟수 기반 진행). 그래서 팹마다
-// 시간이 다르게 흐르고(M20 1,832× / M21 1,629× / M22 1,431×) tick 간격이 흔들리면 배속도 같이
-// 흔들렸다 — RULES.md가 금지한 형태다. 지금은 시간이 공통 운영시계에서만 오고, 이 함수는
-// "한 스텝을 지나는 데 운영시간이 얼마나 드는가"라는 route의 성질만 나타낸다.
-export function operatingDaysPerStep(cycleDays: number, totalSteps: number): number {
-  if (totalSteps <= 0) return 1;
-  return cycleDays / totalSteps;
-}
 
 export type TwinTickResult = {
   advanced: number;
@@ -85,6 +75,20 @@ async function getStepConsumption(fabId: FabId, product: Product): Promise<{ ste
   };
   stepConsumptionCache.set(product, built);
   return built;
+}
+
+/** 제품별로 실제 처리한 운영시간에 먼저 정규화한 뒤 공유 자재의 일수요율을 합산한다. */
+export function mergeObservedDailyBurn(
+  target: Map<string, number>,
+  burn: ReadonlyMap<string, number>,
+  processedOperatingDays: number,
+): void {
+  if (processedOperatingDays <= 0) return;
+  for (const [materialId, quantity] of burn) {
+    if (quantity <= 0) continue;
+    const daily = observedDailyDemand(quantity, processedOperatingDays);
+    target.set(materialId, (target.get(materialId) ?? 0) + daily);
+  }
 }
 
 // avgDailyBurn EMA가 부트스트랩(리셋 직후) 시 걸러지지 않고 폭주하던 문제(실관측: CSM-001
@@ -224,6 +228,15 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
     });
     // 이번 tick에 흐른 운영시간(일). 예전 simDays 자리를 전부 이 값이 대신한다.
     const elapsedOperatingDays = operatingMsToDays(clock.elapsedOperatingMs);
+    const wipFlow = planWipFlowWindow({
+      elapsedOperatingMs: clock.elapsedOperatingMs,
+      carryMs: state.wipFlowCarryMs ?? 0,
+    });
+    const aggregateTiming: AggregateWipTiming = {
+      operatingEpochMs: clock.operatingEpochMs,
+      elapsedOperatingMs: clock.elapsedOperatingMs,
+      recordedAt: now,
+    };
     if (clock.clampedCatchUp) {
       console.warn(`[twin] 운영시계 catch-up 상한 적용 — 정지 공백이 한꺼번에 반영되지 않도록 잘랐다`);
     }
@@ -248,6 +261,7 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
     const autoShippedByProduct: Partial<Record<Product, number>> = {};
 
     const burnedByMaterialAgg = new Map<string, number>();
+    const observedDailyBurnAgg = new Map<string, number>();
     let totalAdvanced = 0;
     let totalBlocked = 0;
     let totalReleased = 0;
@@ -271,27 +285,45 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
       let completedWaferQty = 0;
       const productMark = Date.now();
       if (cfg.wipMode === "PER_LOT") {
-        const adv = await advanceAggregateWip(fabId, product, { stepConsumption, blockedMaterialIds, finishedGoodsCapacityOver });
+        const adv = await advanceAggregateWip(
+          fabId,
+          product,
+          aggregateTiming,
+          { stepConsumption, blockedMaterialIds, finishedGoodsCapacityOver },
+        );
         totalAdvanced += adv.advanced;
         totalBlocked += adv.blocked;
         completedWaferQty = adv.completedWaferQty;
-        for (const [materialId, qty] of computeBurn(adv.advancedFromStepIndex, stepConsumption)) {
+        const productBurn = computeBurn(adv.advancedFromStepIndex, stepConsumption);
+        for (const [materialId, qty] of productBurn) {
           if (qty > 0) burnedByMaterialAgg.set(materialId, (burnedByMaterialAgg.get(materialId) ?? 0) + qty);
         }
-        const release = await releaseAggregateWip(fabId, product, now, elapsedOperatingDays, carryByProduct[product] ?? 0);
+        mergeObservedDailyBurn(observedDailyBurnAgg, productBurn, elapsedOperatingDays);
+        const release = await releaseAggregateWip(fabId, product, aggregateTiming, carryByProduct[product] ?? 0);
         carryByProduct[product] = release.nextCarry;
         totalReleased += release.released;
       } else {
-        const adv = await advanceStepBucketWip(fabId, product, { stepConsumption, blockedMaterialIds, finishedGoodsCapacityOver, wafersPerFoup: cfg.wafersPerFoup });
+        const stepDwellDays = operatingMsToDays(stepDwellOperatingMs(cfg.cycleTimeDays, totalSteps));
+        const adv = await advanceStepBucketWip(
+          fabId,
+          product,
+          { stepConsumption, blockedMaterialIds, finishedGoodsCapacityOver, wafersPerFoup: cfg.wafersPerFoup },
+          {
+            quantumCount: wipFlow.quantumCount,
+            quantumOperatingDays: operatingMsToDays(WIP_FLOW_QUANTUM_MS),
+            stepDwellDays,
+            dailyRate: cfg.dailyLotRelease,
+            target: cfg.targetOccupiedFoup,
+          },
+        );
         totalAdvanced += adv.advancedFoup;
         totalBlocked += adv.blockedFoup;
         completedWaferQty = adv.completedWaferQty;
         for (const [materialId, qty] of adv.burnByMaterial) {
           if (qty > 0) burnedByMaterialAgg.set(materialId, (burnedByMaterialAgg.get(materialId) ?? 0) + qty);
         }
-        const release = await releaseStepBucketWip(fabId, product, elapsedOperatingDays, carryByProduct[product] ?? 0, cfg.dailyLotRelease, cfg.targetOccupiedFoup);
-        carryByProduct[product] = release.nextCarry;
-        totalReleased += release.released;
+        mergeObservedDailyBurn(observedDailyBurnAgg, adv.burnByMaterial, adv.processedOperatingDays);
+        totalReleased += adv.releasedFoup;
       }
 
       phase[`  └${fabId} WIP진행`] = Date.now() - productMark;
@@ -369,9 +401,6 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
     // ── 누적 소모를 3팹 공유 재고에 1회 반영 ──
     const burnedByMaterial: Record<string, number> = {};
     const shortfalls: Record<string, number> = {};
-    // EMA 정규화도 공통 운영시계를 쓴다 — 예전엔 제품마다 다른 simDays 중 HBM 것을 대표로 골라
-    // 썼는데, 그 자체가 "제품별 임의 배속"의 잔재였다.
-    const emaSimDays = elapsedOperatingDays;
     for (const [materialId, qty] of burnedByMaterialAgg) {
       if (qty <= 0) continue;
       const snapshot = invSnapshotByMaterial.get(materialId);
@@ -386,7 +415,7 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
       // 재고가 부족할수록 EMA가 더 내려가 재발주가 더 안 나가는 자기강화 나선이 된다(observedDailyDemand 참고).
       // prevEma는 tick 시작 시 배치로 읽은 스냅샷을 쓴다 — 이 자재는 이 tick에서 여기서 처음
       // avgDailyBurn을 쓰므로 스냅샷 이후로 값이 바뀔 수 없어 별도 조회가 필요 없다.
-      const observedDaily = observedDailyDemand(qty, emaSimDays);
+      const observedDaily = observedDailyBurnAgg.get(materialId) ?? 0;
       const designDaily = getDesignDailyDemand().get(materialId);
       const ceiling = designDaily != null ? designDaily * BURN_EMA_CEILING_MULTIPLIER : undefined;
       const nextEma = updateBurnEma(snapshot.avgDailyBurn, observedDaily, EMA_ALPHA, ceiling);
@@ -595,6 +624,7 @@ export async function executeTwinTick(now: Date = new Date()): Promise<TwinTickR
         lastTickAt: now,
         operatingEpochMs: clock.operatingEpochMs,
         operatingClockWallAt: clock.nextWallClock,
+        wipFlowCarryMs: wipFlow.nextCarryMs,
         releaseCarry: carryByProduct.HBM ?? 0,
         releaseCarryByProduct: carryByProduct,
       } },

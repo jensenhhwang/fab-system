@@ -14,14 +14,21 @@ async function main() {
   // 테스트 격리 취약점) lastEventAt을 살짝만 과거로 두면 정렬 순위에서 밀려 이 tick에
   // 안 걸릴 수 있다. 확실히 큐 맨 앞에 서도록 아주 오래된 시각을 쓴다.
   const old = new Date(0);
+  const timing = {
+    operatingEpochMs: 10 * 86_400_000,
+    elapsedOperatingMs: 5 * 60_000,
+    recordedAt: new Date("2026-08-22T00:00:00Z"),
+  };
   const ids = [randomUUID(), randomUUID()];
   await waferLots.insertMany([
     { _id: ids[0], fabId: "M20", product: "HBM", routeMasterId: "M20:HBM", foupCode: "FOUP-CB-A",
       status: "IN_PROGRESS", cohort: "AGGREGATE", currentStepIndex: 0, waferQty: 25,
-      createdBy: "test", createdAt: old, updatedAt: old, lastEventAt: old } as never,
+      createdBy: "test", createdAt: old, updatedAt: old, lastEventAt: old,
+      nextStepOperatingMs: timing.operatingEpochMs - 1 } as never,
     { _id: ids[1], fabId: "M20", product: "HBM", routeMasterId: "M20:HBM", foupCode: "FOUP-CB-B",
       status: "IN_PROGRESS", cohort: "AGGREGATE", currentStepIndex: 0, waferQty: 25,
-      createdBy: "test", createdAt: old, updatedAt: old, lastEventAt: old } as never,
+      createdBy: "test", createdAt: old, updatedAt: old, lastEventAt: old,
+      nextStepOperatingMs: timing.operatingEpochMs - 1 } as never,
   ]);
   const stepConsumption: StepConsumption = new Map([
     [0, [{ materialId: "GAS-001", equivalentPerWafer: 1 }]],
@@ -29,7 +36,7 @@ async function main() {
 
   try {
     // 1) GAS-001이 CRITICAL이면 두 로트 모두 막혀야 하고, materialBlockedAt이 찍혀야 한다
-    const blockedResult = await advanceAggregateWip("M20", "HBM", {
+    const blockedResult = await advanceAggregateWip("M20", "HBM", timing, {
       stepConsumption, blockedMaterialIds: new Set(["GAS-001"]),
     });
     assert.ok(blockedResult.blocked >= 2, `테스트 로트 2개가 차단돼야 한다 (blocked=${blockedResult.blocked})`);
@@ -39,13 +46,17 @@ async function main() {
     for (const lot of afterBlock) {
       assert.equal(lot.currentStepIndex, 0, "차단된 로트는 스텝이 그대로여야 한다");
       assert.ok(lot.materialBlockedAt, "materialBlockedAt이 기록돼야 한다");
-      assert.ok((lot.lastEventAt?.getTime() ?? 0) > old.getTime(), "FIFO 굶주림 방지를 위해 lastEventAt은 갱신돼야 한다");
+      assert.equal(lot.lastEventAt?.getTime(), old.getTime(), "차단은 감사용 마지막 진행시각을 바꾸지 않는다");
+      assert.ok((lot.nextStepOperatingMs ?? 0) > timing.operatingEpochMs, "차단 시간은 cycle time 지연으로 반영한다");
     }
 
-    // 2) 재고 회복(더 이상 CRITICAL 아님) 후, 원래 대기시간 다시 지나면 실제로 진행되고
+    // 2) 재고 회복(더 이상 CRITICAL 아님) 후, 다음 운영 예정시각이 지나면 실제로 진행되고
     //    materialBlockedAt이 지워져야 한다
-    await waferLots.updateMany({ _id: { $in: ids } }, { $set: { lastEventAt: old } });
-    const recoveredResult = await advanceAggregateWip("M20", "HBM", {
+    await waferLots.updateMany(
+      { _id: { $in: ids } },
+      { $set: { nextStepOperatingMs: timing.operatingEpochMs - 1 } },
+    );
+    const recoveredResult = await advanceAggregateWip("M20", "HBM", timing, {
       stepConsumption, blockedMaterialIds: new Set(),
     });
     assert.ok(recoveredResult.advanced >= 2, `회복 후에는 실제로 진행돼야 한다 (advanced=${recoveredResult.advanced})`);

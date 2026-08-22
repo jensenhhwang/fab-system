@@ -1,21 +1,27 @@
 import "dotenv/config";
 import assert from "node:assert/strict";
 import { collections } from "../src/lib/db";
-import { advanceAggregateWip, AUTO_ADVANCE_INTERVAL_MS } from "../src/lib/lot-route";
+import { advanceAggregateWip } from "../src/lib/lot-route";
 import { getRouteMaster, expandRouteMaster } from "../src/lib/route-master";
 
 async function main() {
   const { waferLots } = await collections();
   const lotId = "WLOT:M20:HBM:AGG:test-advance";
   await waferLots.deleteOne({ _id: lotId });
-  const staleTime = new Date(Date.now() - AUTO_ADVANCE_INTERVAL_MS - 1_000);
+  const timing = {
+    operatingEpochMs: 10 * 86_400_000,
+    elapsedOperatingMs: 5 * 60_000,
+    recordedAt: new Date("2026-08-22T00:00:00Z"),
+  };
+  const staleTime = new Date(0);
   await waferLots.insertOne({
     _id: lotId, fabId: "M20", product: "HBM", routeMasterId: "M20:HBM", foupCode: "FOUP-WIP-TEST",
     status: "IN_PROGRESS", cohort: "AGGREGATE", currentStepIndex: 5, currentNodeId: "placeholder",
-    lastEventAt: staleTime, createdBy: "test", createdAt: staleTime, updatedAt: staleTime,
+    lastEventAt: new Date(), createdBy: "test", createdAt: staleTime, updatedAt: staleTime,
+    nextStepOperatingMs: timing.operatingEpochMs - 1,
   });
 
-  const result = await advanceAggregateWip("M20", "HBM");
+  const result = await advanceAggregateWip("M20", "HBM", timing);
   assert(result.advanced >= 1, "기한이 지난 로트는 진행되어야 합니다");
   console.log(`✅ 1) advanced=${result.advanced} completed=${result.completed}`);
 
@@ -26,7 +32,7 @@ async function main() {
   assert(after.lastEventAt.getTime() > staleTime.getTime(), "lastEventAt이 갱신되어야 합니다");
   console.log(`✅ 2) currentStepIndex=${after.currentStepIndex}, lastEventAt 갱신 확인`);
 
-  const notDue = await advanceAggregateWip("M20", "HBM");
+  const notDue = await advanceAggregateWip("M20", "HBM", timing);
   assert.equal(notDue.advanced, 0, "방금 갱신된 로트는 아직 기한이 안 됐으므로 다시 진행되면 안 됩니다");
   console.log("✅ 3) 기한 전 재호출 시 advanced=0");
 
@@ -44,14 +50,15 @@ async function main() {
 
   const boundaryLotId = "WLOT:M20:HBM:AGG:test-packaging-boundary";
   await waferLots.deleteOne({ _id: boundaryLotId });
-  const boundaryStale = new Date(Date.now() - AUTO_ADVANCE_INTERVAL_MS - 1_000);
+  const boundaryStale = new Date(0);
   await waferLots.insertOne({
     _id: boundaryLotId, fabId: "M20", product: "HBM", routeMasterId: "M20:HBM", foupCode: "FOUP-WIP-BOUNDARY",
     status: "IN_PROGRESS", cohort: "AGGREGATE", currentStepIndex: packagingStepIndex - 1, currentNodeId: "placeholder",
-    lastEventAt: boundaryStale, createdBy: "test", createdAt: boundaryStale, updatedAt: boundaryStale,
+    lastEventAt: new Date(), createdBy: "test", createdAt: boundaryStale, updatedAt: boundaryStale,
+    nextStepOperatingMs: timing.operatingEpochMs - 1,
   });
 
-  const boundaryResult = await advanceAggregateWip("M20", "HBM");
+  const boundaryResult = await advanceAggregateWip("M20", "HBM", timing);
   assert(boundaryResult.advanced >= 1, "packaging 경계 직전 로트도 진행되어야 합니다");
 
   const boundaryLot = await waferLots.findOne({ _id: boundaryLotId });

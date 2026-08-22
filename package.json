@@ -38,7 +38,6 @@
     "test:twin-equilibrium": "tsx scripts/test-twin-equilibrium.ts",
     "test:twin-wip-release": "tsx scripts/test-twin-wip-release.ts",
     "test:advance-aggregate-batch-cap": "tsx scripts/test-advance-aggregate-batch-cap.ts",
-    "test:lot-desync": "tsx scripts/test-lot-desync.ts",
     "test:materials-agent": "tsx scripts/test-materials-agent.ts",
     "test:production-agent": "tsx scripts/test-production-agent.ts",
     "test:logistics-agent": "tsx scripts/test-logistics-agent.ts",
