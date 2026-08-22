@@ -17,6 +17,7 @@ export async function getOrInitTwinState(): Promise<TwinEngineStateDoc> {
     // 공통 운영시계 시작점. 0에서 출발하고 실제 경과 × 24로만 흐른다(§operating-clock.ts).
     operatingEpochMs: 0,
     operatingClockWallAt: new Date(),
+    wipFlowCarryMs: 0,
   };
   await twinEngineState.insertOne(initial);
   return initial;

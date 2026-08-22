@@ -27,6 +27,7 @@
     "test:twin-advance-steps": "tsx scripts/test-twin-advance-steps.ts",
     "test:twin-state": "tsx scripts/test-twin-state.ts",
     "test:operating-clock": "tsx scripts/test-operating-clock.ts",
+    "test:wip-operating-flow": "tsx scripts/test-wip-operating-flow.ts",
     "test:autonomy-alternatives": "tsx scripts/test-twin-autonomy-alternatives.ts",
     "test:ask-intent": "tsx scripts/test-ask-intent.ts",
     "test:ask-answer": "tsx scripts/test-ask-answer.ts",

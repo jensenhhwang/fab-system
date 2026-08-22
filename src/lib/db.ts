@@ -90,6 +90,8 @@ export interface TwinEngineStateDoc {
   // releaseCarry는 HBM 하위호환. 다제품(HBM/DRAM/NAND)은 releaseCarryByProduct를 쓴다.
   releaseCarry?: number;
   releaseCarryByProduct?: Partial<Record<Product, number>>;
+  /** STEP_BUCKET 공통 5분 운영 퀀텀에 못 미친 잔여 운영시간. 별도 시계가 아니다. */
+  wipFlowCarryMs?: number;
   pausedAt?: Date;
   pausedBy?: string;
 }
@@ -648,6 +650,8 @@ export interface WaferLotDoc {
   modeledReleaseAt?: Date;
   nextTransitionAt?: Date;
   dwellModel?: "SIMPLIFIED_UNIFORM_DWELL";
+  /** 다음 route 스텝을 완료할 운영 절대시각. 엔진 due 판정의 유일한 시간 근거. */
+  nextStepOperatingMs?: number;
   // 이자재(MATERIALS)가 COVERAGE_CRITICAL로 판단한 자재를 다음 스텝에 쓸 때 진행을 막은
   // 시각. 최초 차단 시각을 보존해 대기시간을 계산한다(다시 진행되면 지운다).
   materialBlockedAt?: Date;
@@ -730,7 +734,7 @@ export interface WipStepBucketDoc {
   fabId: FabId;
   product: Product;
   totalSteps: number;
-  counts: number[]; // length=totalSteps
+  counts: number[]; // length=totalSteps, 소수 FOUP-equivalent 허용
   updatedAt: Date;
 }
 
